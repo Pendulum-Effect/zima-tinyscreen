@@ -1,0 +1,45 @@
+name: tinyscreen-dashboard
+
+services:
+  tinyscreen-dashboard:
+    image: tinyscreen-dashboard:latest
+    build:
+      context: ..
+      dockerfile: app/Dockerfile
+    container_name: tinyscreen-dashboard
+    restart: unless-stopped
+    ports:
+      - target: 8989
+        published: "8989"
+        protocol: tcp
+    environment:
+      - TINYSCREEN_STATUS_FILE=/tmp/tinyscreen_status.json
+      # Set this if auto-detect picks the wrong serial device, e.g. /dev/ttyACM0
+      - TINYSCREEN_SERIAL_PORT=
+
+    # The ESP32-S3 shows up as a USB-serial device (commonly /dev/ttyACM0
+    # or /dev/ttyUSB0). Passing the whole USB bus through is the most
+    # reliable option since ZimaOS may enumerate the device differently
+    # across reboots/replugs; narrow this to a single --device mapping
+    # if you'd rather avoid the broader USB passthrough.
+    devices:
+      - /dev/bus/usb:/dev/bus/usb
+    privileged: true
+
+    x-casaos:
+      architectures:
+        - amd64
+      main: tinyscreen-dashboard
+      author: you
+      category: Utilities
+      description:
+        en_us: "Streams live CPU/RAM/SSD/network/temperature stats from this ZimaOS device to a small ESP32-S3 round display, and hosts a one-click WebSerial flasher for the ESP32-S3 firmware."
+      developer: you
+      icon: https://raw.githubusercontent.com/your-repo/tinyscreen/main/icon.png
+      screenshot_link: []
+      tagline:
+        en_us: "A tiny external dashboard for your ZimaBoard/ZimaBlade"
+      title:
+        en_us: "Tiny Screen Dashboard"
+      port_map: "8989"
+      index: /
