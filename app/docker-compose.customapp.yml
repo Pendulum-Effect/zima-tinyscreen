@@ -10,7 +10,7 @@ name: tinyscreen-dashboard
 
 services:
   tinyscreen-dashboard:
-    image: YOUR_DOCKERHUB_USERNAME/tinyscreen-dashboard:latest
+    image: pendulumeffect/tinyscreen-dashboard:latest
     container_name: tinyscreen-dashboard
     restart: unless-stopped
     ports:
