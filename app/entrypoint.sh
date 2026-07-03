@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 set -e
 
 # --- Self-signed cert for the HTTPS listener (needed for WebSerial) -------

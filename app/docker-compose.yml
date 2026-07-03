@@ -33,10 +33,18 @@ services:
     # `privileged: true` is required alongside this for the container to
     # actually be allowed to open the device.
     volumes:
-      - /dev:/dev
+      - type: bind
+        source: /dev
+        target: /dev
       # Persists the self-signed HTTPS cert across restarts, so you don't
       # get a fresh "untrusted certificate" browser warning every reboot.
-      - /DATA/AppData/tinyscreen-dashboard/certs:/opt/tinyscreen/certs
+      # Long-form bind syntax matches ZimaOS/CasaOS's own documented
+      # convention for AppData volumes (vs. the short "host:container"
+      # string form), for the best chance it shows up correctly in the
+      # ZimaOS Files app too.
+      - type: bind
+        source: /DATA/AppData/tinyscreen-dashboard/certs
+        target: /opt/tinyscreen/certs
     privileged: true
 
     x-casaos:
