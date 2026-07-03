@@ -2,9 +2,11 @@
 """
 Tiny Screen ZimaOS app web server.
 
-Serves the WebSerial flasher page (and firmware binaries) on port 8989,
-plus a tiny status endpoint showing whether the background collector is
-alive and what it last sent to the ESP32-S3.
+Serves the WebSerial flasher page (and firmware binaries) plus a tiny
+status endpoint. Run twice by entrypoint.sh: once plain HTTP on 8989 (easy
+to hit for the /api/status check, no browser warnings), and once HTTPS on
+8990 using a self-signed cert (required for the flasher page, since
+browsers only allow the Web Serial API on HTTPS or localhost).
 """
 
 import json
@@ -51,4 +53,25 @@ def status():
 
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=8989)
+    import argparse
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--port", type=int, default=8989)
+    parser.add_argument("--https", action="store_true",
+                         help="Serve over HTTPS using cert/key from TINYSCREEN_CERT_DIR "
+                              "(required for the WebSerial flasher page -- browsers only "
+                              "allow Web Serial on HTTPS or localhost)")
+    args = parser.parse_args()
+
+    ssl_context = None
+    if args.https:
+        cert_dir = Path(os.environ.get("TINYSCREEN_CERT_DIR", "/opt/tinyscreen/certs"))
+        cert_path = cert_dir / "cert.pem"
+        key_path = cert_dir / "key.pem"
+        if cert_path.exists() and key_path.exists():
+            ssl_context = (str(cert_path), str(key_path))
+        else:
+            print(f"WARNING: --https requested but {cert_path} / {key_path} not found; "
+                  f"falling back to plain HTTP on port {args.port}")
+
+    app.run(host="0.0.0.0", port=args.port, ssl_context=ssl_context)

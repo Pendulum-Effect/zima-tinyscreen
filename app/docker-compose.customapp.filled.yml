@@ -1,24 +1,21 @@
 name: tinyscreen-dashboard
 
+# This is the same app as ../app/docker-compose.yml, but pointed at a
+# published Docker Hub image instead of a local build. Paste this into
+# ZimaOS's App Store -> Install a Custom App -> Docker Compose form and
+# ZimaOS will pull the image itself -- no SSH into the ZimaOS box needed.
+#
+# Before pasting: replace pendulumeffect below with your actual
+# Docker Hub username (see README "Publish to Docker Hub instead of SSH").
+
 services:
   tinyscreen-dashboard:
-    image: tinyscreen-dashboard:latest
-    pull_policy: always  # always re-pull, even for the same :latest tag
-    build:
-      context: ..
-      dockerfile: app/Dockerfile
+    image: pendulumeffect/tinyscreen-dashboard:latest
     container_name: tinyscreen-dashboard
     restart: unless-stopped
     ports:
       - target: 8989
         published: "8989"
-        protocol: tcp
-      # HTTPS listener -- required for the WebSerial flasher page, since
-      # browsers only allow the Web Serial API on HTTPS or localhost. Plain
-      # HTTP on 8989 above still works fine for the /api/status check and
-      # everything else.
-      - target: 8990
-        published: "8990"
         protocol: tcp
     environment:
       - TINYSCREEN_STATUS_FILE=/tmp/tinyscreen_status.json
@@ -34,9 +31,6 @@ services:
     # actually be allowed to open the device.
     volumes:
       - /dev:/dev
-      # Persists the self-signed HTTPS cert across restarts, so you don't
-      # get a fresh "untrusted certificate" browser warning every reboot.
-      - /DATA/AppData/tinyscreen-dashboard/certs:/opt/tinyscreen/certs
     privileged: true
 
     x-casaos:

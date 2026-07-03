@@ -2,24 +2,46 @@
 
 A tiny external status display for a ZimaBlade / ZimaBoard: a Python script
 collects vital stats and streams them over USB to an ESP32-S3, which draws
-them on a 1.28" round touch display. Swipe through 5 screens: CPU, RAM,
-SSD, network, and temperature. Packaged as a one-click ZimaOS app that also
-hosts a browser-based (WebSerial) firmware flasher — no toolchain required
-to set up the ESP32-S3.
+them on a small display. Packaged as a one-click ZimaOS app that also hosts
+a browser-based settings page + WebSerial firmware flasher — no toolchain
+required to set up the ESP32-S3.
 
-Hardware target: **Waveshare ESP32-S3-Touch-LCD-1.28** (GC9A01A display,
-CST816S touch, 240x240px).
+**One firmware build supports two boards**, chosen at runtime via a
+settings page rather than at compile time:
+- **Board 0 — Waveshare ESP32-S3-LCD-1.3**: square 240x240, ST7789V2,
+  QMI8658 6-axis IMU, **no touchscreen**. Since there's no touch input,
+  navigation is auto-cycle-on-a-timer or a single static page.
+- **Board 1 — Waveshare ESP32-S3-Touch-LCD-1.28**: round 240x240, GC9A01A,
+  CST816S touch. Swipe left/right between pages, optionally combined with
+  auto-cycle too.
+
+Which pages to show (CPU load/wattage, RAM, SSD, network, temperature),
+cycling behavior, and brightness are all configured through
+`webflasher/settings.html` and pushed to the device over WebSerial right
+after flashing — see "Configure and flash from the browser" below.
+
+Pin mappings for both boards were extracted from Waveshare's schematic PDF
+/ wiki and cross-checked against known ESP32-S3 hardware facts. Board 0 has
+been flash-tested against physical hardware and confirmed working; Board 1
+has not yet been re-tested since this multi-board rewrite (it was working
+prior to the rewrite under the older single-board firmware).
 
 ```
 zima-tinyscreen/
-├── collector/          Python stats collector (runs on the ZimaBlade/ZimaBoard)
-├── firmware/            ESP32-S3 firmware (PlatformIO, C++)
-├── webflasher/          WebSerial flashing page (ESP Web Tools) + built firmware
-├── app/                 ZimaOS/Docker packaging (serves webflasher on :8989)
+├── collector/            Python stats collector (runs on the ZimaBlade/ZimaBoard)
+├── firmware/              ESP32-S3 firmware (PlatformIO, C++) -- supports both boards
+├── firmware_arduino/      Same firmware as an Arduino IDE sketch folder
+├── webflasher/            settings.html (configurator) + index.html (WebSerial flasher)
+├── app/                   ZimaOS/Docker packaging (serves webflasher on :8989 / :8990)
 └── README.md
 ```
 
 ## 1. Build the firmware
+
+**Using Arduino IDE?** Skip to the walkthrough below — use the
+`firmware_arduino/zima_tinyscreen/` folder (Arduino requires the sketch
+folder name to match the `.ino` filename). The `firmware/` folder
+described in this section is the PlatformIO version instead.
 
 ```bash
 cd firmware
@@ -47,13 +69,34 @@ You can also flash directly from PlatformIO during development:
 pio run -t upload -t monitor
 ```
 
-## 2. Flash from the browser (optional, once packaged)
+## 2. Configure and flash from the browser (optional, once packaged)
 
-Open `webflasher/index.html` (served by the app on port 8989 once deployed,
-or locally via `python3 -m http.server` from inside `webflasher/`) in
-Chrome or Edge, plug in the ESP32-S3, and click **Connect & Flash**. This
-uses [ESP Web Tools](https://esphome.github.io/esp-web-tools/) under the
-hood via WebSerial.
+**Use `https://<zima-ip>:8990/settings.html`** as the starting point (not
+port 8989 — since the settings page hands off to the flasher page via a
+relative link, staying on HTTPS the whole way through matters, or
+WebSerial will break on the second page). You'll get an "untrusted
+certificate" warning the first time; click through it once (see the
+"WebSerial flasher access" section below for why).
+
+The flow:
+1. **`settings.html`** — pick your board model, which stat pages to show,
+   static vs auto-cycle (with interval), and brightness. Click **Continue
+   to Flasher**.
+2. **`index.html`** — shows a summary of your choices, then flash as
+   usual with **Connect & Flash** ([ESP Web Tools](https://esphome.github.io/esp-web-tools/)
+   under the hood, via WebSerial).
+3. Once flashing finishes, click **Send Settings to Device** — this opens
+   a second WebSerial connection and sends your chosen config as a JSON
+   command, which the firmware saves to flash (NVS) and applies
+   immediately. If you picked a different board model than what's
+   currently configured, the device restarts itself once to apply the new
+   pin/display setup.
+
+The firmware is a **single universal build** for both supported boards —
+which board to actually use is chosen at runtime from this saved config,
+not baked in at compile time (there's no build server here to compile a
+custom binary per visitor's choices). See `firmware/src/main.cpp`'s
+`BOARD_PROFILES` table if you want to add a third board later.
 
 ## 3. Run the collector
 
@@ -75,6 +118,26 @@ Notes:
   package/CPU sensor if labeled; falls back to the first sensor found.
 - Run as root or with a udev rule granting access to the RAPL energy
   counters and serial device if you hit permission errors.
+
+## WebSerial flasher access (HTTPS)
+
+Browsers only allow the Web Serial API (used by the flasher page) on
+**HTTPS or `localhost`** — a plain `http://<ip>:8989` origin is blocked.
+The packaged app runs two listeners:
+
+- **`http://<zima-ip>:8989`** — plain HTTP, fine for `/api/status` and
+  anything that isn't the flasher page
+- **`https://<zima-ip>:8990`** — HTTPS with a self-signed cert, generated
+  automatically on first container start and persisted at
+  `/DATA/AppData/tinyscreen-dashboard/certs` (so it survives restarts and
+  won't nag you with a fresh warning every reboot)
+
+**Use the flasher at `https://<zima-ip>:8990`.** Your browser will show an
+"untrusted certificate" warning the first time — click **Advanced → Proceed
+to `<ip>` (unsafe)**. This is expected and normal for a self-signed cert on
+a home-LAN admin tool (same pattern most self-hosted dashboards use); once
+accepted, Chrome/Edge treat the page as a secure context and Web Serial
+works. You'll typically only see this warning once per browser.
 
 ## 4. Package as a ZimaOS app
 
