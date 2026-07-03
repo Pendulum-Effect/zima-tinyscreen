@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Tiny Screen — ESP32-S3 Flasher</title>
+<script type="module" src="https://unpkg.com/esp-web-tools@10/dist/web/install-button.js"></script>
+<style>
+  :root {
+    --bg: #0b1418;
+    --panel: #101c22;
+    --teal: #4fd1c5;
+    --teal-dim: #2c7a72;
+    --text: #eaf6f4;
+    --subtext: #8fb0ac;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: radial-gradient(circle at 50% 0%, #12232a 0%, var(--bg) 60%);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    color: var(--text);
+  }
+  .card {
+    width: min(480px, 92vw);
+    background: var(--panel);
+    border: 1px solid #1e3a3a;
+    border-radius: 20px;
+    padding: 32px 28px;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.4);
+  }
+  .badge {
+    display: inline-block;
+    font-size: 12px;
+    letter-spacing: 0.08em;
+    color: var(--teal);
+    background: rgba(79, 209, 197, 0.1);
+    border: 1px solid var(--teal-dim);
+    padding: 4px 10px;
+    border-radius: 999px;
+    margin-bottom: 14px;
+  }
+  h1 { font-size: 22px; margin: 0 0 6px; }
+  p.sub { color: var(--subtext); margin: 0 0 26px; line-height: 1.5; font-size: 14px; }
+  .steps { margin: 0 0 26px; padding: 0; list-style: none; }
+  .steps li {
+    display: flex; gap: 10px; align-items: flex-start;
+    font-size: 13px; color: var(--subtext); margin-bottom: 10px;
+  }
+  .steps li .num {
+    flex: none; width: 20px; height: 20px; border-radius: 50%;
+    background: var(--teal-dim); color: #06201d; font-weight: 700;
+    font-size: 12px; display: flex; align-items: center; justify-content: center;
+  }
+  esp-web-install-button { display: block; width: 100%; }
+  esp-web-install-button button {
+    width: 100%;
+    padding: 14px;
+    border-radius: 12px;
+    border: none;
+    background: var(--teal);
+    color: #06201d;
+    font-weight: 700;
+    font-size: 15px;
+    cursor: pointer;
+  }
+  esp-web-install-button button:hover { background: #6fe2d7; }
+  .note {
+    margin-top: 16px;
+    font-size: 12px;
+    color: var(--subtext);
+    text-align: center;
+  }
+  .compat {
+    margin-top: 6px;
+    font-size: 11px;
+    color: #5f7d79;
+    text-align: center;
+  }
+</style>
+</head>
+<body>
+  <div class="card">
+    <span class="badge">TINY SCREEN · ESP32-S3</span>
+    <h1>Flash your display</h1>
+    <p class="sub">
+      This flashes the Tiny Screen dashboard firmware directly to your
+      ESP32-S3-Touch-LCD-1.28 over USB — no software to install.
+    </p>
+    <ul class="steps">
+      <li><span class="num">1</span> Plug the ESP32-S3 into this machine via USB-C.</li>
+      <li><span class="num">2</span> Click "Connect" below and pick its serial port.</li>
+      <li><span class="num">3</span> Wait for flashing to finish, then reboot the board.</li>
+    </ul>
+
+    <esp-web-install-button manifest="./manifest.json">
+      <button slot="activate">Connect &amp; Flash</button>
+      <span slot="unsupported">Your browser doesn't support Web Serial. Please use Chrome or Edge.</span>
+      <span slot="not-allowed">Web Serial is not allowed on this page (must be served over HTTPS or localhost).</span>
+    </esp-web-install-button>
+
+    <p class="note">Once flashed, run the collector script on your ZimaBlade/ZimaBoard to start streaming stats to the display.</p>
+    <p class="compat">Requires Chrome, Edge, or another Chromium-based browser with Web Serial support.</p>
+  </div>
+</body>
+</html>
