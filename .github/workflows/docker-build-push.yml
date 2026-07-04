@@ -12,7 +12,7 @@ name: Build firmware and push Tiny Screen image
 
 on:
   push:
-    branches: [ "main" ]
+    branches: [ "main", "master" ]
   workflow_dispatch: {}  # lets you trigger a build manually from the Actions tab
 
 jobs:
@@ -77,4 +77,6 @@ jobs:
           platforms: linux/amd64   # ZimaBoard/ZimaBlade are x86
           push: true
           tags: ${{ secrets.DOCKERHUB_USERNAME }}/tinyscreen-dashboard:latest
+
+
 
