@@ -6,7 +6,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends openssl bash \
     && rm -rf /var/lib/apt/lists/*
 
 COPY collector/requirements.txt collector/requirements.txt
-RUN pip install --no-cache-dir -r collector/requirements.txt flask
+RUN pip install --no-cache-dir -r collector/requirements.txt flask esptool
 
 COPY collector/ collector/
 COPY webflasher/ webflasher/

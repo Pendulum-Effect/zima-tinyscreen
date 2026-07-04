@@ -19,6 +19,7 @@ import json
 import os
 import platform
 import re
+import signal
 import sys
 import time
 from dataclasses import dataclass, asdict
@@ -197,7 +198,18 @@ def open_serial(port: str, baud: int) -> "serial.Serial":
 # Main loop
 # --------------------------------------------------------------------------
 
+def _handle_sigterm(signum, frame):
+    raise KeyboardInterrupt()
+
+
 def main():
+    # server.py's CollectorManager stops this process with SIGTERM when it
+    # needs exclusive access to the serial port (for flashing or pushing a
+    # config change). Converting that into KeyboardInterrupt reuses the
+    # existing clean-shutdown path below, which closes the serial port
+    # properly instead of leaving it locked.
+    signal.signal(signal.SIGTERM, _handle_sigterm)
+
     parser = argparse.ArgumentParser(description="Tiny Screen stats collector")
     parser.add_argument("--port", help="Serial port for the ESP32-S3 (e.g. /dev/ttyACM0)")
     parser.add_argument("--baud", type=int, default=DEFAULT_BAUD)

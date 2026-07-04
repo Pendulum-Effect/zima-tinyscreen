@@ -17,22 +17,13 @@ if [ ! -f "$CERT_DIR/cert.pem" ] || [ ! -f "$CERT_DIR/key.pem" ]; then
     -addext "subjectAltName=DNS:localhost,IP:127.0.0.1"
 fi
 
-# --- Stats collector, backgrounded with retry (unchanged from before) -----
-COLLECTOR_ARGS=""
-if [ -n "$TINYSCREEN_SERIAL_PORT" ]; then
-  COLLECTOR_ARGS="--port $TINYSCREEN_SERIAL_PORT"
-fi
-
-(
-  while true; do
-    python3 /opt/tinyscreen/collector/stats_collector.py $COLLECTOR_ARGS || true
-    echo "collector exited, retrying in 5s..."
-    sleep 5
-  done
-) &
-
-# --- Web server: plain HTTP on 8989, HTTPS (for the flasher) on 8990 ------
-python3 /opt/tinyscreen/app/server.py --port 8989 &
-python3 /opt/tinyscreen/app/server.py --port 8990 --https &
-
-wait -n
+# --- Web server + collector lifecycle -------------------------------------
+# server.py now owns the stats collector's lifecycle itself (spawning it,
+# restarting it if it dies, and pausing/resuming it around flash/configure
+# operations that need the serial port to themselves) via its
+# CollectorManager class. It also runs both the HTTP (8989) and HTTPS
+# (8990) listeners itself, in one process -- important, since running two
+# separate server.py processes (like before) would each spin up their own
+# independent CollectorManager and fight over the same collector
+# subprocess.
+exec python3 /opt/tinyscreen/app/server.py

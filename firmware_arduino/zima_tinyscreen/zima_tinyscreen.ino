@@ -1,13 +1,21 @@
-// Tiny Screen firmware -- supports both:
-//   Board 0: Waveshare ESP32-S3-LCD-1.3       (square 240x240, ST7789V2, no touch)
+// Tiny Screen firmware -- supports:
+//   Board 0: Waveshare ESP32-S3-LCD-1.3        (square 240x240, ST7789V2, no touch)
 //   Board 1: Waveshare ESP32-S3-Touch-LCD-1.28 (round  240x240, GC9A01A, CST816S touch)
+//   Board 2: Waveshare ESP32-S3-Touch-LCD-1.69 (240x280, ST7789V2, CST816T touch)
 //
-// This is ONE firmware binary for both boards. Which board, which stat
+// This is ONE firmware binary for all boards. Which board, which stat
 // pages to show, whether to auto-cycle through them, and screen brightness
 // are all runtime-configurable -- set via a JSON command sent over the same
 // USB-serial connection used for stats data, persisted to NVS (flash), and
 // applied immediately (or after a quick self-restart if the board model
 // itself changed, since that changes which GPIO pins get initialized).
+//
+// IMPORTANT: Board 2 (1.69") uses the ESP32-S3's native USB peripheral
+// directly (no separate CH343P-style UART bridge chip like boards 0/1
+// have), so it needs "USB CDC On Boot: Enabled" in Arduino IDE (or
+// ARDUINO_USB_CDC_ON_BOOT=1 in PlatformIO) -- the OPPOSITE setting from
+// boards 0 and 1. This is a build-time setting per physical board you're
+// currently flashing, not something this source file controls.
 //
 // See webflasher/settings.html for the browser-side configurator that
 // sends this command right after flashing.
@@ -24,8 +32,10 @@
 #include <Arduino_GFX_Library.h>
 #include <ArduinoJson.h>
 
-#define SCREEN_W 240
-#define SCREEN_H 240
+// Note: screen dimensions are NOT fixed -- board 2 (1.69") is 240x280,
+// taller than the two 240x240 boards. See screenW/screenH globals, set
+// from the active BoardProfile in initDisplay(), and the SY() helper
+// below used to scale the Y-axis layout proportionally across boards.
 
 // ---------------------------------------------------------------------
 // Board profiles -- pin maps for each supported physical board
@@ -34,6 +44,7 @@
 struct BoardProfile {
   const char *name;
   bool hasTouch;
+  int width, height;
   int lcd_cs, lcd_dc, lcd_sck, lcd_mosi, lcd_rst, lcd_bl;
   int tp_sda, tp_scl, tp_rst; // -1 if no touch
   bool driverIsGC9A01;        // false = ST7789
@@ -41,13 +52,21 @@ struct BoardProfile {
 
 const BoardProfile BOARD_PROFILES[] = {
   // Board 0: ESP32-S3-LCD-1.3 (square, no touch) -- pins from schematic PDF
-  { "ESP32-S3-LCD-1.3 (square, no touch)", false,
+  { "ESP32-S3-LCD-1.3 (square, no touch)", false, 240, 240,
     /*cs*/39, /*dc*/38, /*sck*/40, /*mosi*/41, /*rst*/42, /*bl*/20,
     /*sda*/-1, /*scl*/-1, /*tprst*/-1, /*gc9a01*/false },
   // Board 1: ESP32-S3-Touch-LCD-1.28 (round, touch) -- pins from Waveshare wiki
-  { "ESP32-S3-Touch-LCD-1.28 (round, touch)", true,
+  { "ESP32-S3-Touch-LCD-1.28 (round, touch)", true, 240, 240,
     /*cs*/9, /*dc*/8, /*sck*/10, /*mosi*/11, /*rst*/14, /*bl*/2,
     /*sda*/6, /*scl*/7, /*tprst*/13, /*gc9a01*/true },
+  // Board 2: ESP32-S3-Touch-LCD-1.69 (240x280, touch) -- pins from schematic PDF.
+  // Note: this board uses the ESP32-S3's NATIVE USB peripheral (no separate
+  // CH343P-style UART bridge chip), so it needs "USB CDC On Boot: Enabled"
+  // in Arduino IDE / ARDUINO_USB_CDC_ON_BOOT=1 in PlatformIO -- the OPPOSITE
+  // setting from boards 0 and 1.
+  { "ESP32-S3-Touch-LCD-1.69 (240x280, touch)", true, 240, 280,
+    /*cs*/5, /*dc*/4, /*sck*/6, /*mosi*/7, /*rst*/8, /*bl*/15,
+    /*sda*/11, /*scl*/10, /*tprst*/13, /*gc9a01*/false },
 };
 const int NUM_BOARD_PROFILES = sizeof(BOARD_PROFILES) / sizeof(BOARD_PROFILES[0]);
 #define CST816S_ADDR 0x15
@@ -61,6 +80,7 @@ const char *ALL_PAGE_IDS[] = {"cpu", "ram", "ssd", "net", "temp"};
 const int NUM_ALL_PAGES = 5;
 
 struct Config {
+  bool configured = false; // false until the first set_config command ever arrives
   int boardId = 0;
   char pages[6][8] = {"temp"};  // up to 6 slots, page id strings
   int numPages = 1;
@@ -73,6 +93,7 @@ Preferences prefs;
 
 void loadConfig() {
   prefs.begin("tinyscreen", true); // read-only
+  config.configured = prefs.getBool("configured", false);
   config.boardId = prefs.getInt("boardId", 0);
   config.autoCycle = prefs.getBool("autoCycle", false);
   config.cycleSeconds = prefs.getInt("cycleSec", 10);
@@ -101,6 +122,7 @@ void loadConfig() {
 
 void saveConfig() {
   prefs.begin("tinyscreen", false); // read-write
+  prefs.putBool("configured", config.configured);
   prefs.putInt("boardId", config.boardId);
   prefs.putBool("autoCycle", config.autoCycle);
   prefs.putInt("cycleSec", config.cycleSeconds);
@@ -126,16 +148,27 @@ void saveConfig() {
 Arduino_DataBus *bus = nullptr;
 Arduino_GFX *gfx = nullptr;
 Arduino_Canvas *canvas = nullptr;
+int screenW = 240;
+int screenH = 240;
+
+// Layout constants below were tuned against a 240x240 reference screen.
+// SY() scales a Y-coordinate proportionally for taller/shorter screens
+// (e.g. board 2's 240x280 panel) so the layout doesn't just run off the
+// bottom or leave a big gap -- X doesn't need this since all boards so
+// far share the same 240 width.
+int SY(int y) { return y * screenH / 240; }
 
 void initDisplay() {
   const BoardProfile &p = BOARD_PROFILES[config.boardId];
+  screenW = p.width;
+  screenH = p.height;
   bus = new Arduino_ESP32SPI(p.lcd_dc, p.lcd_cs, p.lcd_sck, p.lcd_mosi, -1 /* no MISO */);
   if (p.driverIsGC9A01) {
     gfx = new Arduino_GC9A01(bus, p.lcd_rst, 0 /* rotation */, true /* IPS */);
   } else {
-    gfx = new Arduino_ST7789(bus, p.lcd_rst, 0 /* rotation */, true /* IPS */, SCREEN_W, SCREEN_H);
+    gfx = new Arduino_ST7789(bus, p.lcd_rst, 0 /* rotation */, true /* IPS */, screenW, screenH);
   }
-  canvas = new Arduino_Canvas(SCREEN_W, SCREEN_H, gfx);
+  canvas = new Arduino_Canvas(screenW, screenH, gfx);
 
   pinMode(p.lcd_bl, OUTPUT);
   ledcAttach(p.lcd_bl, 5000 /* Hz */, 8 /* bit resolution */);
@@ -244,15 +277,15 @@ void drawStaleBanner() {
   const char *msg = haveData ? "no data..." : "waiting for host...";
   int16_t x1, y1; uint16_t w, h;
   canvas->getTextBounds(msg, 0, 0, &x1, &y1, &w, &h);
-  canvas->setCursor(SCREEN_W / 2 - w / 2, 24);
+  canvas->setCursor(screenW / 2 - w / 2, SY(24));
   canvas->print(msg);
 }
 
 void drawFooterDots() {
   if (config.numPages <= 1) return;
   int totalW = config.numPages * 12;
-  int startX = SCREEN_W / 2 - totalW / 2;
-  int y = SCREEN_H - 14;
+  int startX = screenW / 2 - totalW / 2;
+  int y = screenH - SY(14);
   for (int i = 0; i < config.numPages; i++) {
     uint16_t c = (i == currentPageIdx) ? COL_TEAL : COL_RING_BG;
     canvas->fillCircle(startX + i * 12 + 6, y, 3, c);
@@ -262,49 +295,49 @@ void drawFooterDots() {
 void drawPageCPU() {
   char big[16];
   snprintf(big, sizeof(big), "%d%%", (int)round(stats.cpu_pct));
-  drawRingGauge(SCREEN_W / 2, 105, 88, 74, stats.cpu_pct, COL_TEAL, big, "CPU LOAD");
+  drawRingGauge(screenW / 2, SY(105), 88, 74, stats.cpu_pct, COL_TEAL, big, "CPU LOAD");
   canvas->setTextColor(COL_TEXT);
   canvas->setTextSize(2);
   char watts[16];
   snprintf(watts, sizeof(watts), "%.1f W", stats.cpu_watts);
   int16_t x1, y1; uint16_t w, h;
   canvas->getTextBounds(watts, 0, 0, &x1, &y1, &w, &h);
-  canvas->setCursor(SCREEN_W / 2 - w / 2, 172);
+  canvas->setCursor(screenW / 2 - w / 2, SY(172));
   canvas->print(watts);
 }
 
 void drawPageRAM() {
   char big[16];
   snprintf(big, sizeof(big), "%d%%", (int)round(stats.ram_pct));
-  drawRingGauge(SCREEN_W / 2, 105, 88, 74, stats.ram_pct, COL_TEAL_2, big, "RAM USED");
+  drawRingGauge(screenW / 2, SY(105), 88, 74, stats.ram_pct, COL_TEAL_2, big, "RAM USED");
   canvas->setTextColor(COL_TEXT);
   canvas->setTextSize(2);
   char total[24];
   snprintf(total, sizeof(total), "%.1f GB", stats.ram_total_gb);
   int16_t x1, y1; uint16_t w, h;
   canvas->getTextBounds(total, 0, 0, &x1, &y1, &w, &h);
-  canvas->setCursor(SCREEN_W / 2 - w / 2, 172);
+  canvas->setCursor(screenW / 2 - w / 2, SY(172));
   canvas->print(total);
 }
 
 void drawPageSSD() {
   char big[16];
   snprintf(big, sizeof(big), "%d%%", (int)round(stats.ssd_pct));
-  drawRingGauge(SCREEN_W / 2, 105, 88, 74, stats.ssd_pct, 0x7B9F, big, "SSD USED");
+  drawRingGauge(screenW / 2, SY(105), 88, 74, stats.ssd_pct, 0x7B9F, big, "SSD USED");
   canvas->setTextColor(COL_TEXT);
   canvas->setTextSize(2);
   char total[24];
   snprintf(total, sizeof(total), "%.0f GB", stats.ssd_total_gb);
   int16_t x1, y1; uint16_t w, h;
   canvas->getTextBounds(total, 0, 0, &x1, &y1, &w, &h);
-  canvas->setCursor(SCREEN_W / 2 - w / 2, 172);
+  canvas->setCursor(screenW / 2 - w / 2, SY(172));
   canvas->print(total);
 }
 
 void drawPageNet() {
   canvas->setTextColor(COL_SUBTEXT);
   canvas->setTextSize(1);
-  canvas->setCursor(SCREEN_W / 2 - 28, 50);
+  canvas->setCursor(screenW / 2 - 28, SY(50));
   canvas->print("NETWORK");
 
   auto fmtRate = [](float mbps, char *out, size_t n) {
@@ -319,22 +352,22 @@ void drawPageNet() {
 
   canvas->setTextColor(COL_TEAL);
   canvas->setTextSize(1);
-  canvas->setCursor(SCREEN_W / 2 - 20, 90);
+  canvas->setCursor(screenW / 2 - 20, SY(90));
   canvas->print("DOWN");
   canvas->setTextColor(COL_TEXT);
   canvas->setTextSize(2);
   canvas->getTextBounds(rx, 0, 0, &x1, &y1, &w, &h);
-  canvas->setCursor(SCREEN_W / 2 - w / 2, 105);
+  canvas->setCursor(screenW / 2 - w / 2, SY(105));
   canvas->print(rx);
 
   canvas->setTextColor(COL_TEAL_2);
   canvas->setTextSize(1);
-  canvas->setCursor(SCREEN_W / 2 - 12, 150);
+  canvas->setCursor(screenW / 2 - 12, SY(150));
   canvas->print("UP");
   canvas->setTextColor(COL_TEXT);
   canvas->setTextSize(2);
   canvas->getTextBounds(tx, 0, 0, &x1, &y1, &w, &h);
-  canvas->setCursor(SCREEN_W / 2 - w / 2, 165);
+  canvas->setCursor(screenW / 2 - w / 2, SY(165));
   canvas->print(tx);
 }
 
@@ -343,7 +376,7 @@ void drawPageTemp() {
   uint16_t color = stats.cpu_temp_c >= 75 ? COL_WARN : COL_TEAL;
   char big[16];
   snprintf(big, sizeof(big), "%.0fC", stats.cpu_temp_c);
-  drawRingGauge(SCREEN_W / 2, 105, 88, 74, pct, color, big, "CPU TEMP");
+  drawRingGauge(screenW / 2, SY(105), 88, 74, pct, color, big, "CPU TEMP");
 }
 
 void drawPage(const char *pageId) {
@@ -392,6 +425,7 @@ bool pendingRestart = false;
 unsigned long restartAtMs = 0;
 
 void handleSetConfig(JsonDocument &doc) {
+  bool wasConfigured = config.configured;
   bool boardChanged = false;
 
   if (doc["board"].is<int>()) {
@@ -428,27 +462,37 @@ void handleSetConfig(JsonDocument &doc) {
   }
   if (doc["brightness"].is<int>()) {
     config.brightness = constrain((int)doc["brightness"], 0, 100);
-    if (!boardChanged) applyBrightness();
+    if (!boardChanged && wasConfigured) applyBrightness();
   }
 
+  config.configured = true;
   saveConfig();
 
   // Ack so the settings page can confirm success
   Serial.println("{\"ack\":\"set_config\",\"ok\":true}");
 
-  if (boardChanged) {
+  if (boardChanged || !wasConfigured) {
     // Pins/driver differ per board -- cleanest to just restart into setup()
     // with the new profile rather than trying to hot-swap display objects.
-    Serial.println("{\"info\":\"restarting to apply new board profile\"}");
+    // Also always restart on the very first-ever config, since an
+    // unconfigured device never called initDisplay() at all (see setup()).
+    Serial.println("{\"info\":\"restarting to apply configuration\"}");
     pendingRestart = true;
     restartAtMs = millis() + 300; // let the serial message flush first
   }
 }
 
 void handleLine(const String &line) {
+  Serial.print("[debug] RX line: ");
+  Serial.println(line);
+
   JsonDocument doc;
   DeserializationError err = deserializeJson(doc, line);
-  if (err) return;
+  if (err) {
+    Serial.print("[debug] JSON parse error: ");
+    Serial.println(err.c_str());
+    return;
+  }
 
   if (doc["cmd"].is<const char *>() && strcmp(doc["cmd"], "set_config") == 0) {
     handleSetConfig(doc);
@@ -489,8 +533,20 @@ void pollSerial() {
 
 void setup() {
   Serial.begin(115200);
+  delay(500); // give native USB CDC a moment to enumerate before printing
   loadConfig();
-  initDisplay();
+  Serial.print("[debug] BOOT OK, configured=");
+  Serial.print(config.configured ? "true" : "false");
+  Serial.print(", boardId=");
+  Serial.println(config.boardId);
+  if (config.configured) {
+    // Only initialize display/backlight pins once we actually know which
+    // physical board this is -- an unconfigured device stays fully
+    // hands-off on GPIO (see handleSetConfig() for why: board 0's default
+    // pins can collide with another board's USB data lines).
+    initDisplay();
+    Serial.println("[debug] initDisplay() completed");
+  }
   serialBuf.reserve(256);
 }
 
@@ -499,6 +555,12 @@ void loop() {
 
   if (pendingRestart && millis() >= restartAtMs) {
     ESP.restart();
+  }
+
+  if (!config.configured) {
+    // Nothing to draw yet -- just keep listening on Serial for the first
+    // set_config command from webflasher/settings.html.
+    return;
   }
 
   unsigned long now = millis();

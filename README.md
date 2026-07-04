@@ -6,7 +6,7 @@ them on a small display. Packaged as a one-click ZimaOS app that also hosts
 a browser-based settings page + WebSerial firmware flasher — no toolchain
 required to set up the ESP32-S3.
 
-**One firmware build supports two boards**, chosen at runtime via a
+**One firmware build supports three boards**, chosen at runtime via a
 settings page rather than at compile time:
 - **Board 0 — Waveshare ESP32-S3-LCD-1.3**: square 240x240, ST7789V2,
   QMI8658 6-axis IMU, **no touchscreen**. Since there's no touch input,
@@ -14,17 +14,26 @@ settings page rather than at compile time:
 - **Board 1 — Waveshare ESP32-S3-Touch-LCD-1.28**: round 240x240, GC9A01A,
   CST816S touch. Swipe left/right between pages, optionally combined with
   auto-cycle too.
+- **Board 2 — Waveshare ESP32-S3-Touch-LCD-1.69**: 240x280 (taller, not
+  square), ST7789V2, CST816T touch. Same swipe navigation as board 1.
+  **Important build difference:** this board uses the ESP32-S3's native USB
+  peripheral directly (no separate CH343P-style UART bridge chip like
+  boards 0/1 have), so it needs **USB CDC On Boot: Enabled** in Arduino IDE
+  (or `ARDUINO_USB_CDC_ON_BOOT=1` in PlatformIO) — the *opposite* setting
+  from boards 0 and 1. This is a per-physical-board build setting, not
+  something the firmware itself branches on.
 
 Which pages to show (CPU load/wattage, RAM, SSD, network, temperature),
 cycling behavior, and brightness are all configured through
 `webflasher/settings.html` and pushed to the device over WebSerial right
 after flashing — see "Configure and flash from the browser" below.
 
-Pin mappings for both boards were extracted from Waveshare's schematic PDF
-/ wiki and cross-checked against known ESP32-S3 hardware facts. Board 0 has
-been flash-tested against physical hardware and confirmed working; Board 1
-has not yet been re-tested since this multi-board rewrite (it was working
-prior to the rewrite under the older single-board firmware).
+Pin mappings for all three boards were extracted from Waveshare's schematic
+PDFs / wiki and cross-checked against known ESP32-S3 hardware facts. Board
+0 has been flash-tested against physical hardware and confirmed working
+(including live ZimaBlade data end-to-end). Boards 1 and 2 have not yet
+been flash-tested since the multi-board rewrite (board 1 was working prior
+to that rewrite, under the older single-board firmware).
 
 ```
 zima-tinyscreen/
@@ -42,6 +51,10 @@ zima-tinyscreen/
 `firmware_arduino/zima_tinyscreen/` folder (Arduino requires the sketch
 folder name to match the `.ino` filename). The `firmware/` folder
 described in this section is the PlatformIO version instead.
+
+**Flashing board 2 (1.69")?** Set **USB CDC On Boot: Enabled** in Arduino
+IDE's Tools menu before flashing — boards 0 and 1 need this **Disabled**.
+See the note at the top of `main.cpp` for why.
 
 ```bash
 cd firmware
@@ -69,7 +82,12 @@ You can also flash directly from PlatformIO during development:
 pio run -t upload -t monitor
 ```
 
-## 2. Configure and flash from the browser (optional, once packaged)
+## 2. Configure and flash — two ways
+
+There are two completely separate paths depending on where the board is
+physically plugged in. Pick whichever matches your situation.
+
+### 2a. Board plugged into your computer (browser + WebSerial)
 
 **Use `https://<zima-ip>:8990/settings.html`** as the starting point (not
 port 8989 — since the settings page hands off to the flasher page via a
@@ -92,11 +110,40 @@ The flow:
    currently configured, the device restarts itself once to apply the new
    pin/display setup.
 
-The firmware is a **single universal build** for both supported boards —
-which board to actually use is chosen at runtime from this saved config,
-not baked in at compile time (there's no build server here to compile a
-custom binary per visitor's choices). See `firmware/src/main.cpp`'s
-`BOARD_PROFILES` table if you want to add a third board later.
+### 2b. Board plugged directly into the ZimaBlade/ZimaBoard (no computer needed)
+
+**Use `http://<zima-ip>:8989/onboard.html`** (plain HTTP is fine here —
+this page doesn't use WebSerial at all, it talks to the board through the
+app's own server-side endpoints instead, which have direct USB access to
+whatever's plugged into the ZimaBlade itself).
+
+The flow is the same two steps (flash, then configure), just both handled
+server-side:
+1. **Flash Firmware** — pushes the bundled firmware over serial using
+   `esptool`, running inside the container. Boards with a USB-UART bridge
+   chip (like board 0) flash with a single click. Boards using the
+   ESP32-S3's native USB directly (board 2) may need you to hold that
+   board's BOOT button while this starts — same underlying reason you'd
+   need to for Arduino IDE, just surfaced as an on-page hint if flashing
+   fails for that reason.
+2. **Send Settings to Device** — same config JSON, same NVS persistence,
+   just sent over a direct serial connection the server opens itself
+   instead of through a browser.
+
+Since the stats collector script and any flash/configure operation both
+need exclusive access to the same USB port, `server.py`'s
+`CollectorManager` pauses the collector for the few seconds a flash or
+configure takes, then resumes it automatically afterward.
+
+### Either way
+
+The firmware is a **single universal build** for all supported boards —
+which board to actually use is chosen at runtime from saved config, not
+baked in at compile time. See `firmware/src/main.cpp`'s `BOARD_PROFILES`
+table if you want to add another board later. GitHub Actions now compiles
+this firmware (via PlatformIO) as part of every push to `main`, and bakes
+the resulting binaries into the Docker image — see
+`.github/workflows/docker-build-push.yml`.
 
 ## 3. Run the collector
 
@@ -218,10 +265,11 @@ docker compose up -d
 
 
 
-The container runs two things:
-- the Flask app on port **8989**, serving the flasher UI and firmware files
-- the stats collector in the background, auto-retrying if the ESP32-S3 gets
-  unplugged/replugged or reflashed
+The container runs one Python process (`server.py`) that:
+- serves plain HTTP on **8989** and HTTPS on **8990** (in separate threads)
+- manages the stats collector's lifecycle itself — spawning it, restarting
+  it if it dies, and pausing/resuming it around `/api/flash` and
+  `/api/configure` calls, which need the USB port to themselves
 
 ## Protocol
 
@@ -235,6 +283,26 @@ baud):
 The firmware parses each line with ArduinoJson and keeps the latest values
 in memory; screens redraw on a timer independent of serial arrival, and
 show a "waiting for host / no data" hint if nothing's arrived recently.
+
+A separate command shares the same line-based JSON channel — anything with
+a `"cmd"` field is treated as a command rather than a stats update:
+
+```json
+{"cmd":"set_config","board":1,"pages":["cpu","temp"],"cycle_mode":"auto","cycle_seconds":10,"brightness":80}
+```
+
+The firmware acks with `{"ack":"set_config","ok":true}` and persists the
+config to NVS. Both `webflasher/index.html` (via WebSerial) and
+`server.py`'s `/api/configure` (via direct serial, for on-device setup)
+send this same command — they're just two different transports for the
+same protocol.
+
+`server.py` also exposes:
+- `GET /api/status` — latest stats + whether the collector is currently running
+- `POST /api/configure` — body is the same fields as the `set_config`
+  command above (minus the `cmd` wrapper); used by `onboard.html`
+- `POST /api/flash` — flashes the bundled firmware via `esptool`; used by
+  `onboard.html`
 
 ## Customizing the look
 

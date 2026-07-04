@@ -123,6 +123,10 @@
       This flashes the Tiny Screen dashboard firmware to your ESP32-S3
       board over USB — no software to install.
     </p>
+    <p class="sub" style="margin-top:-14px;">
+      Board plugged straight into your ZimaBlade/ZimaBoard instead of this
+      computer? <a href="onboard.html" style="color:var(--teal);">Use the on-device flasher →</a>
+    </p>
 
     <div class="summary" id="config-summary"></div>
 
@@ -161,6 +165,7 @@
     const boardNames = {
       '0': 'ESP32-S3-LCD-1.3 (square, no touch)',
       '1': 'ESP32-S3-Touch-LCD-1.28 (round, touch)',
+      '2': 'ESP32-S3-Touch-LCD-1.69 (240x280, touch)',
     };
 
     let config = null;

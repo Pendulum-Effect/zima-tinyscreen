@@ -1,0 +1,391 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Tiny Screen — On-Device Setup</title>
+<style>
+  :root {
+    --bg: #0b1418;
+    --panel: #101c22;
+    --teal: #4fd1c5;
+    --teal-dim: #2c7a72;
+    --text: #eaf6f4;
+    --subtext: #8fb0ac;
+    --border: #1e3a3a;
+    --warn: #ffb454;
+    --err: #ff9a7a;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: radial-gradient(circle at 50% 0%, #12232a 0%, var(--bg) 60%);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    color: var(--text);
+    padding: 24px 12px;
+  }
+  .card {
+    width: min(520px, 94vw);
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    padding: 32px 28px;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.4);
+  }
+  .badge {
+    display: inline-block;
+    font-size: 12px;
+    letter-spacing: 0.08em;
+    color: var(--teal);
+    background: rgba(79, 209, 197, 0.1);
+    border: 1px solid var(--teal-dim);
+    padding: 4px 10px;
+    border-radius: 999px;
+    margin-bottom: 14px;
+  }
+  h1 { font-size: 22px; margin: 0 0 6px; }
+  p.sub { color: var(--subtext); margin: 0 0 22px; line-height: 1.5; font-size: 14px; }
+
+  .device-status {
+    display: flex; align-items: center; gap: 10px;
+    padding: 12px 14px;
+    border-radius: 12px;
+    background: #0c1a1f;
+    border: 1px solid var(--border);
+    margin-bottom: 24px;
+    font-size: 13px;
+  }
+  .dot { width: 10px; height: 10px; border-radius: 50%; flex: none; }
+  .dot.ok { background: var(--teal); }
+  .dot.bad { background: var(--err); }
+  .dot.unknown { background: var(--subtext); }
+
+  section { margin-bottom: 26px; }
+  section h2 {
+    font-size: 13px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--subtext);
+    margin: 0 0 12px;
+    font-weight: 600;
+  }
+
+  select {
+    width: 100%;
+    padding: 12px 14px;
+    border-radius: 10px;
+    border: 1px solid var(--border);
+    background: #0c1a1f;
+    color: var(--text);
+    font-size: 14px;
+  }
+
+  .page-list { display: flex; flex-direction: column; gap: 8px; }
+  .page-row {
+    display: flex; align-items: center; gap: 10px;
+    padding: 10px 12px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: #0c1a1f;
+  }
+  .page-row input[type="checkbox"] { width: 18px; height: 18px; accent-color: var(--teal); }
+  .page-row label { font-size: 14px; flex: 1; cursor: pointer; }
+
+  .radio-row { display: flex; gap: 10px; margin-bottom: 10px; }
+  .radio-btn {
+    flex: 1; text-align: center; padding: 10px; border-radius: 10px;
+    border: 1px solid var(--border); background: #0c1a1f; cursor: pointer;
+    font-size: 13px; color: var(--subtext);
+  }
+  .radio-btn.active { border-color: var(--teal); color: var(--teal); background: rgba(79,209,197,0.08); }
+
+  .interval-row { display: none; gap: 8px; }
+  .interval-row.visible { display: flex; }
+  .interval-btn {
+    flex: 1; text-align: center; padding: 8px; border-radius: 8px;
+    border: 1px solid var(--border); background: #0c1a1f; cursor: pointer;
+    font-size: 12px; color: var(--subtext);
+  }
+  .interval-btn.active { border-color: var(--teal); color: var(--teal); background: rgba(79,209,197,0.08); }
+
+  .brightness-row { display: flex; align-items: center; gap: 12px; }
+  input[type="range"] { flex: 1; accent-color: var(--teal); }
+  .brightness-value { font-size: 14px; color: var(--teal); min-width: 42px; text-align: right; }
+
+  .btn {
+    width: 100%; padding: 14px; border-radius: 12px; border: none;
+    background: var(--teal); color: #06201d; font-weight: 700; font-size: 15px;
+    cursor: pointer; margin-top: 6px;
+  }
+  .btn:hover { background: #6fe2d7; }
+  .btn:disabled { background: #2c3f3d; color: #6a827e; cursor: not-allowed; }
+  .btn.secondary { background: transparent; border: 1px solid var(--teal-dim); color: var(--teal); }
+  .btn.secondary:hover { background: rgba(79,209,197,0.08); }
+
+  .divider { height: 1px; background: var(--border); margin: 26px 0; }
+
+  .status-msg { margin-top: 14px; font-size: 13px; text-align: center; min-height: 18px; }
+  .status-msg.ok { color: var(--teal); }
+  .status-msg.err { color: var(--err); }
+  .status-msg.warn { color: var(--warn); }
+
+  pre.log {
+    margin-top: 12px;
+    background: #060d10;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px 12px;
+    font-size: 11px;
+    color: var(--subtext);
+    max-height: 160px;
+    overflow-y: auto;
+    white-space: pre-wrap;
+    display: none;
+  }
+  pre.log.visible { display: block; }
+
+  .nav-link { text-align: center; margin-top: 20px; font-size: 12px; }
+  .nav-link a { color: var(--teal); text-decoration: none; }
+</style>
+</head>
+<body>
+  <div class="card">
+    <span class="badge">TINY SCREEN · ON-DEVICE SETUP</span>
+    <h1>Flash &amp; configure directly</h1>
+    <p class="sub">
+      For a board plugged straight into this ZimaBlade/ZimaBoard — no
+      computer or browser WebSerial needed. The app talks to the board over
+      USB itself.
+    </p>
+
+    <div class="device-status" id="device-status">
+      <span class="dot unknown" id="device-dot"></span>
+      <span id="device-text">Checking for a connected board…</span>
+    </div>
+
+    <h2 style="font-size:13px;text-transform:uppercase;letter-spacing:0.06em;color:var(--subtext);margin:0 0 12px;font-weight:600;">Step 1: Flash firmware</h2>
+    <p class="sub" style="margin-bottom:14px;">
+      Flashes the latest built-in firmware. Boards with a USB-UART bridge
+      chip (most of them) flash with no extra steps. Boards using native
+      USB only (check your board's docs) may need you to hold its BOOT
+      button while this starts.
+    </p>
+    <button class="btn" id="flash-btn">Flash Firmware</button>
+    <p class="status-msg" id="flash-status"></p>
+    <pre class="log" id="flash-log"></pre>
+
+    <div class="divider"></div>
+
+    <h2 style="font-size:13px;text-transform:uppercase;letter-spacing:0.06em;color:var(--subtext);margin:0 0 12px;font-weight:600;">Step 2: Configure</h2>
+
+    <section>
+      <h2>Your screen</h2>
+      <select id="board">
+        <option value="0">ESP32-S3-LCD-1.3 — square, no touch</option>
+        <option value="1">ESP32-S3-Touch-LCD-1.28 — round, touch</option>
+        <option value="2">ESP32-S3-Touch-LCD-1.69 — 240x280, touch</option>
+      </select>
+    </section>
+
+    <section>
+      <h2>Pages to show</h2>
+      <div class="page-list">
+        <div class="page-row">
+          <input type="checkbox" id="page-cpu" value="cpu" checked>
+          <label for="page-cpu">CPU load &amp; wattage</label>
+        </div>
+        <div class="page-row">
+          <input type="checkbox" id="page-ram" value="ram">
+          <label for="page-ram">RAM usage</label>
+        </div>
+        <div class="page-row">
+          <input type="checkbox" id="page-ssd" value="ssd">
+          <label for="page-ssd">SSD usage</label>
+        </div>
+        <div class="page-row">
+          <input type="checkbox" id="page-net" value="net">
+          <label for="page-net">Network throughput</label>
+        </div>
+        <div class="page-row">
+          <input type="checkbox" id="page-temp" value="temp" checked>
+          <label for="page-temp">CPU temperature</label>
+        </div>
+      </div>
+      <p class="status-msg warn" id="page-warn" style="display:none;">Select at least one page.</p>
+    </section>
+
+    <section>
+      <h2>Navigation</h2>
+      <div class="radio-row">
+        <div class="radio-btn active" data-mode="static">Static</div>
+        <div class="radio-btn" data-mode="auto">Auto-cycle</div>
+      </div>
+      <div class="interval-row" id="interval-row">
+        <div class="interval-btn" data-interval="5">5s</div>
+        <div class="interval-btn active" data-interval="10">10s</div>
+        <div class="interval-btn" data-interval="30">30s</div>
+        <div class="interval-btn" data-interval="60">1m</div>
+      </div>
+    </section>
+
+    <section>
+      <h2>Brightness</h2>
+      <div class="brightness-row">
+        <input type="range" id="brightness" min="10" max="100" value="100">
+        <span class="brightness-value" id="brightness-value">100%</span>
+      </div>
+    </section>
+
+    <button class="btn" id="configure-btn">Send Settings to Device</button>
+    <p class="status-msg" id="configure-status"></p>
+
+    <div class="nav-link">
+      Board plugged into your computer instead? <a href="settings.html">Use the browser flasher →</a>
+    </div>
+  </div>
+
+  <script>
+    // --- Device presence check ---
+    async function refreshDeviceStatus() {
+      const dot = document.getElementById('device-dot');
+      const text = document.getElementById('device-text');
+      try {
+        const res = await fetch('/api/status');
+        const data = await res.json();
+        if (data.collector_running) {
+          dot.className = 'dot ok';
+          text.textContent = 'Board connected and streaming data.';
+        } else {
+          dot.className = 'dot bad';
+          text.textContent = 'No board detected yet (or it needs configuring first — that\'s normal before Step 2).';
+        }
+      } catch (e) {
+        dot.className = 'dot bad';
+        text.textContent = 'Could not reach the app\'s status API.';
+      }
+    }
+    refreshDeviceStatus();
+    setInterval(refreshDeviceStatus, 5000);
+
+    // --- Flash ---
+    const flashBtn = document.getElementById('flash-btn');
+    const flashStatus = document.getElementById('flash-status');
+    const flashLog = document.getElementById('flash-log');
+
+    flashBtn.addEventListener('click', async () => {
+      flashBtn.disabled = true;
+      flashStatus.textContent = 'Flashing… this can take up to a minute or two.';
+      flashStatus.className = 'status-msg';
+      flashLog.classList.remove('visible');
+
+      try {
+        const res = await fetch('/api/flash', { method: 'POST' });
+        const data = await res.json();
+        if (data.ok) {
+          flashStatus.textContent = '✓ Flashed successfully. Continue to Step 2.';
+          flashStatus.className = 'status-msg ok';
+        } else {
+          flashStatus.textContent = '✗ ' + (data.hint || data.error || 'Flash failed.');
+          flashStatus.className = 'status-msg err';
+        }
+        if (data.log) {
+          flashLog.textContent = data.log;
+          flashLog.classList.add('visible');
+        }
+      } catch (e) {
+        flashStatus.textContent = '✗ Request failed: ' + e.message;
+        flashStatus.className = 'status-msg err';
+      } finally {
+        flashBtn.disabled = false;
+        refreshDeviceStatus();
+      }
+    });
+
+    // --- Config form state ---
+    const modeButtons = document.querySelectorAll('.radio-btn');
+    const intervalRow = document.getElementById('interval-row');
+    const intervalButtons = document.querySelectorAll('.interval-btn');
+    let cycleMode = 'static';
+    let cycleInterval = 10;
+
+    modeButtons.forEach(btn => {
+      btn.addEventListener('click', () => {
+        modeButtons.forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        cycleMode = btn.dataset.mode;
+        intervalRow.classList.toggle('visible', cycleMode === 'auto');
+      });
+    });
+
+    intervalButtons.forEach(btn => {
+      btn.addEventListener('click', () => {
+        intervalButtons.forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        cycleInterval = parseInt(btn.dataset.interval, 10);
+      });
+    });
+
+    const brightnessSlider = document.getElementById('brightness');
+    const brightnessValue = document.getElementById('brightness-value');
+    brightnessSlider.addEventListener('input', () => {
+      brightnessValue.textContent = brightnessSlider.value + '%';
+    });
+
+    // --- Configure ---
+    const configureBtn = document.getElementById('configure-btn');
+    const configureStatus = document.getElementById('configure-status');
+
+    configureBtn.addEventListener('click', async () => {
+      const pageOrder = ['cpu', 'ram', 'ssd', 'net', 'temp'];
+      const selectedPages = pageOrder.filter(
+        id => document.getElementById('page-' + id).checked
+      );
+      const warn = document.getElementById('page-warn');
+      if (selectedPages.length === 0) {
+        warn.style.display = 'block';
+        return;
+      }
+      warn.style.display = 'none';
+
+      configureBtn.disabled = true;
+      configureStatus.textContent = 'Sending settings…';
+      configureStatus.className = 'status-msg';
+
+      try {
+        const res = await fetch('/api/configure', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            board: parseInt(document.getElementById('board').value, 10),
+            pages: selectedPages,
+            cycle_mode: cycleMode,
+            cycle_seconds: cycleInterval,
+            brightness: parseInt(brightnessSlider.value, 10),
+          }),
+        });
+        const data = await res.json();
+        if (data.ok && data.acked) {
+          configureStatus.textContent = '✓ Settings applied! The device will restart if the board model changed.';
+          configureStatus.className = 'status-msg ok';
+        } else if (data.ok) {
+          configureStatus.textContent = 'Sent, but no confirmation seen — check the screen, it likely still worked.';
+          configureStatus.className = 'status-msg warn';
+        } else {
+          configureStatus.textContent = '✗ ' + (data.error || 'Failed to apply settings.');
+          configureStatus.className = 'status-msg err';
+        }
+      } catch (e) {
+        configureStatus.textContent = '✗ Request failed: ' + e.message;
+        configureStatus.className = 'status-msg err';
+      } finally {
+        configureBtn.disabled = false;
+        refreshDeviceStatus();
+      }
+    });
+  </script>
+</body>
+</html>
