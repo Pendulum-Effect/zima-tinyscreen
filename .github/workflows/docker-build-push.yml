@@ -1,8 +1,14 @@
-name: Build and push Tiny Screen image
+name: Build firmware and push Tiny Screen image
 
-# Builds the app/Dockerfile on GitHub's own runners (which already have
-# Docker installed) and pushes the result to Docker Hub. Nothing needs to
-# be installed on your own machine -- just push to this repo's main branch.
+# Two things happen here, on GitHub's own runners:
+#   1. Compile the ESP32-S3 firmware with PlatformIO and drop the binaries
+#      into webflasher/firmware/ -- used by BOTH the browser WebSerial
+#      flasher (index.html) and the server-side flasher baked into the
+#      Docker image (server.py's /api/flash, for boards plugged directly
+#      into the ZimaBlade instead of a computer).
+#   2. Build app/Dockerfile (which bundles those binaries) and push it to
+#      Docker Hub.
+# Nothing needs to be installed on your own machine -- just push to main.
 
 on:
   push:
@@ -10,11 +16,49 @@ on:
   workflow_dispatch: {}  # lets you trigger a build manually from the Actions tab
 
 jobs:
-  build-and-push:
+  build-firmware:
     runs-on: ubuntu-latest
     steps:
       - name: Check out repo
         uses: actions/checkout@v4
+
+      - name: Set up Python (for PlatformIO)
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install PlatformIO
+        run: pip install platformio
+
+      - name: Build firmware
+        working-directory: firmware
+        run: pio run
+
+      - name: Stage firmware binaries for the Docker build
+        run: |
+          mkdir -p webflasher/firmware
+          cp firmware/.pio/build/esp32-s3-tinyscreen/bootloader.bin webflasher/firmware/
+          cp firmware/.pio/build/esp32-s3-tinyscreen/partitions.bin webflasher/firmware/
+          cp firmware/.pio/build/esp32-s3-tinyscreen/firmware.bin webflasher/firmware/
+
+      - name: Upload firmware artifact for the next job
+        uses: actions/upload-artifact@v4
+        with:
+          name: firmware-bins
+          path: webflasher/firmware/
+
+  build-and-push:
+    needs: build-firmware
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v4
+
+      - name: Download firmware artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: firmware-bins
+          path: webflasher/firmware
 
       - name: Log in to Docker Hub
         uses: docker/login-action@v3
@@ -33,3 +77,4 @@ jobs:
           platforms: linux/amd64   # ZimaBoard/ZimaBlade are x86
           push: true
           tags: ${{ secrets.DOCKERHUB_USERNAME }}/tinyscreen-dashboard:latest
+
