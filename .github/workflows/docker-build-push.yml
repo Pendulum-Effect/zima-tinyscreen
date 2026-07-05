@@ -1,11 +1,14 @@
 name: Build firmware and push Tiny Screen image
 
 # Two things happen here, on GitHub's own runners:
-#   1. Compile the ESP32-S3 firmware with PlatformIO and drop the binaries
-#      into webflasher/firmware/ -- used by BOTH the browser WebSerial
-#      flasher (index.html) and the server-side flasher baked into the
-#      Docker image (server.py's /api/flash, for boards plugged directly
-#      into the ZimaBlade instead of a computer).
+#   1. Compile the ESP32-S3 firmware with PlatformIO -- TWO variants, since
+#      board 2 needs the opposite ARDUINO_USB_CDC_ON_BOOT setting from
+#      boards 0/1 (a compile-time flag, not something runtime config can
+#      change -- see firmware/platformio.ini) -- and drop both sets of
+#      binaries into webflasher/firmware/{bridge,native}/. Used by BOTH the
+#      browser WebSerial flasher (index.html) and the server-side flasher
+#      baked into the Docker image (server.py's /api/flash, for boards
+#      plugged directly into the ZimaBlade instead of a computer).
 #   2. Build app/Dockerfile (which bundles those binaries) and push it to
 #      Docker Hub.
 # Nothing needs to be installed on your own machine -- just push to main.
@@ -30,16 +33,19 @@ jobs:
       - name: Install PlatformIO
         run: pip install platformio
 
-      - name: Build firmware
+      - name: Build firmware (both bridge and native-USB variants)
         working-directory: firmware
         run: pio run
 
       - name: Stage firmware binaries for the Docker build
         run: |
-          mkdir -p webflasher/firmware
-          cp firmware/.pio/build/esp32-s3-tinyscreen/bootloader.bin webflasher/firmware/
-          cp firmware/.pio/build/esp32-s3-tinyscreen/partitions.bin webflasher/firmware/
-          cp firmware/.pio/build/esp32-s3-tinyscreen/firmware.bin webflasher/firmware/
+          mkdir -p webflasher/firmware/bridge webflasher/firmware/native
+          cp firmware/.pio/build/esp32-s3-tinyscreen-bridge/bootloader.bin webflasher/firmware/bridge/
+          cp firmware/.pio/build/esp32-s3-tinyscreen-bridge/partitions.bin webflasher/firmware/bridge/
+          cp firmware/.pio/build/esp32-s3-tinyscreen-bridge/firmware.bin webflasher/firmware/bridge/
+          cp firmware/.pio/build/esp32-s3-tinyscreen-native/bootloader.bin webflasher/firmware/native/
+          cp firmware/.pio/build/esp32-s3-tinyscreen-native/partitions.bin webflasher/firmware/native/
+          cp firmware/.pio/build/esp32-s3-tinyscreen-native/firmware.bin webflasher/firmware/native/
 
       - name: Upload firmware artifact for the next job
         uses: actions/upload-artifact@v4
@@ -77,4 +83,3 @@ jobs:
           platforms: linux/amd64   # ZimaBoard/ZimaBlade are x86
           push: true
           tags: ${{ secrets.DOCKERHUB_USERNAME }}/tinyscreen-dashboard:latest
-
