@@ -306,8 +306,17 @@ def autodetect_port() -> str:
     """Look for a serial device that's likely the ESP32-S3 (CH343 bridge)."""
     patterns = ["/dev/ttyACM*", "/dev/ttyUSB*", "/dev/serial/by-id/*"]
     for pattern in patterns:
-        matches = sorted(glob.glob(pattern))
+        matches = glob.glob(pattern)
         if matches:
+            # Prefer the most recently created/modified device node, not
+            # alphabetical order -- if a board reset (which this project
+            # triggers itself, both after flashing and after applying new
+            # settings) leaves a stale device file around momentarily
+            # alongside a freshly re-enumerated one, alphabetical sort
+            # could silently pick the dead one (e.g. ttyACM0 over the
+            # live ttyACM1), and writes to it may not raise an error at
+            # all -- they just never reach anything listening.
+            matches.sort(key=lambda p: os.path.getmtime(p), reverse=True)
             return matches[0]
     raise RuntimeError(
         "No serial device found. Pass --port explicitly, e.g. --port /dev/ttyACM0"
@@ -321,8 +330,8 @@ def open_serial(port: str, baud: int) -> "serial.Serial":
 
 
 def try_reconnect(args):
-    """Attempt one reconnect and return the new Serial object, or None on
-    any failure. Deliberately never raises: a failed reconnect (e.g. a
+    """Attempt one reconnect and return (Serial, port_path), or (None, None)
+    on any failure. Deliberately never raises: a failed reconnect (e.g. a
     native-USB board that's mid-re-enumeration after a brief hiccup)
     should just be retried again next cycle, not crash the whole
     collector. This is what turned a single transient [Errno 5] I/O error
@@ -333,11 +342,11 @@ def try_reconnect(args):
     try:
         port = args.port or autodetect_port()
         ser = open_serial(port, args.baud)
-        print("Reconnected.", file=sys.stderr)
-        return ser
+        print(f"Reconnected on {port}.", file=sys.stderr)
+        return ser, port
     except Exception as e:
         print(f"Reconnect attempt failed ({e}); will retry next cycle.", file=sys.stderr)
-        return None
+        return None, None
 
 
 # --------------------------------------------------------------------------
@@ -374,10 +383,11 @@ def main():
     net_meter = NetworkMeter(args.iface)
 
     ser = None
+    current_port = None
     if not args.print_only:
-        port = args.port or autodetect_port()
-        print(f"Opening serial port {port} @ {args.baud} baud...")
-        ser = open_serial(port, args.baud)
+        current_port = args.port or autodetect_port()
+        print(f"Opening serial port {current_port} @ {args.baud} baud...")
+        ser = open_serial(current_port, args.baud)
         time.sleep(2)  # let the ESP32-S3 finish booting / reset after DTR toggle
 
     print("Streaming stats. Ctrl+C to stop.")
@@ -431,7 +441,30 @@ def main():
                 print(payload, end="")
             else:
                 if ser is None:
-                    ser = try_reconnect(args)
+                    ser, current_port = try_reconnect(args)
+                elif not args.port:
+                    # Only relevant when auto-detecting (not pinned to an
+                    # explicit --port): cheaply re-check that the device
+                    # path we're connected to is still the one autodetect
+                    # would currently pick. This board resets itself both
+                    # after flashing and after applying new settings, and
+                    # a reset can cause native-USB re-enumeration under a
+                    # DIFFERENT path (e.g. ttyACM0 -> ttyACM1) -- writes to
+                    # the old, now-dead path may not raise an error at
+                    # all, they just never reach anything listening.
+                    try:
+                        detected = autodetect_port()
+                    except RuntimeError:
+                        detected = None
+                    if detected and detected != current_port:
+                        print(f"Device path changed ({current_port} -> {detected}); reconnecting...",
+                              file=sys.stderr)
+                        try:
+                            ser.close()
+                        except Exception:
+                            pass
+                        ser, current_port = try_reconnect(args)
+
                 if ser is not None:
                     try:
                         ser.write(payload.encode("utf-8"))
