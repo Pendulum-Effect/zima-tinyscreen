@@ -594,14 +594,9 @@ void handleSetConfig(JsonDocument &doc) {
 }
 
 void handleLine(const String &line) {
-  Serial.print("[debug] RX line: ");
-  Serial.println(line);
-
   JsonDocument doc;
   DeserializationError err = deserializeJson(doc, line);
   if (err) {
-    Serial.print("[debug] JSON parse error: ");
-    Serial.println(err.c_str());
     return;
   }
 
@@ -649,17 +644,12 @@ void setup() {
   Serial.begin(115200);
   delay(500); // give native USB CDC a moment to enumerate before printing
   loadConfig();
-  Serial.print("[debug] BOOT OK, configured=");
-  Serial.print(config.configured ? "true" : "false");
-  Serial.print(", boardId=");
-  Serial.println(config.boardId);
   if (config.configured) {
     // Only initialize display/backlight pins once we actually know which
     // physical board this is -- an unconfigured device stays fully
     // hands-off on GPIO (see handleSetConfig() for why: board 0's default
     // pins can collide with another board's USB data lines).
     initDisplay();
-    Serial.println("[debug] initDisplay() completed");
   }
   serialBuf.reserve(256);
 }
