@@ -112,7 +112,18 @@ void loadConfig() {
     strcpy(config.pages[0], "temp");
     config.numPages = 1;
   }
-  if (config.boardId < 0 || config.boardId >= NUM_BOARD_PROFILES) config.boardId = 0;
+  if (config.boardId < 0 || config.boardId >= NUM_BOARD_PROFILES) {
+    // A saved boardId that no longer exists (e.g. the board list changed
+    // between firmware versions) is a sign this NVS data is stale, not
+    // just a number to clamp. Silently falling back to board 0's pins
+    // while still treating the device as "configured" is exactly what
+    // caused a real GPIO conflict once already (board 0's default
+    // backlight pin collided with another board's native USB data line).
+    // Go back to the safe hands-off state instead and wait for a fresh,
+    // deliberate set_config command.
+    config.boardId = 0;
+    config.configured = false;
+  }
 }
 
 void saveConfig() {
