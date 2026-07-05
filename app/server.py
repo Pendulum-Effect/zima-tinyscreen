@@ -202,9 +202,9 @@ def api_configure():
 
 # Which firmware variant each board needs -- see platformio.ini and
 # main.cpp's top-of-file note for why this split exists (ARDUINO_USB_CDC_ON_BOOT
-# is a compile-time flag, so board 2's opposite USB mode needs a fully
+# is a compile-time flag, so board 1's opposite USB mode needs a fully
 # separate binary, not just different runtime config).
-NATIVE_USB_BOARDS = {2}
+NATIVE_USB_BOARDS = {1}
 
 
 def firmware_dir_for_board(board_id):

@@ -169,12 +169,11 @@
 
     const boardNames = {
       '0': 'ESP32-S3-LCD-1.3 (square, no touch)',
-      '1': 'ESP32-S3-Touch-LCD-1.28 (round, touch)',
-      '2': 'ESP32-S3-Touch-LCD-1.69 (240x280, touch)',
+      '1': 'ESP32-S3-Touch-LCD-1.69 (240x280, touch)',
     };
     // Which firmware variant each board needs -- see platformio.ini and
     // main.cpp's top-of-file note for why this split exists.
-    const NATIVE_USB_BOARDS = [2];
+    const NATIVE_USB_BOARDS = [1];
 
     function applyManifestForBoard(boardId) {
       const isNative = NATIVE_USB_BOARDS.includes(boardId);

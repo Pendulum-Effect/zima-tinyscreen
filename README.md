@@ -6,34 +6,32 @@ them on a small display. Packaged as a one-click ZimaOS app that also hosts
 a browser-based settings page + WebSerial firmware flasher — no toolchain
 required to set up the ESP32-S3.
 
-**One firmware build supports three boards**, chosen at runtime via a
+**One firmware build supports two boards**, chosen at runtime via a
 settings page rather than at compile time:
 - **Board 0 — Waveshare ESP32-S3-LCD-1.3**: square 240x240, ST7789V2,
   QMI8658 6-axis IMU, **no touchscreen**. Since there's no touch input,
   navigation is auto-cycle-on-a-timer or a single static page.
-- **Board 1 — Waveshare ESP32-S3-Touch-LCD-1.28**: round 240x240, GC9A01A,
-  CST816S touch. Swipe left/right between pages, optionally combined with
-  auto-cycle too.
-- **Board 2 — Waveshare ESP32-S3-Touch-LCD-1.69**: 240x280 (taller, not
-  square), ST7789V2, CST816T touch. Same swipe navigation as board 1.
+- **Board 1 — Waveshare ESP32-S3-Touch-LCD-1.69**: 240x280 (taller, not
+  square), ST7789V2, CST816T touch. Swipe left/right between pages,
+  optionally combined with auto-cycle too.
   **Important build difference:** this board uses the ESP32-S3's native USB
   peripheral directly (no separate CH343P-style UART bridge chip like
-  boards 0/1 have), so it needs **USB CDC On Boot: Enabled** in Arduino IDE
+  board 0 has), so it needs **USB CDC On Boot: Enabled** in Arduino IDE
   (or `ARDUINO_USB_CDC_ON_BOOT=1` in PlatformIO) — the *opposite* setting
-  from boards 0 and 1. This is a per-physical-board build setting, not
-  something the firmware itself branches on.
+  from board 0. This is a per-physical-board build setting, not something
+  the firmware itself branches on.
 
 Which pages to show (CPU load/wattage, RAM, SSD, network, temperature),
 cycling behavior, and brightness are all configured through
 `webflasher/settings.html` and pushed to the device over WebSerial right
 after flashing — see "Configure and flash from the browser" below.
 
-Pin mappings for all three boards were extracted from Waveshare's schematic
-PDFs / wiki and cross-checked against known ESP32-S3 hardware facts. Board
-0 has been flash-tested against physical hardware and confirmed working
-(including live ZimaBlade data end-to-end). Boards 1 and 2 have not yet
-been flash-tested since the multi-board rewrite (board 1 was working prior
-to that rewrite, under the older single-board firmware).
+Pin mappings for both boards were extracted from Waveshare's schematic
+PDFs / wiki and cross-checked against known ESP32-S3 hardware facts. Both
+boards have been flash-tested against physical hardware and confirmed
+working end-to-end (live ZimaBlade data, multi-page carousel, auto-cycle,
+brightness, and — for board 1 — touch swipe navigation), including via
+the fully server-side `onboard.html` flow with no computer involved.
 
 ```
 zima-tinyscreen/
@@ -52,8 +50,8 @@ zima-tinyscreen/
 folder name to match the `.ino` filename). The `firmware/` folder
 described in this section is the PlatformIO version instead.
 
-**Flashing board 2 (1.69")?** Set **USB CDC On Boot: Enabled** in Arduino
-IDE's Tools menu before flashing — boards 0 and 1 need this **Disabled**.
+**Flashing board 1 (1.69")?** Set **USB CDC On Boot: Enabled** in Arduino
+IDE's Tools menu before flashing — board 0 needs this **Disabled**.
 See the note at the top of `main.cpp` for why.
 
 ```bash
@@ -64,8 +62,8 @@ pio run                        # builds BOTH environments (bridge + native)
 
 This produces two sets of binaries:
 ```
-.pio/build/esp32-s3-tinyscreen-bridge/{bootloader,partitions,firmware}.bin   # boards 0/1
-.pio/build/esp32-s3-tinyscreen-native/{bootloader,partitions,firmware}.bin   # board 2
+.pio/build/esp32-s3-tinyscreen-bridge/{bootloader,partitions,firmware}.bin   # board 0
+.pio/build/esp32-s3-tinyscreen-native/{bootloader,partitions,firmware}.bin   # board 1
 ```
 
 Copy each set into its matching `webflasher/firmware/` subfolder (create
@@ -125,7 +123,7 @@ server-side:
 1. **Flash Firmware** — pushes the bundled firmware over serial using
    `esptool`, running inside the container. Boards with a USB-UART bridge
    chip (like board 0) flash with a single click. Boards using the
-   ESP32-S3's native USB directly (board 2) may need you to hold that
+   ESP32-S3's native USB directly (board 1) may need you to hold that
    board's BOOT button while this starts — same underlying reason you'd
    need to for Arduino IDE, just surfaced as an on-page hint if flashing
    fails for that reason.
@@ -145,8 +143,8 @@ brightness* to use is chosen at runtime from saved config (all boards
 share this) — see `firmware/src/main.cpp`'s `BOARD_PROFILES` table if you
 want to add another board later. But which *build* to flash is not
 runtime-configurable: `ARDUINO_USB_CDC_ON_BOOT` (does this board have a
-USB-UART bridge chip, or native USB?) is a compile-time flag, so board 2
-needs an entirely separate compiled binary from boards 0/1. GitHub Actions
+USB-UART bridge chip, or native USB?) is a compile-time flag, so board 1
+needs an entirely separate compiled binary from board 0. GitHub Actions
 compiles **both** variants (`firmware/platformio.ini` defines two
 environments) on every push, and bakes both into the Docker image — see
 `.github/workflows/docker-build-push.yml`. Both the browser flasher

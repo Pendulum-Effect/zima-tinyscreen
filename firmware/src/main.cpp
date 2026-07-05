@@ -1,7 +1,6 @@
 // Tiny Screen firmware -- supports:
 //   Board 0: Waveshare ESP32-S3-LCD-1.3        (square 240x240, ST7789V2, no touch)
-//   Board 1: Waveshare ESP32-S3-Touch-LCD-1.28 (round  240x240, GC9A01A, CST816S touch)
-//   Board 2: Waveshare ESP32-S3-Touch-LCD-1.69 (240x280, ST7789V2, CST816T touch)
+//   Board 1: Waveshare ESP32-S3-Touch-LCD-1.69 (240x280, ST7789V2, CST816T touch)
 //
 // This is ONE firmware binary for all boards. Which board, which stat
 // pages to show, whether to auto-cycle through them, and screen brightness
@@ -10,11 +9,11 @@
 // applied immediately (or after a quick self-restart if the board model
 // itself changed, since that changes which GPIO pins get initialized).
 //
-// IMPORTANT: Board 2 (1.69") uses the ESP32-S3's native USB peripheral
-// directly (no separate CH343P-style UART bridge chip like boards 0/1
-// have), so it needs "USB CDC On Boot: Enabled" in Arduino IDE (or
+// IMPORTANT: Board 1 (1.69") uses the ESP32-S3's native USB peripheral
+// directly (no separate CH343P-style UART bridge chip like board 0 has),
+// so it needs "USB CDC On Boot: Enabled" in Arduino IDE (or
 // ARDUINO_USB_CDC_ON_BOOT=1 in PlatformIO) -- the OPPOSITE setting from
-// boards 0 and 1. This is a build-time setting per physical board you're
+// board 0. This is a build-time setting per physical board you're
 // currently flashing, not something this source file controls.
 //
 // See webflasher/settings.html for the browser-side configurator that
@@ -32,10 +31,10 @@
 #include <Arduino_GFX_Library.h>
 #include <ArduinoJson.h>
 
-// Note: screen dimensions are NOT fixed -- board 2 (1.69") is 240x280,
-// taller than the two 240x240 boards. See screenW/screenH globals, set
-// from the active BoardProfile in initDisplay(), and the SY() helper
-// below used to scale the Y-axis layout proportionally across boards.
+// Note: screen dimensions are NOT fixed -- board 1 (1.69") is 240x280,
+// taller than board 0's 240x240. See screenW/screenH globals, set from
+// the active BoardProfile in initDisplay(), and the SY() helper below
+// used to scale the Y-axis layout proportionally across boards.
 
 // ---------------------------------------------------------------------
 // Board profiles -- pin maps for each supported physical board
@@ -55,21 +54,17 @@ const BoardProfile BOARD_PROFILES[] = {
   { "ESP32-S3-LCD-1.3 (square, no touch)", false, 240, 240,
     /*cs*/39, /*dc*/38, /*sck*/40, /*mosi*/41, /*rst*/42, /*bl*/20,
     /*sda*/-1, /*scl*/-1, /*tprst*/-1, /*gc9a01*/false },
-  // Board 1: ESP32-S3-Touch-LCD-1.28 (round, touch) -- pins from Waveshare wiki
-  { "ESP32-S3-Touch-LCD-1.28 (round, touch)", true, 240, 240,
-    /*cs*/9, /*dc*/8, /*sck*/10, /*mosi*/11, /*rst*/14, /*bl*/2,
-    /*sda*/6, /*scl*/7, /*tprst*/13, /*gc9a01*/true },
-  // Board 2: ESP32-S3-Touch-LCD-1.69 (240x280, touch) -- pins from schematic PDF.
+  // Board 1: ESP32-S3-Touch-LCD-1.69 (240x280, touch) -- pins from schematic PDF.
   // Note: this board uses the ESP32-S3's NATIVE USB peripheral (no separate
   // CH343P-style UART bridge chip), so it needs "USB CDC On Boot: Enabled"
   // in Arduino IDE / ARDUINO_USB_CDC_ON_BOOT=1 in PlatformIO -- the OPPOSITE
-  // setting from boards 0 and 1.
+  // setting from board 0.
   { "ESP32-S3-Touch-LCD-1.69 (240x280, touch)", true, 240, 280,
     /*cs*/5, /*dc*/4, /*sck*/6, /*mosi*/7, /*rst*/8, /*bl*/15,
     /*sda*/11, /*scl*/10, /*tprst*/13, /*gc9a01*/false },
 };
 const int NUM_BOARD_PROFILES = sizeof(BOARD_PROFILES) / sizeof(BOARD_PROFILES[0]);
-#define CST816S_ADDR 0x15
+#define TOUCH_I2C_ADDR 0x15  // shared address convention for CST816-family touch chips
 
 // ---------------------------------------------------------------------
 // Config (persisted to NVS via Preferences)
@@ -153,7 +148,7 @@ int screenH = 240;
 
 // Layout constants below were tuned against a 240x240 reference screen.
 // SY() scales a Y-coordinate proportionally for taller/shorter screens
-// (e.g. board 2's 240x280 panel) so the layout doesn't just run off the
+// (e.g. board 1's 240x280 panel) so the layout doesn't just run off the
 // bottom or leave a big gap -- X doesn't need this since all boards so
 // far share the same 240 width.
 int SY(int y) { return y * screenH / 240; }
@@ -262,9 +257,10 @@ bool haveData = false;
 int currentPageIdx = 0;              // index into config.pages
 unsigned long lastDrawMs = 0;
 unsigned long lastCycleMs = 0;
-unsigned long lastGestureMs = 0;
+unsigned long lastGesturePollMs = 0;
+int lastRawGesture = 0;              // GESTURE_NONE -- see loop()'s edge-detection comment
 const unsigned long FRAME_INTERVAL_MS = 200;
-const unsigned long GESTURE_DEBOUNCE_MS = 350;
+const unsigned long GESTURE_POLL_MS = 50; // how often to check the touch chip's gesture register
 
 void advancePage(int dir) {
   if (config.numPages <= 1) return;
@@ -434,10 +430,10 @@ void drawCurrentScreen() {
 #define GESTURE_RIGHT 2
 
 int readTouchGesture() {
-  Wire.beginTransmission(CST816S_ADDR);
+  Wire.beginTransmission(TOUCH_I2C_ADDR);
   Wire.write(0x01);
   if (Wire.endTransmission(false) != 0) return GESTURE_NONE;
-  if (Wire.requestFrom(CST816S_ADDR, 1) != 1) return GESTURE_NONE;
+  if (Wire.requestFrom(TOUCH_I2C_ADDR, 1) != 1) return GESTURE_NONE;
   uint8_t gid = Wire.read();
   if (gid == 0x03) return GESTURE_LEFT;
   if (gid == 0x04) return GESTURE_RIGHT;
@@ -595,10 +591,22 @@ void loop() {
 
   unsigned long now = millis();
 
-  if (BOARD_PROFILES[config.boardId].hasTouch && now - lastGestureMs > GESTURE_DEBOUNCE_MS) {
+  if (BOARD_PROFILES[config.boardId].hasTouch && now - lastGesturePollMs > GESTURE_POLL_MS) {
+    lastGesturePollMs = now;
     int g = readTouchGesture();
-    if (g == GESTURE_LEFT) { advancePage(1); lastGestureMs = now; }
-    else if (g == GESTURE_RIGHT) { advancePage(-1); lastGestureMs = now; }
+    // Edge-triggered on purpose: the touch chip's gesture register holds
+    // its last value for a stretch of time after a swipe completes (it's
+    // a level, not a momentary pulse). Acting on every non-empty read
+    // caused a single physical swipe to sometimes get counted twice (or
+    // more) across consecutive polls -- this looked like "skipped pages".
+    // Only act when the value actually CHANGES from what we saw last
+    // time, and require it to go back to GESTURE_NONE before counting
+    // another swipe, so one physical gesture only ever triggers once.
+    if (g != GESTURE_NONE && g != lastRawGesture) {
+      if (g == GESTURE_LEFT) advancePage(1);
+      else if (g == GESTURE_RIGHT) advancePage(-1);
+    }
+    lastRawGesture = g;
   }
 
   if (config.autoCycle && now - lastCycleMs > (unsigned long)config.cycleSeconds * 1000UL) {

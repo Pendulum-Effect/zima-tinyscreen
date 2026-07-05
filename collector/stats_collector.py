@@ -4,7 +4,7 @@ Tiny Screen stats collector
 ----------------------------
 Collects vital system stats from a ZimaBlade / ZimaBoard (or any Linux box)
 and streams them as line-delimited JSON to an ESP32-S3 over USB serial,
-which renders the info on a 1.28" round touch display.
+which renders the info on a small ESP32-S3-attached display.
 
 Run:
     python3 stats_collector.py --port /dev/ttyACM0
