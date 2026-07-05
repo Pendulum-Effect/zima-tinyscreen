@@ -14,21 +14,20 @@ services:
     pull_policy: always  # always re-pull, even for the same :latest tag
     container_name: tinyscreen-dashboard
     restart: unless-stopped
-    ports:
-      - target: 8989
-        published: "8989"
-        protocol: tcp
-      # HTTPS listener -- required for the WebSerial flasher page, since
-      # browsers only allow the Web Serial API on HTTPS or localhost. Plain
-      # HTTP on 8989 above still works fine for the /api/status check and
-      # everything else.
-      - target: 8990
-        published: "8990"
-        protocol: tcp
+    # Host networking, not the default bridge -- the container needs to see
+    # the ZimaBlade's REAL network interfaces to report accurate throughput.
+    # Under bridge networking (the previous setup) the collector could only
+    # see the container's own near-zero-traffic virtual interface, which is
+    # why network usage was stuck at 0. With host networking, binding to
+    # 0.0.0.0:8989/8990 inside the container is directly reachable at the
+    # ZimaBlade's own IP on those ports -- no ports: mapping needed (and
+    # Compose ignores/warns on one if present alongside network_mode: host).
+    network_mode: host
     environment:
       - TINYSCREEN_STATUS_FILE=/tmp/tinyscreen_status.json
       # Set this if auto-detect picks the wrong serial device, e.g. /dev/ttyACM0
       - TINYSCREEN_SERIAL_PORT=
+      - TINYSCREEN_HOST_ROOT=/mnt/host_root
 
     # The ESP32-S3 shows up as a serial device node, e.g. /dev/ttyACM0
     # (Linux CDC-ACM driver, matching the CH343P/native-USB-CDC bridge
@@ -41,6 +40,15 @@ services:
       - type: bind
         source: /dev
         target: /dev
+      # Read-only view of the host's real root filesystem -- needed so the
+      # collector can report accurate MMC/storage-pool stats (measuring the
+      # container's own overlay filesystem would report the wrong numbers)
+      # and so NAS-pool auto-detection can see any additional drives ZimaOS
+      # has mounted, which the container otherwise has zero visibility into.
+      - type: bind
+        source: /
+        target: /mnt/host_root
+        read_only: true
       # Persists the self-signed HTTPS cert across restarts, so you don't
       # get a fresh "untrusted certificate" browser warning every reboot.
       # Long-form bind syntax matches ZimaOS/CasaOS's own documented
@@ -59,7 +67,7 @@ services:
       author: you
       category: Utilities
       description:
-        en_us: "Streams live CPU/RAM/SSD/network/temperature stats from this ZimaOS device to a small ESP32-S3 round display, and hosts a one-click WebSerial flasher for the ESP32-S3 firmware."
+        en_us: "Streams live CPU/RAM/MMC/NAS/network/temperature stats from this ZimaOS device to a small ESP32-S3 round display, and hosts a one-click WebSerial flasher for the ESP32-S3 firmware."
       developer: you
       icon: https://raw.githubusercontent.com/your-repo/tinyscreen/main/icon.png
       screenshot_link: []

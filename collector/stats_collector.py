@@ -11,6 +11,13 @@ Run:
 
 If --port is omitted, the script tries to auto-detect a likely ESP32-S3
 serial device.
+
+When run inside the packaged Docker container, TINYSCREEN_HOST_ROOT points
+at a read-only bind-mount of the ZimaOS host's real root filesystem (see
+app/docker-compose.yml) -- needed because measuring the container's own
+overlay filesystem instead of the actual host would report the wrong MMC
+numbers, and because the container otherwise has zero visibility into any
+extra SATA/PCIe drives ZimaOS has pooled together for NAS storage.
 """
 
 import argparse
@@ -43,6 +50,14 @@ NET_IFACE = None  # None = sum of all interfaces except loopback
 RAPL_GLOB = "/sys/class/powercap/intel-rapl:0/energy_uj"
 HWMON_TEMP_LABELS = ("Package id 0", "Tctl", "Tdie", "CPU")
 
+# Filesystem types that never represent real, user-relevant storage --
+# excluded from NAS-pool auto-detection.
+VIRTUAL_FSTYPES = {
+    "tmpfs", "devtmpfs", "overlay", "squashfs", "proc", "sysfs", "cgroup",
+    "cgroup2", "devpts", "mqueue", "debugfs", "tracefs", "securityfs",
+    "pstore", "bpf", "autofs", "binfmt_misc", "fusectl", "configfs", "",
+}
+
 
 # --------------------------------------------------------------------------
 # Data model
@@ -56,10 +71,13 @@ class Stats:
     cpu_watts: float
     ram_total_gb: float
     ram_pct: float
-    ssd_total_gb: float
-    ssd_pct: float
+    mmc_total_gb: float
+    mmc_pct: float
     net_rx_mbps: float
     net_tx_mbps: float
+    nas_available: bool
+    nas_total_gb: float
+    nas_pct: float
 
 
 # --------------------------------------------------------------------------
@@ -135,6 +153,14 @@ class RaplPowerMeter:
 
 
 class NetworkMeter:
+    """Reads host network throughput.
+
+    Requires the container to run with network_mode: host (see
+    app/docker-compose.yml) -- under the default bridge networking, this
+    only ever sees the container's own near-zero-traffic virtual
+    interface, not the ZimaBlade's real network activity.
+    """
+
     def __init__(self, iface=None):
         self.iface = iface
         self._last = None
@@ -167,9 +193,82 @@ def get_ram():
     return round(vm.total / (1024 ** 3), 1), round(vm.percent, 1)
 
 
-def get_ssd(path="/"):
+def _decimal_gb(num_bytes: float) -> float:
+    """Decimal GB (1e9), matching how ZimaOS's own dashboard (and most
+    consumer storage tools) display capacity -- not binary GiB (2^30),
+    which is what a naive /1024**3 conversion gives and reads as a smaller,
+    confusingly-mismatched number for the same physical disk."""
+    return round(num_bytes / 1_000_000_000, 1)
+
+
+def get_mmc(path="/"):
+    """Root/OS storage usage. `path` should be the host's root filesystem
+    as seen by this process -- either the real "/" (running directly on
+    the ZimaBlade) or TINYSCREEN_HOST_ROOT's bind-mount (running in the
+    packaged container, where "/" is the container's own overlay
+    filesystem, not the host's)."""
     du = psutil.disk_usage(path)
-    return round(du.total / (1024 ** 3), 1), round(du.percent, 1)
+    return _decimal_gb(du.total), round(du.percent, 1)
+
+
+def get_root_device(path="/"):
+    """The block device backing `path`, used to exclude it from NAS-pool
+    detection below."""
+    best_match = None
+    for part in psutil.disk_partitions(all=False):
+        if path == part.mountpoint or path.rstrip("/") == part.mountpoint.rstrip("/"):
+            return part.device
+        if path.startswith(part.mountpoint) and (
+            best_match is None or len(part.mountpoint) > len(best_match[1])
+        ):
+            best_match = (part.device, part.mountpoint)
+    return best_match[0] if best_match else None
+
+
+def get_nas_pools(root_path="/", host_root_prefix=None):
+    """Best-effort auto-detection of additional storage (SATA/PCIe drives
+    ZimaOS has pooled together for NAS use): any mounted, real filesystem
+    that isn't the root/MMC device. This is a heuristic, not something
+    that specifically understands ZimaOS's own pooling mechanism (btrfs/
+    mergerfs etc.) -- if it doesn't correctly find a real pool, the exact
+    matching condition below may need adjusting once tested against real
+    ZimaOS storage-pool mount points.
+
+    Returns (available: bool, total_gb: float, pct: float).
+    """
+    root_device = get_root_device(root_path)
+    total = 0
+    used = 0
+    found = False
+    seen_devices = set()
+
+    for part in psutil.disk_partitions(all=False):
+        if part.fstype in VIRTUAL_FSTYPES:
+            continue
+        if part.device == root_device:
+            continue
+        # When running in the container, only consider mounts that came
+        # from the host bind-mount (real host filesystems), not anything
+        # inside the container's own overlay.
+        if host_root_prefix and not part.mountpoint.startswith(host_root_prefix):
+            continue
+        if host_root_prefix and part.mountpoint.rstrip("/") == host_root_prefix.rstrip("/"):
+            continue  # that's the host root itself, not an extra pool
+        if part.device in seen_devices:
+            continue
+        seen_devices.add(part.device)
+        try:
+            du = psutil.disk_usage(part.mountpoint)
+        except (PermissionError, FileNotFoundError, OSError):
+            continue
+        total += du.total
+        used += du.used
+        found = True
+
+    if not found or total == 0:
+        return False, 0.0, 0.0
+    pct = round((used / total) * 100, 1)
+    return True, _decimal_gb(total), pct
 
 
 # --------------------------------------------------------------------------
@@ -210,12 +309,16 @@ def main():
     # properly instead of leaving it locked.
     signal.signal(signal.SIGTERM, _handle_sigterm)
 
+    host_root = os.environ.get("TINYSCREEN_HOST_ROOT", "").rstrip("/") or None
+    default_disk_path = host_root if host_root else "/"
+
     parser = argparse.ArgumentParser(description="Tiny Screen stats collector")
     parser.add_argument("--port", help="Serial port for the ESP32-S3 (e.g. /dev/ttyACM0)")
     parser.add_argument("--baud", type=int, default=DEFAULT_BAUD)
     parser.add_argument("--interval", type=float, default=POLL_INTERVAL_SEC)
     parser.add_argument("--iface", default=NET_IFACE, help="Limit network stats to one interface")
-    parser.add_argument("--disk-path", default="/", help="Path/mount used for SSD usage stats")
+    parser.add_argument("--disk-path", default=default_disk_path,
+                         help="Path/mount used for MMC (root storage) usage stats")
     parser.add_argument("--print-only", action="store_true", help="Print JSON instead of sending over serial")
     args = parser.parse_args()
 
@@ -239,7 +342,8 @@ def main():
             cpu_temp = get_cpu_temp_c()
             cpu_watts = power_meter.sample_watts()
             ram_total, ram_pct = get_ram()
-            ssd_total, ssd_pct = get_ssd(args.disk_path)
+            mmc_total, mmc_pct = get_mmc(args.disk_path)
+            nas_available, nas_total, nas_pct = get_nas_pools(args.disk_path, host_root)
             rx_mbps, tx_mbps = net_meter.sample_mbps()
 
             stats = Stats(
@@ -249,10 +353,13 @@ def main():
                 cpu_watts=cpu_watts,
                 ram_total_gb=ram_total,
                 ram_pct=ram_pct,
-                ssd_total_gb=ssd_total,
-                ssd_pct=ssd_pct,
+                mmc_total_gb=mmc_total,
+                mmc_pct=mmc_pct,
                 net_rx_mbps=rx_mbps,
                 net_tx_mbps=tx_mbps,
+                nas_available=nas_available,
+                nas_total_gb=nas_total,
+                nas_pct=nas_pct,
             )
 
             payload = json.dumps(asdict(stats), separators=(",", ":")) + "\n"

@@ -47,21 +47,31 @@ struct BoardProfile {
   int lcd_cs, lcd_dc, lcd_sck, lcd_mosi, lcd_rst, lcd_bl;
   int tp_sda, tp_scl, tp_rst; // -1 if no touch
   bool driverIsGC9A01;        // false = ST7789
+  int colOffset1, rowOffset1, colOffset2, rowOffset2; // ST7789 GRAM alignment
 };
 
 const BoardProfile BOARD_PROFILES[] = {
   // Board 0: ESP32-S3-LCD-1.3 (square, no touch) -- pins from schematic PDF
   { "ESP32-S3-LCD-1.3 (square, no touch)", false, 240, 240,
     /*cs*/39, /*dc*/38, /*sck*/40, /*mosi*/41, /*rst*/42, /*bl*/20,
-    /*sda*/-1, /*scl*/-1, /*tprst*/-1, /*gc9a01*/false },
+    /*sda*/-1, /*scl*/-1, /*tprst*/-1, /*gc9a01*/false,
+    /*offsets*/ 0, 0, 0, 0 },
   // Board 1: ESP32-S3-Touch-LCD-1.69 (240x280, touch) -- pins from schematic PDF.
   // Note: this board uses the ESP32-S3's NATIVE USB peripheral (no separate
   // CH343P-style UART bridge chip), so it needs "USB CDC On Boot: Enabled"
   // in Arduino IDE / ARDUINO_USB_CDC_ON_BOOT=1 in PlatformIO -- the OPPOSITE
   // setting from board 0.
+  //
+  // Row offset of 20 is REQUIRED here, confirmed via Waveshare's own docs
+  // and Arduino_GFX's GitHub for this exact panel: the ST7789V2 controller's
+  // native addressable RAM is 240x320, but this physical panel is only
+  // 240x280 -- a smaller window into that RAM. Without this offset, the
+  // display's addressing is misaligned by 20 rows, which showed up as
+  // graphical artifacts along the bottom edge.
   { "ESP32-S3-Touch-LCD-1.69 (240x280, touch)", true, 240, 280,
     /*cs*/5, /*dc*/4, /*sck*/6, /*mosi*/7, /*rst*/8, /*bl*/15,
-    /*sda*/11, /*scl*/10, /*tprst*/13, /*gc9a01*/false },
+    /*sda*/11, /*scl*/10, /*tprst*/13, /*gc9a01*/false,
+    /*offsets*/ 0, 20, 0, 20 },
 };
 const int NUM_BOARD_PROFILES = sizeof(BOARD_PROFILES) / sizeof(BOARD_PROFILES[0]);
 #define TOUCH_I2C_ADDR 0x15  // shared address convention for CST816-family touch chips
@@ -71,8 +81,8 @@ const int NUM_BOARD_PROFILES = sizeof(BOARD_PROFILES) / sizeof(BOARD_PROFILES[0]
 // ---------------------------------------------------------------------
 
 // Known page ids, in canonical order
-const char *ALL_PAGE_IDS[] = {"cpu", "ram", "ssd", "net", "temp"};
-const int NUM_ALL_PAGES = 5;
+const char *ALL_PAGE_IDS[] = {"cpu", "ram", "mmc", "net", "temp", "nas"};
+const int NUM_ALL_PAGES = 6;
 
 struct Config {
   bool configured = false; // false until the first set_config command ever arrives
@@ -202,7 +212,8 @@ void initDisplay() {
   if (p.driverIsGC9A01) {
     gfx = new Arduino_GC9A01(bus, p.lcd_rst, 0 /* rotation */, true /* IPS */);
   } else {
-    gfx = new Arduino_ST7789(bus, p.lcd_rst, 0 /* rotation */, true /* IPS */, screenW, screenH);
+    gfx = new Arduino_ST7789(bus, p.lcd_rst, 0 /* rotation */, true /* IPS */, screenW, screenH,
+                              p.colOffset1, p.rowOffset1, p.colOffset2, p.rowOffset2);
   }
   canvas = new Arduino_Canvas(screenW, screenH, gfx);
 
@@ -252,10 +263,13 @@ struct SystemStats {
   float cpu_watts = 0;
   float ram_total_gb = 0;
   float ram_pct = 0;
-  float ssd_total_gb = 0;
-  float ssd_pct = 0;
+  float mmc_total_gb = 0;
+  float mmc_pct = 0;
   float net_rx_mbps = 0;
   float net_tx_mbps = 0;
+  bool nas_available = false;
+  float nas_total_gb = 0;
+  float nas_pct = 0;
   unsigned long last_update_ms = 0;
 } stats;
 
@@ -356,14 +370,38 @@ void drawPageRAM() {
   canvas->print(total);
 }
 
-void drawPageSSD() {
+void drawPageMMC() {
   char big[16];
-  snprintf(big, sizeof(big), "%d%%", (int)round(stats.ssd_pct));
-  drawRingGauge(screenW / 2, SY(105), 88, 74, stats.ssd_pct, 0x7B9F, big, "SSD USED");
+  snprintf(big, sizeof(big), "%d%%", (int)round(stats.mmc_pct));
+  drawRingGauge(screenW / 2, SY(105), 88, 74, stats.mmc_pct, 0x7B9F, big, "MMC USED");
   canvas->setTextColor(COL_TEXT);
   canvas->setTextSize(2);
   char total[24];
-  snprintf(total, sizeof(total), "%.0f GB", stats.ssd_total_gb);
+  snprintf(total, sizeof(total), "%.0f GB", stats.mmc_total_gb);
+  int16_t x1, y1; uint16_t w, h;
+  canvas->getTextBounds(total, 0, 0, &x1, &y1, &w, &h);
+  canvas->setCursor(screenW / 2 - w / 2, SY(172));
+  canvas->print(total);
+}
+
+void drawPageNAS() {
+  if (!stats.nas_available) {
+    canvas->setTextColor(COL_SUBTEXT);
+    canvas->setTextSize(1);
+    const char *msg = "No NAS pool detected";
+    int16_t x1, y1; uint16_t w, h;
+    canvas->getTextBounds(msg, 0, 0, &x1, &y1, &w, &h);
+    canvas->setCursor(screenW / 2 - w / 2, SY(115));
+    canvas->print(msg);
+    return;
+  }
+  char big[16];
+  snprintf(big, sizeof(big), "%d%%", (int)round(stats.nas_pct));
+  drawRingGauge(screenW / 2, SY(105), 88, 74, stats.nas_pct, 0x9F7BC0, big, "NAS USED");
+  canvas->setTextColor(COL_TEXT);
+  canvas->setTextSize(2);
+  char total[24];
+  snprintf(total, sizeof(total), "%.0f GB", stats.nas_total_gb);
   int16_t x1, y1; uint16_t w, h;
   canvas->getTextBounds(total, 0, 0, &x1, &y1, &w, &h);
   canvas->setCursor(screenW / 2 - w / 2, SY(172));
@@ -418,8 +456,9 @@ void drawPageTemp() {
 void drawPage(const char *pageId) {
   if (strcmp(pageId, "cpu") == 0) drawPageCPU();
   else if (strcmp(pageId, "ram") == 0) drawPageRAM();
-  else if (strcmp(pageId, "ssd") == 0) drawPageSSD();
+  else if (strcmp(pageId, "mmc") == 0) drawPageMMC();
   else if (strcmp(pageId, "net") == 0) drawPageNet();
+  else if (strcmp(pageId, "nas") == 0) drawPageNAS();
   else drawPageTemp();
 }
 
@@ -578,10 +617,13 @@ void handleLine(const String &line) {
   stats.cpu_watts      = doc["cpu_watts"] | stats.cpu_watts;
   stats.ram_total_gb   = doc["ram_total_gb"] | stats.ram_total_gb;
   stats.ram_pct        = doc["ram_pct"] | stats.ram_pct;
-  stats.ssd_total_gb   = doc["ssd_total_gb"] | stats.ssd_total_gb;
-  stats.ssd_pct        = doc["ssd_pct"] | stats.ssd_pct;
+  stats.mmc_total_gb   = doc["mmc_total_gb"] | stats.mmc_total_gb;
+  stats.mmc_pct        = doc["mmc_pct"] | stats.mmc_pct;
   stats.net_rx_mbps    = doc["net_rx_mbps"] | stats.net_rx_mbps;
   stats.net_tx_mbps    = doc["net_tx_mbps"] | stats.net_tx_mbps;
+  stats.nas_available  = doc["nas_available"] | stats.nas_available;
+  stats.nas_total_gb   = doc["nas_total_gb"] | stats.nas_total_gb;
+  stats.nas_pct        = doc["nas_pct"] | stats.nas_pct;
   stats.last_update_ms = millis();
   haveData = true;
 }

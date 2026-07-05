@@ -166,8 +166,12 @@
           <label for="page-ram">RAM usage</label>
         </div>
         <div class="page-row">
-          <input type="checkbox" id="page-ssd" value="ssd">
-          <label for="page-ssd">SSD usage</label>
+          <input type="checkbox" id="page-mmc" value="mmc">
+          <label for="page-mmc">MMC usage (OS storage)</label>
+        </div>
+        <div class="page-row">
+          <input type="checkbox" id="page-nas" value="nas">
+          <label for="page-nas">NAS usage (storage pool, if any)</label>
         </div>
         <div class="page-row">
           <input type="checkbox" id="page-net" value="net">
@@ -237,7 +241,7 @@
     });
 
     document.getElementById('continue-btn').addEventListener('click', () => {
-      const pageOrder = ['cpu', 'ram', 'ssd', 'net', 'temp'];
+      const pageOrder = ['cpu', 'ram', 'mmc', 'net', 'temp', 'nas'];
       const selectedPages = pageOrder.filter(
         id => document.getElementById('page-' + id).checked
       );
