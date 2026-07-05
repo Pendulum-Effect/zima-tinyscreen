@@ -158,6 +158,36 @@ int screenH = 240;
 // far share the same 240 width.
 int SY(int y) { return y * screenH / 240; }
 
+// ---------------------------------------------------------------------
+// LEDC (backlight PWM) -- arduino-esp32 core 3.x replaced the old
+// channel-based API (ledcSetup/ledcAttachPin/ledcWrite(channel,...))
+// with a pin-based one (ledcAttach(pin,...)/ledcWrite(pin,...)); the two
+// are mutually exclusive, not just renamed, so plain code can only ever
+// compile against ONE of them. Arduino IDE and PlatformIO have been
+// observed pulling different actual core versions for this same project,
+// so we detect at compile time via ESP_ARDUINO_VERSION_MAJOR (the
+// version macro Espressif added specifically to support this migration)
+// rather than assuming either one.
+#define TINYSCREEN_BACKLIGHT_LEDC_CHANNEL 0
+
+void pwmAttachBacklight(int pin) {
+#if defined(ESP_ARDUINO_VERSION_MAJOR) && ESP_ARDUINO_VERSION_MAJOR >= 3
+  ledcAttach(pin, 5000 /* Hz */, 8 /* bit resolution */);
+#else
+  ledcSetup(TINYSCREEN_BACKLIGHT_LEDC_CHANNEL, 5000 /* Hz */, 8 /* bit resolution */);
+  ledcAttachPin(pin, TINYSCREEN_BACKLIGHT_LEDC_CHANNEL);
+#endif
+}
+
+void pwmWriteBacklight(int pin, int duty) {
+#if defined(ESP_ARDUINO_VERSION_MAJOR) && ESP_ARDUINO_VERSION_MAJOR >= 3
+  ledcWrite(pin, duty);
+#else
+  (void)pin; // old API addresses by channel, not pin
+  ledcWrite(TINYSCREEN_BACKLIGHT_LEDC_CHANNEL, duty);
+#endif
+}
+
 void initDisplay() {
   const BoardProfile &p = BOARD_PROFILES[config.boardId];
   screenW = p.width;
@@ -171,8 +201,8 @@ void initDisplay() {
   canvas = new Arduino_Canvas(screenW, screenH, gfx);
 
   pinMode(p.lcd_bl, OUTPUT);
-  ledcAttach(p.lcd_bl, 5000 /* Hz */, 8 /* bit resolution */);
-  ledcWrite(p.lcd_bl, map(config.brightness, 0, 100, 0, 255));
+  pwmAttachBacklight(p.lcd_bl);
+  pwmWriteBacklight(p.lcd_bl, map(config.brightness, 0, 100, 0, 255));
 
   gfx->begin();
   canvas->begin();
@@ -190,7 +220,7 @@ void initDisplay() {
 }
 
 void applyBrightness() {
-  ledcWrite(BOARD_PROFILES[config.boardId].lcd_bl, map(config.brightness, 0, 100, 0, 255));
+  pwmWriteBacklight(BOARD_PROFILES[config.boardId].lcd_bl, map(config.brightness, 0, 100, 0, 255));
 }
 
 // ---------------------------------------------------------------------
