@@ -14,15 +14,25 @@ services:
     pull_policy: always  # always re-pull, even for the same :latest tag
     container_name: tinyscreen-dashboard
     restart: unless-stopped
-    # Host networking, not the default bridge -- the container needs to see
-    # the ZimaBlade's REAL network interfaces to report accurate throughput.
-    # Under bridge networking (the previous setup) the collector could only
-    # see the container's own near-zero-traffic virtual interface, which is
-    # why network usage was stuck at 0. With host networking, binding to
-    # 0.0.0.0:8989/8990 inside the container is directly reachable at the
-    # ZimaBlade's own IP on those ports -- no ports: mapping needed (and
-    # Compose ignores/warns on one if present alongside network_mode: host).
-    network_mode: host
+    # DIAGNOSTIC REVERT: network_mode: host was introduced to fix network
+    # stats being stuck at 0, but its introduction lines up exactly with a
+    # much worse regression -- the ESP32 stopped receiving ANY serial data
+    # at all, despite the collector itself running perfectly healthily.
+    # Reverting to standard bridge networking + explicit ports to isolate
+    # whether network_mode: host (or something about ZimaOS's handling of
+    # it alongside privileged:true and custom volumes) was the actual
+    # cause. This brings back the network-stuck-at-0 issue as a KNOWN,
+    # accepted trade-off until a different fix for that is found (e.g.
+    # bind-mounting /proc/net/dev directly and parsing it, without needing
+    # full host networking) -- much less bad than a completely non-working
+    # display.
+    ports:
+      - target: 8989
+        published: "8989"
+        protocol: tcp
+      - target: 8990
+        published: "8990"
+        protocol: tcp
     environment:
       - TINYSCREEN_STATUS_FILE=/tmp/tinyscreen_status.json
       # Set this if auto-detect picks the wrong serial device, e.g. /dev/ttyACM0
