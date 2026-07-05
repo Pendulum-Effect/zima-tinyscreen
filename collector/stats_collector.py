@@ -27,17 +27,13 @@ import os
 import platform
 import re
 import signal
+import subprocess
 import sys
 import time
 from dataclasses import dataclass, asdict
 from pathlib import Path
 
 import psutil
-
-try:
-    import serial
-except ImportError:
-    serial = None  # only required when actually talking to the ESP32-S3
 
 
 # --------------------------------------------------------------------------
@@ -323,48 +319,61 @@ def autodetect_port() -> str:
     )
 
 
-def open_serial(port: str, baud: int) -> "serial.Serial":
-    if serial is None:
-        raise RuntimeError("pyserial is required for live mode: pip install pyserial")
-    # Constructing without a port first, then explicitly disabling DTR/RTS
-    # BEFORE calling open(), matters here: passing port= directly to the
-    # constructor opens it immediately, which on some platforms/pyserial
-    # versions asserts DTR/RTS as part of that implicit open -- too late
-    # to prevent by setting .dtr/.rts afterward.
-    #
-    # This isn't precautionary -- it was root-caused via a full isolation
-    # test matrix (bare host shell writes: fine; bare container shell
-    # writes: fine; this same collector script via pyserial: fails
-    # immediately, but only on Linux, not on macOS). DTR/RTS toggling on
-    # open is exactly the mechanism esptool uses to reset this board
-    # during flashing, and this board's response to that signaling is
-    # already known to be inconsistent (needing a manual BOOT+RST button
-    # combo for Arduino IDE's older esptool, but not for the newer
-    # version bundled in this project's Docker image) -- so it resetting
-    # or disrupting the native-USB connection every time pyserial opens
-    # the port on Linux, without a corresponding issue on macOS, fits the
-    # evidence exactly.
-    ser = serial.Serial()
-    ser.port = port
-    ser.baudrate = baud
-    ser.timeout = 1
-    ser.dsrdtr = False
-    ser.rtscts = False
-    ser.dtr = False
-    ser.rts = False
-    ser.open()
-    return ser
+class RawSerialPort:
+    """Minimal drop-in replacement for the handful of pyserial.Serial
+    methods this script actually uses (write, close) -- implemented via a
+    plain POSIX file descriptor and an explicit `stty` call, NOT pyserial.
+
+    Root-caused via a full isolation test matrix across several rounds:
+    raw shell writes to the device (both write-only `>` redirects and
+    read+write `exec 3<>` file descriptors) worked perfectly for 5+
+    minutes straight, on both the bare ZimaOS host and a bare Docker
+    container -- but this collector script via pyserial failed
+    completely and immediately, on Linux specifically (not on macOS),
+    even with DTR/RTS explicitly disabled beforehand. Something pyserial
+    itself does when opening/configuring the port on Linux -- beyond
+    DTR/RTS, which was ruled out separately -- disrupts this particular
+    native-USB board's connection. Rather than keep guessing at exactly
+    which pyserial internal behavior is responsible, this bypasses
+    pyserial's serial-port handling entirely and replicates the proven-
+    working shell approach directly: configure the tty via `stty` (the
+    exact command verified working manually), then read/write the
+    device as a plain file descriptor.
+    """
+
+    def __init__(self, port: str, baudrate: int = 115200, timeout: float = 1):
+        self.port = port
+        result = subprocess.run(
+            ["stty", "-F", port, str(baudrate), "raw", "-echo"],
+            capture_output=True, text=True,
+        )
+        if result.returncode != 0:
+            raise OSError(f"stty configuration failed for {port}: {result.stderr.strip()}")
+        self._fd = os.open(port, os.O_RDWR | os.O_NOCTTY)
+
+    def write(self, data: bytes):
+        os.write(self._fd, data)
+
+    def close(self):
+        try:
+            os.close(self._fd)
+        except OSError:
+            pass
+
+
+def open_serial(port: str, baud: int) -> RawSerialPort:
+    return RawSerialPort(port, baudrate=baud, timeout=1)
 
 
 def try_reconnect(args):
-    """Attempt one reconnect and return (Serial, port_path), or (None, None)
-    on any failure. Deliberately never raises: a failed reconnect (e.g. a
-    native-USB board that's mid-re-enumeration after a brief hiccup)
-    should just be retried again next cycle, not crash the whole
-    collector. This is what turned a single transient [Errno 5] I/O error
-    into a repeating crash/respawn loop before -- autodetect_port()
-    raising RuntimeError wasn't caught here, only serial.SerialException
-    was, so the uncaught RuntimeError took the whole process down.
+    """Attempt one reconnect and return (RawSerialPort, port_path), or
+    (None, None) on any failure. Deliberately never raises: a failed
+    reconnect (e.g. a native-USB board that's mid-re-enumeration after a
+    brief hiccup) should just be retried again next cycle, not crash the
+    whole collector. This is what turned a single transient [Errno 5] I/O
+    error into a repeating crash/respawn loop before -- autodetect_port()
+    raising RuntimeError wasn't caught here, only a narrower exception
+    type was, so the uncaught RuntimeError took the whole process down.
     """
     try:
         port = args.port or autodetect_port()
@@ -495,7 +504,7 @@ def main():
                 if ser is not None:
                     try:
                         ser.write(payload.encode("utf-8"))
-                    except serial.SerialException as e:
+                    except OSError as e:
                         print(f"Serial write failed ({e}); will reconnect next cycle.", file=sys.stderr)
                         try:
                             ser.close()

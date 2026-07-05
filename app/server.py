@@ -29,7 +29,6 @@ import threading
 import time
 from pathlib import Path
 
-import serial
 from flask import Flask, jsonify, request, send_from_directory
 
 APP_DIR = Path(__file__).resolve().parent
@@ -39,6 +38,47 @@ COLLECTOR_SCRIPT = APP_DIR.parent / "collector" / "stats_collector.py"
 STATUS_FILE = Path(os.environ.get("TINYSCREEN_STATUS_FILE", "/tmp/tinyscreen_status.json"))
 
 app = Flask(__name__, static_folder=None)
+
+
+class RawSerialPort:
+    """Minimal raw-device serial port, NOT pyserial -- see the matching
+    class/comment in collector/stats_collector.py for why: isolation
+    testing proved pyserial itself (independent of DTR/RTS, independent
+    of read vs. write mode) breaks this board's native-USB connection on
+    Linux, while a plain POSIX file descriptor configured via `stty`
+    works perfectly. /api/configure needs the same fix as the collector,
+    since it also talks to the board over serial directly.
+    """
+
+    def __init__(self, port: str, baudrate: int = 115200, timeout: float = 2):
+        self.port = port
+        result = subprocess.run(
+            ["stty", "-F", port, str(baudrate), "raw", "-echo"],
+            capture_output=True, text=True,
+        )
+        if result.returncode != 0:
+            raise OSError(f"stty configuration failed for {port}: {result.stderr.strip()}")
+        self._fd = os.open(port, os.O_RDWR | os.O_NOCTTY)
+        self._timeout = timeout
+
+    def write(self, data: bytes):
+        os.write(self._fd, data)
+
+    def read(self, size: int = 256) -> bytes:
+        import select
+        r, _, _ = select.select([self._fd], [], [], self._timeout)
+        if not r:
+            return b""
+        try:
+            return os.read(self._fd, size)
+        except OSError:
+            return b""
+
+    def close(self):
+        try:
+            os.close(self._fd)
+        except OSError:
+            pass
 
 
 # ---------------------------------------------------------------------
@@ -161,7 +201,7 @@ def api_configure():
     collector.pause()
     ser = None
     try:
-        ser = serial.Serial(port, baudrate=115200, timeout=2)
+        ser = RawSerialPort(port, baudrate=115200, timeout=2)
         time.sleep(2)  # let the board's USB settle if it just reset
 
         payload = json.dumps({
