@@ -326,7 +326,34 @@ def autodetect_port() -> str:
 def open_serial(port: str, baud: int) -> "serial.Serial":
     if serial is None:
         raise RuntimeError("pyserial is required for live mode: pip install pyserial")
-    return serial.Serial(port, baudrate=baud, timeout=1)
+    # Constructing without a port first, then explicitly disabling DTR/RTS
+    # BEFORE calling open(), matters here: passing port= directly to the
+    # constructor opens it immediately, which on some platforms/pyserial
+    # versions asserts DTR/RTS as part of that implicit open -- too late
+    # to prevent by setting .dtr/.rts afterward.
+    #
+    # This isn't precautionary -- it was root-caused via a full isolation
+    # test matrix (bare host shell writes: fine; bare container shell
+    # writes: fine; this same collector script via pyserial: fails
+    # immediately, but only on Linux, not on macOS). DTR/RTS toggling on
+    # open is exactly the mechanism esptool uses to reset this board
+    # during flashing, and this board's response to that signaling is
+    # already known to be inconsistent (needing a manual BOOT+RST button
+    # combo for Arduino IDE's older esptool, but not for the newer
+    # version bundled in this project's Docker image) -- so it resetting
+    # or disrupting the native-USB connection every time pyserial opens
+    # the port on Linux, without a corresponding issue on macOS, fits the
+    # evidence exactly.
+    ser = serial.Serial()
+    ser.port = port
+    ser.baudrate = baud
+    ser.timeout = 1
+    ser.dsrdtr = False
+    ser.rtscts = False
+    ser.dtr = False
+    ser.rts = False
+    ser.open()
+    return ser
 
 
 def try_reconnect(args):
