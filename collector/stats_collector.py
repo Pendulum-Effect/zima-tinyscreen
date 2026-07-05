@@ -237,6 +237,11 @@ def get_nas_pools(root_path="/", host_root_prefix=None):
     Returns (available: bool, total_gb: float, pct: float).
     """
     root_device = get_root_device(root_path)
+    try:
+        root_total = psutil.disk_usage(root_path).total
+    except (PermissionError, FileNotFoundError, OSError):
+        root_total = None
+
     total = 0
     used = 0
     found = False
@@ -260,6 +265,17 @@ def get_nas_pools(root_path="/", host_root_prefix=None):
         try:
             du = psutil.disk_usage(part.mountpoint)
         except (PermissionError, FileNotFoundError, OSError):
+            continue
+        # ZimaOS/CasaOS-style setups always have a /DATA-style mount point
+        # even without any extra drive attached, backed by the SAME
+        # physical disk as root by default -- which can appear as a
+        # DIFFERENT device string (e.g. a bind-mounted subdirectory) while
+        # reporting IDENTICAL total capacity to root. Comparing device
+        # strings alone isn't reliable enough to exclude that case, so
+        # also skip anything whose total capacity is suspiciously close to
+        # root's own -- a genuinely separate physical pool would almost
+        # certainly have a different total size.
+        if root_total and abs(du.total - root_total) / root_total < 0.01:
             continue
         total += du.total
         used += du.used
@@ -291,6 +307,26 @@ def open_serial(port: str, baud: int) -> "serial.Serial":
     if serial is None:
         raise RuntimeError("pyserial is required for live mode: pip install pyserial")
     return serial.Serial(port, baudrate=baud, timeout=1)
+
+
+def try_reconnect(args):
+    """Attempt one reconnect and return the new Serial object, or None on
+    any failure. Deliberately never raises: a failed reconnect (e.g. a
+    native-USB board that's mid-re-enumeration after a brief hiccup)
+    should just be retried again next cycle, not crash the whole
+    collector. This is what turned a single transient [Errno 5] I/O error
+    into a repeating crash/respawn loop before -- autodetect_port()
+    raising RuntimeError wasn't caught here, only serial.SerialException
+    was, so the uncaught RuntimeError took the whole process down.
+    """
+    try:
+        port = args.port or autodetect_port()
+        ser = open_serial(port, args.baud)
+        print("Reconnected.", file=sys.stderr)
+        return ser
+    except Exception as e:
+        print(f"Reconnect attempt failed ({e}); will retry next cycle.", file=sys.stderr)
+        return None
 
 
 # --------------------------------------------------------------------------
@@ -374,12 +410,20 @@ def main():
             if args.print_only:
                 print(payload, end="")
             else:
-                try:
-                    ser.write(payload.encode("utf-8"))
-                except serial.SerialException as e:
-                    print(f"Serial write failed ({e}); reconnecting...", file=sys.stderr)
-                    time.sleep(2)
-                    ser = open_serial(args.port or autodetect_port(), args.baud)
+                if ser is None:
+                    ser = try_reconnect(args)
+                if ser is not None:
+                    try:
+                        ser.write(payload.encode("utf-8"))
+                    except serial.SerialException as e:
+                        print(f"Serial write failed ({e}); will reconnect next cycle.", file=sys.stderr)
+                        try:
+                            ser.close()
+                        except Exception:
+                            pass
+                        ser = None
+                else:
+                    print("No serial connection; will retry next cycle.", file=sys.stderr)
 
             time.sleep(args.interval)
     except KeyboardInterrupt:
