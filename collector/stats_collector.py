@@ -215,7 +215,11 @@ def get_root_device(path="/"):
     """The block device backing `path`, used to exclude it from NAS-pool
     detection below."""
     best_match = None
-    for part in psutil.disk_partitions(all=False):
+    try:
+        partitions = psutil.disk_partitions(all=False)
+    except Exception:
+        return None
+    for part in partitions:
         if path == part.mountpoint or path.rstrip("/") == part.mountpoint.rstrip("/"):
             return part.device
         if path.startswith(part.mountpoint) and (
@@ -247,7 +251,14 @@ def get_nas_pools(root_path="/", host_root_prefix=None):
     found = False
     seen_devices = set()
 
-    for part in psutil.disk_partitions(all=False):
+    try:
+        partitions = psutil.disk_partitions(all=False)
+    except Exception as e:
+        print(f"NAS detection: could not list partitions ({e}); reporting unavailable this cycle.",
+              file=sys.stderr)
+        return False, 0.0, 0.0
+
+    for part in partitions:
         if part.fstype in VIRTUAL_FSTYPES:
             continue
         if part.device == root_device:
@@ -374,13 +385,22 @@ def main():
 
     try:
         while True:
-            cpu_pct = psutil.cpu_percent(interval=None)
-            cpu_temp = get_cpu_temp_c()
-            cpu_watts = power_meter.sample_watts()
-            ram_total, ram_pct = get_ram()
-            mmc_total, mmc_pct = get_mmc(args.disk_path)
-            nas_available, nas_total, nas_pct = get_nas_pools(args.disk_path, host_root)
-            rx_mbps, tx_mbps = net_meter.sample_mbps()
+            try:
+                cpu_pct = psutil.cpu_percent(interval=None)
+                cpu_temp = get_cpu_temp_c()
+                cpu_watts = power_meter.sample_watts()
+                ram_total, ram_pct = get_ram()
+                mmc_total, mmc_pct = get_mmc(args.disk_path)
+                nas_available, nas_total, nas_pct = get_nas_pools(args.disk_path, host_root)
+                rx_mbps, tx_mbps = net_meter.sample_mbps()
+            except Exception as e:
+                # Never let a single bad reading (e.g. a transient issue
+                # scanning the recursively-bind-mounted host filesystem for
+                # NAS detection) crash the whole collector -- skip this
+                # cycle and try again next second instead.
+                print(f"Error gathering stats ({e}); skipping this cycle.", file=sys.stderr)
+                time.sleep(args.interval)
+                continue
 
             stats = Stats(
                 cpu_name=cpu_name,
