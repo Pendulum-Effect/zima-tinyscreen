@@ -269,9 +269,8 @@ int currentPageIdx = 0;              // index into config.pages
 unsigned long lastDrawMs = 0;
 unsigned long lastCycleMs = 0;
 unsigned long lastGesturePollMs = 0;
-int lastRawGesture = 0;              // GESTURE_NONE -- see loop()'s edge-detection comment
 const unsigned long FRAME_INTERVAL_MS = 200;
-const unsigned long GESTURE_POLL_MS = 50; // how often to check the touch chip's gesture register
+const unsigned long GESTURE_POLL_MS = 20; // touch feels much more responsive polled this often
 
 void advancePage(int dir) {
   if (config.numPages <= 1) return;
@@ -433,22 +432,58 @@ void drawCurrentScreen() {
 }
 
 // ---------------------------------------------------------------------
-// Touch (CST816S) -- only polled when the active board profile has touch
+// Touch (CST816-family) -- only polled when the active board profile has
+// touch. Deliberately NOT using the chip's own built-in gesture
+// recognition (GestureID register) -- testing showed it holds its last
+// value for several seconds after a swipe completes, which is far too
+// long and undocumented to build reliable timing around. Instead we
+// track raw touch-down -> touch-up X coordinates ourselves and compute
+// the swipe direction on release, giving full control over sensitivity.
 // ---------------------------------------------------------------------
 
 #define GESTURE_NONE  0
 #define GESTURE_LEFT  1
 #define GESTURE_RIGHT 2
 
-int readTouchGesture() {
+bool touchIsDown = false;
+int touchStartX = 0;
+int touchLastX = 0;
+const int SWIPE_THRESHOLD_PX = 40;
+
+// Returns GESTURE_LEFT/GESTURE_RIGHT exactly once, at the moment a swipe
+// completes (finger release) -- inherently edge-triggered by
+// construction, so callers don't need their own debounce/edge logic.
+int pollTouchSwipe() {
   Wire.beginTransmission(TOUCH_I2C_ADDR);
-  Wire.write(0x01);
+  Wire.write(0x02); // FingerNum register; X/Y registers follow immediately after
   if (Wire.endTransmission(false) != 0) return GESTURE_NONE;
-  if (Wire.requestFrom(TOUCH_I2C_ADDR, 1) != 1) return GESTURE_NONE;
-  uint8_t gid = Wire.read();
-  if (gid == 0x03) return GESTURE_LEFT;
-  if (gid == 0x04) return GESTURE_RIGHT;
-  return GESTURE_NONE;
+  if (Wire.requestFrom(TOUCH_I2C_ADDR, 5) != 5) return GESTURE_NONE;
+  uint8_t fingerNum = Wire.read();
+  uint8_t xh = Wire.read();
+  uint8_t xl = Wire.read();
+  Wire.read(); // yh -- unused, we only care about horizontal swipes
+  Wire.read(); // yl -- unused
+
+  bool isDown = fingerNum > 0;
+  int x = ((xh & 0x0F) << 8) | xl;
+
+  int result = GESTURE_NONE;
+  if (isDown && !touchIsDown) {
+    // Finger just touched down -- start of a possible swipe
+    touchIsDown = true;
+    touchStartX = x;
+    touchLastX = x;
+  } else if (isDown && touchIsDown) {
+    // Still touching -- track the latest position
+    touchLastX = x;
+  } else if (!isDown && touchIsDown) {
+    // Finger just released -- decide if it was a swipe
+    touchIsDown = false;
+    int deltaX = touchLastX - touchStartX;
+    if (deltaX <= -SWIPE_THRESHOLD_PX) result = GESTURE_LEFT;
+    else if (deltaX >= SWIPE_THRESHOLD_PX) result = GESTURE_RIGHT;
+  }
+  return result;
 }
 
 // ---------------------------------------------------------------------
@@ -615,20 +650,13 @@ void loop() {
 
   if (BOARD_PROFILES[config.boardId].hasTouch && now - lastGesturePollMs > GESTURE_POLL_MS) {
     lastGesturePollMs = now;
-    int g = readTouchGesture();
-    // Edge-triggered on purpose: the touch chip's gesture register holds
-    // its last value for a stretch of time after a swipe completes (it's
-    // a level, not a momentary pulse). Acting on every non-empty read
-    // caused a single physical swipe to sometimes get counted twice (or
-    // more) across consecutive polls -- this looked like "skipped pages".
-    // Only act when the value actually CHANGES from what we saw last
-    // time, and require it to go back to GESTURE_NONE before counting
-    // another swipe, so one physical gesture only ever triggers once.
-    if (g != GESTURE_NONE && g != lastRawGesture) {
-      if (g == GESTURE_LEFT) advancePage(1);
-      else if (g == GESTURE_RIGHT) advancePage(-1);
-    }
-    lastRawGesture = g;
+    // pollTouchSwipe() only ever returns non-NONE once per completed
+    // swipe (on finger release), so no separate edge-detection needed
+    // here -- see its own comment for why we compute this ourselves
+    // instead of trusting the touch chip's built-in gesture recognition.
+    int g = pollTouchSwipe();
+    if (g == GESTURE_LEFT) advancePage(1);
+    else if (g == GESTURE_RIGHT) advancePage(-1);
   }
 
   if (config.autoCycle && now - lastCycleMs > (unsigned long)config.cycleSeconds * 1000UL) {
