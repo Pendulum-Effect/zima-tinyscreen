@@ -14,18 +14,15 @@ services:
     pull_policy: always  # always re-pull, even for the same :latest tag
     container_name: tinyscreen-dashboard
     restart: unless-stopped
-    # DIAGNOSTIC REVERT: network_mode: host was introduced to fix network
-    # stats being stuck at 0, but its introduction lines up exactly with a
-    # much worse regression -- the ESP32 stopped receiving ANY serial data
-    # at all, despite the collector itself running perfectly healthily.
-    # Reverting to standard bridge networking + explicit ports to isolate
-    # whether network_mode: host (or something about ZimaOS's handling of
-    # it alongside privileged:true and custom volumes) was the actual
-    # cause. This brings back the network-stuck-at-0 issue as a KNOWN,
-    # accepted trade-off until a different fix for that is found (e.g.
-    # bind-mounting /proc/net/dev directly and parsing it, without needing
-    # full host networking) -- much less bad than a completely non-working
-    # display.
+    # Standard bridge networking with explicit ports (not network_mode:
+    # host). host networking was tried briefly to fix network stats being
+    # stuck at 0, but isolation testing later showed the real connectivity
+    # issue (a much worse problem -- the ESP32 not receiving data at all)
+    # persisted even without it, so host networking wasn't actually the
+    # cause and wasn't worth the added complexity. Network stats being
+    # stuck at 0 remains a known, accepted limitation of bridge networking
+    # (the container can only see its own virtual interface) until a
+    # different fix is found (e.g. bind-mounting /proc/net/dev directly).
     ports:
       - target: 8989
         published: "8989"
@@ -37,7 +34,6 @@ services:
       - TINYSCREEN_STATUS_FILE=/tmp/tinyscreen_status.json
       # Set this if auto-detect picks the wrong serial device, e.g. /dev/ttyACM0
       - TINYSCREEN_SERIAL_PORT=
-      - TINYSCREEN_HOST_ROOT=/mnt/host_root
 
     # The ESP32-S3 shows up as a serial device node, e.g. /dev/ttyACM0
     # (Linux CDC-ACM driver, matching the CH343P/native-USB-CDC bridge
@@ -50,15 +46,6 @@ services:
       - type: bind
         source: /dev
         target: /dev
-      # Read-only view of the host's real root filesystem -- needed so the
-      # collector can report accurate MMC/storage-pool stats (measuring the
-      # container's own overlay filesystem would report the wrong numbers)
-      # and so NAS-pool auto-detection can see any additional drives ZimaOS
-      # has mounted, which the container otherwise has zero visibility into.
-      - type: bind
-        source: /
-        target: /mnt/host_root
-        read_only: true
       # Persists the self-signed HTTPS cert across restarts, so you don't
       # get a fresh "untrusted certificate" browser warning every reboot.
       # Long-form bind syntax matches ZimaOS/CasaOS's own documented
@@ -77,7 +64,7 @@ services:
       author: you
       category: Utilities
       description:
-        en_us: "Streams live CPU/RAM/MMC/NAS/network/temperature stats from this ZimaOS device to a small ESP32-S3 round display, and hosts a one-click WebSerial flasher for the ESP32-S3 firmware."
+        en_us: "Streams live CPU/RAM/MMC/network/temperature stats from this ZimaOS device to a small ESP32-S3 round display, and hosts a one-click WebSerial flasher for the ESP32-S3 firmware."
       developer: you
       icon: https://raw.githubusercontent.com/your-repo/tinyscreen/main/icon.png
       screenshot_link: []

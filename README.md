@@ -21,7 +21,7 @@ settings page rather than at compile time:
   from board 0. This is a per-physical-board build setting, not something
   the firmware itself branches on.
 
-Which pages to show (CPU load/wattage, RAM, MMC storage, network, temperature, NAS storage),
+Which pages to show (CPU load/wattage, RAM, MMC storage, network, temperature),
 cycling behavior, and brightness are all configured through
 `webflasher/settings.html` and pushed to the device over WebSerial right
 after flashing — see "Configure and flash from the browser" below.
@@ -284,17 +284,13 @@ The collector sends one line of JSON per second over USB serial (115200
 baud):
 
 ```json
-{"cpu_name":"Intel(R) Celeron(R) N5105","cpu_pct":12.3,"cpu_temp_c":45.2,"cpu_watts":6.1,"ram_total_gb":16.0,"ram_pct":34.5,"mmc_total_gb":512.0,"mmc_pct":61.2,"net_rx_mbps":12.4,"net_tx_mbps":3.1,"nas_available":true,"nas_total_gb":4000.0,"nas_pct":25.0}
+{"cpu_name":"Intel(R) Celeron(R) N5105","cpu_pct":12.3,"cpu_temp_c":45.2,"cpu_watts":6.1,"ram_total_gb":16.0,"ram_pct":34.5,"mmc_total_gb":512.0,"mmc_pct":61.2,"net_rx_mbps":12.4,"net_tx_mbps":3.1}
 ```
 
-Storage capacity fields (`ram_total_gb`, `mmc_total_gb`, `nas_total_gb`) are
-decimal GB (÷1,000,000,000), matching how ZimaOS's own dashboard displays
-capacity — not binary GiB (÷1024³), which reports a smaller, confusingly
-mismatched number for the same physical disk. `nas_available` is `false`
-(with `nas_total_gb`/`nas_pct` at `0`) when no additional storage pool is
-detected — see `get_nas_pools()` in `stats_collector.py` for the
-auto-detection heuristic (any mounted, real filesystem that isn't the
-root/MMC device).
+Storage capacity fields (`ram_total_gb`, `mmc_total_gb`) are decimal GB
+(÷1,000,000,000), matching how ZimaOS's own dashboard displays capacity —
+not binary GiB (÷1024³), which reports a smaller, confusingly mismatched
+number for the same physical disk.
 
 The firmware parses each line with ArduinoJson and keeps the latest values
 in memory; screens redraw on a timer independent of serial arrival, and

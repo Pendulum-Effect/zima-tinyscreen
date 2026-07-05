@@ -81,8 +81,8 @@ const int NUM_BOARD_PROFILES = sizeof(BOARD_PROFILES) / sizeof(BOARD_PROFILES[0]
 // ---------------------------------------------------------------------
 
 // Known page ids, in canonical order
-const char *ALL_PAGE_IDS[] = {"cpu", "ram", "mmc", "net", "temp", "nas"};
-const int NUM_ALL_PAGES = 6;
+const char *ALL_PAGE_IDS[] = {"cpu", "ram", "mmc", "net", "temp"};
+const int NUM_ALL_PAGES = 5;
 
 struct Config {
   bool configured = false; // false until the first set_config command ever arrives
@@ -267,9 +267,6 @@ struct SystemStats {
   float mmc_pct = 0;
   float net_rx_mbps = 0;
   float net_tx_mbps = 0;
-  bool nas_available = false;
-  float nas_total_gb = 0;
-  float nas_pct = 0;
   unsigned long last_update_ms = 0;
 } stats;
 
@@ -384,30 +381,6 @@ void drawPageMMC() {
   canvas->print(total);
 }
 
-void drawPageNAS() {
-  if (!stats.nas_available) {
-    canvas->setTextColor(COL_SUBTEXT);
-    canvas->setTextSize(1);
-    const char *msg = "No NAS pool detected";
-    int16_t x1, y1; uint16_t w, h;
-    canvas->getTextBounds(msg, 0, 0, &x1, &y1, &w, &h);
-    canvas->setCursor(screenW / 2 - w / 2, SY(115));
-    canvas->print(msg);
-    return;
-  }
-  char big[16];
-  snprintf(big, sizeof(big), "%d%%", (int)round(stats.nas_pct));
-  drawRingGauge(screenW / 2, SY(105), 88, 74, stats.nas_pct, 0x9F7BC0, big, "NAS USED");
-  canvas->setTextColor(COL_TEXT);
-  canvas->setTextSize(2);
-  char total[24];
-  snprintf(total, sizeof(total), "%.0f GB", stats.nas_total_gb);
-  int16_t x1, y1; uint16_t w, h;
-  canvas->getTextBounds(total, 0, 0, &x1, &y1, &w, &h);
-  canvas->setCursor(screenW / 2 - w / 2, SY(172));
-  canvas->print(total);
-}
-
 void drawPageNet() {
   canvas->setTextColor(COL_SUBTEXT);
   canvas->setTextSize(1);
@@ -458,7 +431,6 @@ void drawPage(const char *pageId) {
   else if (strcmp(pageId, "ram") == 0) drawPageRAM();
   else if (strcmp(pageId, "mmc") == 0) drawPageMMC();
   else if (strcmp(pageId, "net") == 0) drawPageNet();
-  else if (strcmp(pageId, "nas") == 0) drawPageNAS();
   else drawPageTemp();
 }
 
@@ -616,9 +588,6 @@ void handleLine(const String &line) {
   stats.mmc_pct        = doc["mmc_pct"] | stats.mmc_pct;
   stats.net_rx_mbps    = doc["net_rx_mbps"] | stats.net_rx_mbps;
   stats.net_tx_mbps    = doc["net_tx_mbps"] | stats.net_tx_mbps;
-  stats.nas_available  = doc["nas_available"] | stats.nas_available;
-  stats.nas_total_gb   = doc["nas_total_gb"] | stats.nas_total_gb;
-  stats.nas_pct        = doc["nas_pct"] | stats.nas_pct;
   stats.last_update_ms = millis();
   haveData = true;
 }
