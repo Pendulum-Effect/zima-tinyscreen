@@ -200,25 +200,41 @@ def api_configure():
 # Server-side flash (same deal -- no computer/WebSerial needed)
 # ---------------------------------------------------------------------
 
+# Which firmware variant each board needs -- see platformio.ini and
+# main.cpp's top-of-file note for why this split exists (ARDUINO_USB_CDC_ON_BOOT
+# is a compile-time flag, so board 2's opposite USB mode needs a fully
+# separate binary, not just different runtime config).
+NATIVE_USB_BOARDS = {2}
+
+
+def firmware_dir_for_board(board_id):
+    variant = "native" if board_id in NATIVE_USB_BOARDS else "bridge"
+    return FIRMWARE_DIR / variant
+
+
 @app.route("/api/flash", methods=["POST"])
 def api_flash():
     port = detect_port()
     if not port:
         return jsonify({"ok": False, "error": "No ESP32 serial device found. Is it plugged in?"}), 400
 
-    bootloader = FIRMWARE_DIR / "bootloader.bin"
-    partitions = FIRMWARE_DIR / "partitions.bin"
-    firmware = FIRMWARE_DIR / "firmware.bin"
+    body = request.get_json(force=True, silent=True) or {}
+    board_id = int(body.get("board", 0))
+    fw_dir = firmware_dir_for_board(board_id)
+
+    bootloader = fw_dir / "bootloader.bin"
+    partitions = fw_dir / "partitions.bin"
+    firmware = fw_dir / "firmware.bin"
     missing = [f.name for f in (bootloader, partitions, firmware) if not f.exists()]
     if missing:
-        return jsonify({"ok": False, "error": f"Missing firmware file(s): {', '.join(missing)}"}), 500
+        return jsonify({"ok": False, "error": f"Missing firmware file(s) in {fw_dir.name}/: {', '.join(missing)}"}), 500
 
     collector.pause()
     try:
         result = subprocess.run(
             [
                 "esptool", "--chip", "esp32s3", "--port", port, "--baud", "460800",
-                "write_flash",
+                "write-flash",
                 "0x0", str(bootloader),
                 "0x8000", str(partitions),
                 "0x10000", str(firmware),

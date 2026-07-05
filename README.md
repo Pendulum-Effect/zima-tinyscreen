@@ -59,27 +59,30 @@ See the note at the top of `main.cpp` for why.
 ```bash
 cd firmware
 pip install platformio        # if you don't have it
-pio run
+pio run                        # builds BOTH environments (bridge + native)
 ```
 
-This produces:
+This produces two sets of binaries:
 ```
-.pio/build/esp32-s3-tinyscreen/bootloader.bin
-.pio/build/esp32-s3-tinyscreen/partitions.bin
-.pio/build/esp32-s3-tinyscreen/firmware.bin
+.pio/build/esp32-s3-tinyscreen-bridge/{bootloader,partitions,firmware}.bin   # boards 0/1
+.pio/build/esp32-s3-tinyscreen-native/{bootloader,partitions,firmware}.bin   # board 2
 ```
 
-Copy those three files into `webflasher/firmware/` (create the folder) —
-that's what `webflasher/manifest.json` points at.
+Copy each set into its matching `webflasher/firmware/` subfolder (create
+them) — that's what `webflasher/manifest-bridge.json` and
+`webflasher/manifest-native.json` point at:
 
 ```bash
-mkdir -p ../webflasher/firmware
-cp .pio/build/esp32-s3-tinyscreen/{bootloader,partitions,firmware}.bin ../webflasher/firmware/
+mkdir -p ../webflasher/firmware/bridge ../webflasher/firmware/native
+cp .pio/build/esp32-s3-tinyscreen-bridge/{bootloader,partitions,firmware}.bin ../webflasher/firmware/bridge/
+cp .pio/build/esp32-s3-tinyscreen-native/{bootloader,partitions,firmware}.bin ../webflasher/firmware/native/
 ```
 
-You can also flash directly from PlatformIO during development:
+You can also flash directly from PlatformIO during development (pick
+whichever environment matches your board):
 ```bash
-pio run -t upload -t monitor
+pio run -e esp32-s3-tinyscreen-bridge -t upload -t monitor
+pio run -e esp32-s3-tinyscreen-native -t upload -t monitor
 ```
 
 ## 2. Configure and flash — two ways
@@ -137,13 +140,19 @@ configure takes, then resumes it automatically afterward.
 
 ### Either way
 
-The firmware is a **single universal build** for all supported boards —
-which board to actually use is chosen at runtime from saved config, not
-baked in at compile time. See `firmware/src/main.cpp`'s `BOARD_PROFILES`
-table if you want to add another board later. GitHub Actions now compiles
-this firmware (via PlatformIO) as part of every push to `main`, and bakes
-the resulting binaries into the Docker image — see
-`.github/workflows/docker-build-push.yml`.
+**Two firmware builds, not one.** Which *page/pages, cycling, and
+brightness* to use is chosen at runtime from saved config (all boards
+share this) — see `firmware/src/main.cpp`'s `BOARD_PROFILES` table if you
+want to add another board later. But which *build* to flash is not
+runtime-configurable: `ARDUINO_USB_CDC_ON_BOOT` (does this board have a
+USB-UART bridge chip, or native USB?) is a compile-time flag, so board 2
+needs an entirely separate compiled binary from boards 0/1. GitHub Actions
+compiles **both** variants (`firmware/platformio.ini` defines two
+environments) on every push, and bakes both into the Docker image — see
+`.github/workflows/docker-build-push.yml`. Both the browser flasher
+(`index.html`, via `manifest-bridge.json`/`manifest-native.json`) and the
+on-device flasher (`onboard.html`, via `/api/flash`'s `board` parameter)
+pick the correct variant based on which board you selected.
 
 ## 3. Run the collector
 

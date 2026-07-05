@@ -1,0 +1,16 @@
+{
+  "name": "Tiny Screen Dashboard (bridge-chip boards)",
+  "version": "1.0.0",
+  "home_assistant_domain": null,
+  "new_install_prompt_erase": true,
+  "builds": [
+    {
+      "chipFamily": "ESP32-S3",
+      "parts": [
+        { "path": "firmware/bridge/bootloader.bin", "offset": 0 },
+        { "path": "firmware/bridge/partitions.bin", "offset": 32768 },
+        { "path": "firmware/bridge/firmware.bin", "offset": 65536 }
+      ]
+    }
+  ]
+}

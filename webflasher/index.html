@@ -136,8 +136,13 @@
       <li><span class="num">2</span> Click "Connect &amp; Flash" and pick its serial port.</li>
       <li><span class="num">3</span> Wait for flashing to finish.</li>
     </ul>
+    <p class="sub" id="native-usb-note" style="display:none;margin-bottom:14px;color:var(--teal);">
+      This board uses native USB (no separate bridge chip) — if flashing
+      can't connect, hold the board's BOOT button while clicking Connect
+      &amp; Flash, and release it once you see "Installing".
+    </p>
 
-    <esp-web-install-button manifest="./manifest.json">
+    <esp-web-install-button id="install-btn" manifest="./manifest-bridge.json">
       <button slot="activate">Connect &amp; Flash</button>
       <span slot="unsupported">Your browser doesn't support Web Serial. Please use Chrome or Edge.</span>
       <span slot="not-allowed">Web Serial is not allowed on this page (must be served over HTTPS or localhost).</span>
@@ -167,6 +172,17 @@
       '1': 'ESP32-S3-Touch-LCD-1.28 (round, touch)',
       '2': 'ESP32-S3-Touch-LCD-1.69 (240x280, touch)',
     };
+    // Which firmware variant each board needs -- see platformio.ini and
+    // main.cpp's top-of-file note for why this split exists.
+    const NATIVE_USB_BOARDS = [2];
+
+    function applyManifestForBoard(boardId) {
+      const isNative = NATIVE_USB_BOARDS.includes(boardId);
+      document.getElementById('install-btn').setAttribute(
+        'manifest', isNative ? './manifest-native.json' : './manifest-bridge.json'
+      );
+      document.getElementById('native-usb-note').style.display = isNative ? 'block' : 'none';
+    }
 
     let config = null;
     if (hasConfig) {
@@ -177,6 +193,7 @@
         cycle_seconds: parseInt(params.get('interval') || '10', 10),
         brightness: parseInt(params.get('brightness') || '100', 10),
       };
+      applyManifestForBoard(config.board);
 
       const summary = document.getElementById('config-summary');
       const pageLabels = {cpu: 'CPU', ram: 'RAM', ssd: 'SSD', net: 'Network', temp: 'Temperature'};
