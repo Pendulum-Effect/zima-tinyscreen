@@ -590,8 +590,19 @@ void setup() {
 void loop() {
   pollSerial();
 
-  if (pendingRestart && millis() >= restartAtMs) {
-    ESP.restart();
+  if (pendingRestart) {
+    // A restart is scheduled to let the ack message finish sending before
+    // rebooting into initDisplay() with the new profile. Don't touch any
+    // board-specific hardware (touch I2C, display) in this window --
+    // config.boardId may already reflect a NEW profile whose I2C/display
+    // bus was never actually begin()'d yet (that only happens inside
+    // initDisplay(), which runs fresh after the reboot below). Polling
+    // touch here crashed with a Wire/I2C NULL-pointer panic since the bus
+    // was never initialized for the new board.
+    if (millis() >= restartAtMs) {
+      ESP.restart();
+    }
+    return;
   }
 
   if (!config.configured) {
