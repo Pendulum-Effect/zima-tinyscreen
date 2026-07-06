@@ -422,6 +422,8 @@ def main():
 
     ser = None
     current_port = None
+    cycles_since_connect = 0
+    PERIODIC_RECONNECT_CYCLES = 20  # ~20s at the default 1s interval -- see below
     if not args.print_only:
         current_port = args.port or autodetect_port()
         print(f"Opening serial port {current_port} @ {args.baud} baud...")
@@ -479,6 +481,7 @@ def main():
             else:
                 if ser is None:
                     ser, current_port = try_reconnect(args)
+                    cycles_since_connect = 0
                 elif not args.port:
                     # Only relevant when auto-detecting (not pinned to an
                     # explicit --port): cheaply re-check that the device
@@ -501,6 +504,33 @@ def main():
                         except Exception:
                             pass
                         ser, current_port = try_reconnect(args)
+                        cycles_since_connect = 0
+
+                if ser is not None:
+                    cycles_since_connect += 1
+                    if cycles_since_connect >= PERIODIC_RECONNECT_CYCLES:
+                        # Proactively refresh the connection on a schedule,
+                        # regardless of whether any error has occurred.
+                        # Root-caused via extensive isolation testing: a
+                        # provably healthy, continuously-running collector
+                        # can still have its writes silently never reach
+                        # the board after a config-triggered reset -- no
+                        # exception ever gets thrown, so the existing
+                        # error-triggered and path-change-triggered
+                        # reconnect logic never fires. This can't
+                        # currently be detected (there's no round-trip
+                        # confirmation for the regular stats stream, only
+                        # for config commands), so a periodic unconditional
+                        # refresh is the pragmatic fix -- worst case this
+                        # costs a brief reconnect blip every ~20s, which
+                        # beats staying silently stale indefinitely.
+                        print("Periodic proactive reconnect (defensive refresh).", file=sys.stderr)
+                        try:
+                            ser.close()
+                        except Exception:
+                            pass
+                        ser, current_port = try_reconnect(args)
+                        cycles_since_connect = 0
 
                 if ser is not None:
                     try:
@@ -512,6 +542,7 @@ def main():
                         except Exception:
                             pass
                         ser = None
+                        cycles_since_connect = 0
                 else:
                     print("No serial connection; will retry next cycle.", file=sys.stderr)
 
