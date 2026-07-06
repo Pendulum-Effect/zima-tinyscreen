@@ -337,7 +337,22 @@ class RawSerialPort:
         self._fd = os.open(port, os.O_RDWR | os.O_NOCTTY)
 
     def write(self, data: bytes):
-        os.write(self._fd, data)
+        # os.write() can write FEWER bytes than requested and simply
+        # return that count -- it does not raise for a partial write.
+        # The previous version ignored the return value entirely, meaning
+        # a partial write silently dropped the remainder of the line with
+        # no error anywhere. This likely explains a long-running mystery:
+        # short test payloads (~50 bytes) never seemed to trigger this,
+        # but our real stats payload (~250-300+ bytes once cpu_name, MMC,
+        # NAS, and network fields were all added) is much more exposed to
+        # it -- and the timing of when this became a problem lines up
+        # with exactly when the payload grew that much larger.
+        total_written = 0
+        while total_written < len(data):
+            n = os.write(self._fd, data[total_written:])
+            if n <= 0:
+                raise OSError("write() returned no bytes -- connection may be closed")
+            total_written += n
 
     def close(self):
         try:

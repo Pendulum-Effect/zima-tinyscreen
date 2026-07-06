@@ -641,6 +641,19 @@ void pollSerial() {
 // ---------------------------------------------------------------------
 
 void setup() {
+  // Root-caused via a payload-size isolation test: a ~270-byte write
+  // (this project's real stats payload, spanning multiple 64-byte
+  // full-speed USB packets) consistently failed to reach the firmware,
+  // while a ~50-byte write (fitting in a single packet) always
+  // succeeded -- same board, same connection, same open/write
+  // mechanism, only the size differed. pollSerial() below only drains
+  // incoming bytes once per loop() iteration, and loop() also does
+  // display drawing and touch polling -- if a multi-packet burst
+  // arrives while loop() is momentarily busy elsewhere, the default USB
+  // CDC receive buffer can plausibly overflow and silently drop data.
+  // Setting a much larger buffer here, BEFORE begin(), gives it enough
+  // headroom to absorb a burst even if loop() is briefly delayed.
+  Serial.setRxBufferSize(2048);
   Serial.begin(115200);
   delay(500); // give native USB CDC a moment to enumerate before printing
   loadConfig();
@@ -698,5 +711,10 @@ void loop() {
   if (now - lastDrawMs > FRAME_INTERVAL_MS) {
     drawCurrentScreen();
     lastDrawMs = now;
+    pollSerial(); // drain anything that arrived during the draw (the
+                  // slowest step here) as soon as possible, rather than
+                  // waiting for the next full loop() iteration -- see
+                  // setup()'s RX buffer size comment for the failure
+                  // this is defending against.
   }
 }
