@@ -195,7 +195,7 @@
       applyManifestForBoard(config.board);
 
       const summary = document.getElementById('config-summary');
-      const pageLabels = {cpu: 'CPU', ram: 'RAM', mmc: 'MMC', net: 'Network', temp: 'Temperature'};
+      const pageLabels = {cpu: 'CPU', ram: 'RAM', mmc: 'MMC', net: 'Network', temp: 'Temperature', nas: 'NAS'};
       const cycleText = config.cycle_mode === 'auto'
         ? `Auto-cycle every ${config.cycle_seconds}s`
         : 'Static (no auto-cycle)';

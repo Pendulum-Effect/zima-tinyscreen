@@ -56,6 +56,9 @@ class Stats:
     mmc_pct: float
     net_rx_mbps: float
     net_tx_mbps: float
+    nas_available: bool
+    nas_total_gb: float
+    nas_pct: float
 
 
 # --------------------------------------------------------------------------
@@ -247,6 +250,35 @@ def get_mmc(path="/"):
     return _decimal_gb(du.total), round(du.percent, 1)
 
 
+def get_nas_pool(data_path, mmc_total_bytes):
+    """Detects a ZimaOS/CasaOS storage pool via a single, narrow,
+    non-recursive bind mount of /DATA (see app/docker-compose.yml) --
+    deliberately NOT the sprawling recursive host-root mount used by an
+    earlier, since-reverted version of this feature, which pulled in
+    every other container's own overlay filesystem and correlated with a
+    serious, separate connectivity regression.
+
+    ZimaOS/CasaOS always has a /DATA mount, even with no extra drives
+    attached (backed by the OS disk itself in that case). When a real
+    storage pool is created from additional SATA/PCIe drives, ZimaOS
+    expands that same /DATA mount to cover the pooled capacity. So: if
+    /DATA's total capacity is basically the same as the OS/MMC disk's own
+    total, there's no real separate pool yet; if it's meaningfully
+    larger, that difference in scale is the pool.
+
+    Returns (available: bool, total_gb: float, pct: float).
+    """
+    try:
+        du = psutil.disk_usage(data_path)
+    except (PermissionError, FileNotFoundError, OSError):
+        return False, 0.0, 0.0
+
+    if mmc_total_bytes and abs(du.total - mmc_total_bytes) / mmc_total_bytes < 0.01:
+        return False, 0.0, 0.0  # /DATA is just the OS disk, no separate pool
+
+    return True, _decimal_gb(du.total), round(du.percent, 1)
+
+
 # --------------------------------------------------------------------------
 # Serial link
 # --------------------------------------------------------------------------
@@ -361,6 +393,8 @@ def main():
     parser.add_argument("--iface", default=NET_IFACE, help="Limit network stats to one interface")
     parser.add_argument("--disk-path", default="/",
                          help="Path/mount used for MMC (root storage) usage stats")
+    parser.add_argument("--data-path", default=os.environ.get("TINYSCREEN_DATA_PATH", "/DATA"),
+                         help="Path/mount used for NAS storage-pool detection (ZimaOS's /DATA convention)")
     parser.add_argument("--print-only", action="store_true", help="Print JSON instead of sending over serial")
     args = parser.parse_args()
 
@@ -387,6 +421,8 @@ def main():
                 cpu_watts = power_meter.sample_watts()
                 ram_total, ram_pct = get_ram()
                 mmc_total, mmc_pct = get_mmc(args.disk_path)
+                mmc_total_bytes = psutil.disk_usage(args.disk_path).total
+                nas_available, nas_total, nas_pct = get_nas_pool(args.data_path, mmc_total_bytes)
                 rx_mbps, tx_mbps = net_meter.sample_mbps()
             except Exception as e:
                 # Never let a single bad reading crash the whole
@@ -406,6 +442,9 @@ def main():
                 mmc_pct=mmc_pct,
                 net_rx_mbps=rx_mbps,
                 net_tx_mbps=tx_mbps,
+                nas_available=nas_available,
+                nas_total_gb=nas_total,
+                nas_pct=nas_pct,
             )
 
             payload = json.dumps(asdict(stats), separators=(",", ":")) + "\n"

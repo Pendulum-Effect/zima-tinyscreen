@@ -34,6 +34,7 @@ services:
       # Set this if auto-detect picks the wrong serial device, e.g. /dev/ttyACM0
       - TINYSCREEN_SERIAL_PORT=
       - TINYSCREEN_HOST_NET_DEV=/host_net_dev
+      - TINYSCREEN_DATA_PATH=/host_data
 
     # The ESP32-S3 shows up as a serial device node, e.g. /dev/ttyACM0
     # (Linux CDC-ACM driver, matching the CH343P/native-USB-CDC bridge
@@ -55,6 +56,17 @@ services:
       - type: bind
         source: /proc/1/net/dev
         target: /host_net_dev
+        read_only: true
+      # A single, non-recursive top-level directory -- NOT the whole host
+      # filesystem like the earlier, since-reverted NAS attempt used.
+      # ZimaOS/CasaOS always has a /DATA mount (backed by the OS disk
+      # itself when no extra drives are attached, expanded to cover a
+      # real storage pool once one exists) -- see get_nas_pool() in
+      # stats_collector.py, which compares this mount's total capacity
+      # against the MMC disk's own to tell those two cases apart.
+      - type: bind
+        source: /DATA
+        target: /host_data
         read_only: true
       # Persists the self-signed HTTPS cert across restarts, so you don't
       # get a fresh "untrusted certificate" browser warning every reboot.

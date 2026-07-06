@@ -170,6 +170,10 @@
           <label for="page-mmc">MMC usage (OS storage)</label>
         </div>
         <div class="page-row">
+          <input type="checkbox" id="page-nas" value="nas">
+          <label for="page-nas">NAS usage (storage pool, if any)</label>
+        </div>
+        <div class="page-row">
           <input type="checkbox" id="page-net" value="net">
           <label for="page-net">Network throughput</label>
         </div>
@@ -237,7 +241,7 @@
     });
 
     document.getElementById('continue-btn').addEventListener('click', () => {
-      const pageOrder = ['cpu', 'ram', 'mmc', 'net', 'temp'];
+      const pageOrder = ['cpu', 'ram', 'mmc', 'net', 'temp', 'nas'];
       const selectedPages = pageOrder.filter(
         id => document.getElementById('page-' + id).checked
       );
