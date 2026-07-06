@@ -2,8 +2,8 @@ name: Build firmware and push Tiny Screen image
 
 # Two things happen here, on GitHub's own runners:
 #   1. Compile the ESP32-S3 firmware with PlatformIO -- TWO variants, since
-#      board 2 needs the opposite ARDUINO_USB_CDC_ON_BOOT setting from
-#      boards 0/1 (a compile-time flag, not something runtime config can
+#      board 1 needs the opposite ARDUINO_USB_CDC_ON_BOOT setting from
+#      board 0 (a compile-time flag, not something runtime config can
 #      change -- see firmware/platformio.ini) -- and drop both sets of
 #      binaries into webflasher/firmware/{bridge,native}/. Used by BOTH the
 #      browser WebSerial flasher (index.html) and the server-side flasher
@@ -83,3 +83,4 @@ jobs:
           platforms: linux/amd64   # ZimaBoard/ZimaBlade are x86
           push: true
           tags: ${{ secrets.DOCKERHUB_USERNAME }}/tinyscreen-dashboard:latest
+
