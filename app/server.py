@@ -111,7 +111,11 @@ class CollectorManager:
         self.proc = None
         self.lock = threading.RLock()
         self.paused = False
+        self._pause_depth = 0  # tracks overlapping pause() calls -- see pause()/resume()
         threading.Thread(target=self._watchdog, daemon=True).start()
+
+    def _log(self, msg):
+        print(f"[collectormgr {time.strftime('%H:%M:%S')}] {msg}", file=sys.stderr)
 
     def _spawn(self):
         args = ["python3", str(COLLECTOR_SCRIPT)]
@@ -119,13 +123,22 @@ class CollectorManager:
         if port:
             args += ["--port", port]
         self.proc = subprocess.Popen(args)
+        self._log(f"spawned collector, pid={self.proc.pid}")
 
     def _watchdog(self):
         while True:
             try:
                 with self.lock:
-                    if not self.paused and (self.proc is None or self.proc.poll() is not None):
+                    proc_dead = self.proc is None or self.proc.poll() is not None
+                    if not self.paused and proc_dead:
+                        self._log(f"tick: paused={self.paused} proc_dead={proc_dead} -> spawning")
                         self._spawn()
+                    else:
+                        # Only log the "doing nothing" case when paused,
+                        # since a healthy running collector ticking by
+                        # silently every 5s would otherwise flood the logs.
+                        if self.paused:
+                            self._log(f"tick: paused={self.paused} (pause_depth={self._pause_depth}) -> not spawning")
             except Exception as e:
                 # Never let the watchdog thread itself die -- a single
                 # unhandled error here previously meant the collector
@@ -139,14 +152,25 @@ class CollectorManager:
             time.sleep(5)
 
     def pause(self):
-        """Stop the collector and hold off restarting it until resume()."""
+        """Stop the collector and hold off restarting it until every
+        matching resume() call has happened. Depth-counted so that two
+        OVERLAPPING pause()/resume() pairs (e.g. two nearly-simultaneous
+        /api/flash or /api/configure requests, which Flask's threaded=True
+        mode allows to run concurrently) can't have one request's resume()
+        prematurely clear the pause while the other request's operation is
+        still in-flight and still needs exclusive access to the port.
+        """
         with self.lock:
+            self._pause_depth += 1
+            self._log(f"pause() called, depth now {self._pause_depth}")
             self.paused = True
             if self.proc and self.proc.poll() is None:
+                self._log(f"terminating collector pid={self.proc.pid}")
                 self.proc.terminate()
                 try:
                     self.proc.wait(timeout=5)
                 except subprocess.TimeoutExpired:
+                    self._log("terminate timed out, killing")
                     self.proc.kill()
                     self.proc.wait(timeout=5)
             self.proc = None
@@ -154,7 +178,13 @@ class CollectorManager:
 
     def resume(self):
         with self.lock:
-            self.paused = False
+            self._pause_depth = max(0, self._pause_depth - 1)
+            self._log(f"resume() called, depth now {self._pause_depth}")
+            if self._pause_depth == 0:
+                self.paused = False
+                self._log("depth reached 0, paused=False")
+            else:
+                self._log(f"still {self._pause_depth} overlapping pause(s) outstanding, staying paused")
 
     def is_running(self):
         with self.lock:
