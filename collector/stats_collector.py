@@ -375,7 +375,24 @@ def try_reconnect(args):
 # --------------------------------------------------------------------------
 
 def _handle_sigterm(signum, frame):
+    print(f"[debug] Received SIGTERM (signal {signum}) -- converting to KeyboardInterrupt", file=sys.stderr)
     raise KeyboardInterrupt()
+
+
+def _handle_sigint_ignore(signum, frame):
+    # Confirmed via a prior diagnostic round that something sends SIGINT
+    # to every freshly-spawned collector process within seconds, on EVERY
+    # spawn -- including the very first one at container startup, before
+    # any /api/flash or /api/configure call has ever happened. That ruled
+    # out our own SIGTERM-based pause() mechanism as the source (the
+    # SIGTERM debug print above never appeared). The exact origin of this
+    # SIGINT is still unknown (possibly process-group signal propagation
+    # specific to this container environment), but since this collector
+    # should only ever stop deliberately via our own SIGTERM handler,
+    # explicitly ignoring SIGINT here (log it, but don't exit) should
+    # make it resilient to whatever is sending this, regardless of the
+    # exact mechanism.
+    print(f"[debug] Received SIGINT (signal {signum}) -- ignoring, staying alive", file=sys.stderr)
 
 
 def main():
@@ -385,6 +402,7 @@ def main():
     # existing clean-shutdown path below, which closes the serial port
     # properly instead of leaving it locked.
     signal.signal(signal.SIGTERM, _handle_sigterm)
+    signal.signal(signal.SIGINT, _handle_sigint_ignore)
 
     parser = argparse.ArgumentParser(description="Tiny Screen stats collector")
     parser.add_argument("--port", help="Serial port for the ESP32-S3 (e.g. /dev/ttyACM0)")
