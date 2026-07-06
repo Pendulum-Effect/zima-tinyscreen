@@ -14,10 +14,9 @@ services:
     # stuck at 0, but isolation testing later showed the real connectivity
     # issue (a much worse problem -- the ESP32 not receiving data at all)
     # persisted even without it, so host networking wasn't actually the
-    # cause and wasn't worth the added complexity. Network stats being
-    # stuck at 0 remains a known, accepted limitation of bridge networking
-    # (the container can only see its own virtual interface) until a
-    # different fix is found (e.g. bind-mounting /proc/net/dev directly).
+    # cause and wasn't worth the added complexity. Network stats are now
+    # fixed a different way -- see the /proc/1/net/dev bind mount below --
+    # without needing to share the container's whole network stack.
     ports:
       - target: 8989
         published: "8989"
@@ -29,6 +28,7 @@ services:
       - TINYSCREEN_STATUS_FILE=/tmp/tinyscreen_status.json
       # Set this if auto-detect picks the wrong serial device, e.g. /dev/ttyACM0
       - TINYSCREEN_SERIAL_PORT=
+      - TINYSCREEN_HOST_NET_DEV=/host_net_dev
 
     # The ESP32-S3 shows up as a serial device node, e.g. /dev/ttyACM0
     # (Linux CDC-ACM driver, matching the CH343P/native-USB-CDC bridge
@@ -41,6 +41,16 @@ services:
       - type: bind
         source: /dev
         target: /dev
+      # A single small pseudo-file, NOT the whole host filesystem or
+      # network stack -- PID 1 always lives in the host's real network
+      # namespace, so bind-mounting its /proc/1/net/dev view gives
+      # accurate host-level network throughput without needing
+      # network_mode: host (see NetworkMeter/parse_proc_net_dev in
+      # stats_collector.py, which reads and parses this directly).
+      - type: bind
+        source: /proc/1/net/dev
+        target: /host_net_dev
+        read_only: true
       # Persists the self-signed HTTPS cert across restarts, so you don't
       # get a fresh "untrusted certificate" browser warning every reboot.
       # Long-form bind syntax matches ZimaOS/CasaOS's own documented

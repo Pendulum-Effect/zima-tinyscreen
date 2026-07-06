@@ -130,21 +130,83 @@ class RaplPowerMeter:
         return round(watts, 2)
 
 
-class NetworkMeter:
-    """Reads host network throughput.
+def parse_proc_net_dev(path):
+    """Parse a /proc/net/dev-format file directly, returning
+    (total_rx_bytes, total_tx_bytes) summed across all real (non-loopback,
+    non-virtual) interfaces. Returns None if the file can't be read.
 
-    Requires the container to run with network_mode: host (see
-    app/docker-compose.yml) -- under the default bridge networking, this
-    only ever sees the container's own near-zero-traffic virtual
-    interface, not the ZimaBlade's real network activity.
+    Format reference (two header lines, then one line per interface):
+        Inter-|   Receive                                ...
+         face |bytes    packets errs drop fifo frame compressed multicast|...
+          eth0: 123456       10    0    0    0     0          0        0  ...
+
+    rx_bytes is the 1st field after the interface name, tx_bytes is the
+    9th (index 8) -- see /usr/include/linux/if_link.h's field order, which
+    /proc/net/dev follows.
+    """
+    try:
+        with open(path) as f:
+            lines = f.readlines()[2:]  # skip the two header lines
+    except (FileNotFoundError, PermissionError, OSError):
+        return None
+
+    total_rx = 0
+    total_tx = 0
+    found_any = False
+    for line in lines:
+        if ":" not in line:
+            continue
+        iface, data = line.split(":", 1)
+        iface = iface.strip()
+        if iface == "lo" or iface.startswith(("docker", "veth", "br-", "virbr")):
+            continue
+        fields = data.split()
+        if len(fields) < 9:
+            continue
+        try:
+            rx_bytes = int(fields[0])
+            tx_bytes = int(fields[8])
+        except ValueError:
+            continue
+        total_rx += rx_bytes
+        total_tx += tx_bytes
+        found_any = True
+
+    return (total_rx, total_tx) if found_any else None
+
+
+class NetworkMeter:
+    """Reads network throughput.
+
+    If TINYSCREEN_HOST_NET_DEV points at a bind-mounted copy of the host's
+    /proc/1/net/dev (PID 1 always lives in the host's real network
+    namespace -- see app/docker-compose.yml), reads and parses that file
+    directly for accurate host-level throughput. This is a deliberately
+    narrow, single-file bind mount -- NOT network_mode: host, which would
+    share the container's entire network stack with the host just to read
+    a few counters, and which correlated with a separate, serious
+    connectivity regression in this project's history.
+
+    Falls back to psutil.net_io_counters() when that env var isn't set
+    (e.g. running directly on a host with no Docker involved at all) --
+    but note that under plain bridge networking inside a container, this
+    fallback only sees the container's own near-zero-traffic virtual
+    interface, not real host activity.
     """
 
     def __init__(self, iface=None):
         self.iface = iface
+        self.host_net_dev = os.environ.get("TINYSCREEN_HOST_NET_DEV")
         self._last = None
         self._last_t = None
 
     def _counters(self):
+        if self.host_net_dev:
+            result = parse_proc_net_dev(self.host_net_dev)
+            if result is not None:
+                return result
+            # Fall through to psutil if the bind-mounted file couldn't be
+            # read for some reason, rather than reporting nothing at all.
         if self.iface:
             c = psutil.net_io_counters(pernic=True).get(self.iface)
             return (c.bytes_recv, c.bytes_sent) if c else (0, 0)
