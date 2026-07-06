@@ -24,6 +24,7 @@ CollectorManager and fight over the same collector subprocess.
 import glob
 import json
 import os
+import sys
 import subprocess
 import threading
 import time
@@ -121,9 +122,20 @@ class CollectorManager:
 
     def _watchdog(self):
         while True:
-            with self.lock:
-                if not self.paused and (self.proc is None or self.proc.poll() is not None):
-                    self._spawn()
+            try:
+                with self.lock:
+                    if not self.paused and (self.proc is None or self.proc.poll() is not None):
+                        self._spawn()
+            except Exception as e:
+                # Never let the watchdog thread itself die -- a single
+                # unhandled error here previously meant the collector
+                # would never be respawned again for the rest of the
+                # container's life (e.g. after any /api/flash or
+                # /api/configure call, which both pause() then rely
+                # entirely on this thread noticing resume() and
+                # restarting it), with no visible error anywhere.
+                print(f"CollectorManager watchdog error ({e}); will retry next cycle.",
+                      file=sys.stderr)
             time.sleep(5)
 
     def pause(self):
