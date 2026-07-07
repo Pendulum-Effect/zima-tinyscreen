@@ -133,12 +133,53 @@
   </div>
 
   <div class="main">
-    <!-- General: placeholder for now -->
+    <!-- General -->
     <section class="tab-panel" data-panel="general">
       <h2>General</h2>
-      <div class="card coming-soon">
-        <div class="big">Coming soon</div>
-        <div>Device info, firmware version, and diagnostics will live here.</div>
+      <div id="general-loading" class="loading">Loading device info…</div>
+      <div id="general-error" class="error-banner" style="display:none;"></div>
+      <div id="general-content" style="display:none;">
+
+        <div class="card">
+          <div class="card-header">
+            <div>
+              <div class="card-title" id="model-name">—</div>
+              <div class="card-desc" id="model-sku">—</div>
+              <div class="card-desc" id="health-status" style="margin-top:10px;">—</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <div>
+              <div class="card-title">Software Version</div>
+              <div class="card-desc" id="firmware-version">—</div>
+            </div>
+            <button class="btn" disabled title="Coming soon">Check for Update</button>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <div>
+              <div class="card-title">Debugging</div>
+              <div class="card-desc">Check API status and view the firmware update outcomes.</div>
+            </div>
+            <button class="btn" disabled title="Coming soon">View Logs</button>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <div>
+              <div class="card-title">Reset Device</div>
+              <div class="card-desc">Having issues? Start the first-time setup process.</div>
+            </div>
+            <button class="btn" disabled title="Coming soon">Reset</button>
+          </div>
+        </div>
+
       </div>
     </section>
 
@@ -236,6 +277,14 @@
       document.querySelector(`.tab-panel[data-panel="${item.dataset.tab}"]`).classList.add('active');
     });
   });
+
+  // ---------------------------------------------------------------------
+  // General tab: board friendly names
+  // ---------------------------------------------------------------------
+  const FRIENDLY_BOARD_NAMES = {
+    0: 'Square Display (No Touch)',
+    1: '1.69" Touch Display',
+  };
 
   // ---------------------------------------------------------------------
   // Layouts tab: page metadata and state
@@ -341,6 +390,56 @@
     currentBrightness = parseInt(brightnessSlider.value, 10);
     brightnessValue.textContent = currentBrightness + '%';
   });
+
+  // ---------------------------------------------------------------------
+  // General tab: device info + health
+  // ---------------------------------------------------------------------
+  async function loadGeneralInfo() {
+    const loadingEl = document.getElementById('general-loading');
+    const errorEl = document.getElementById('general-error');
+    const contentEl = document.getElementById('general-content');
+    try {
+      const [cfgRes, statusRes] = await Promise.all([
+        fetch('/api/current_config'),
+        fetch('/api/status'),
+      ]);
+      const cfgData = await cfgRes.json();
+      const statusData = await statusRes.json();
+
+      if (!cfgData.ok) {
+        loadingEl.style.display = 'none';
+        errorEl.style.display = 'block';
+        errorEl.innerHTML = (cfgData.error || 'Could not reach the device.') +
+          ' <a href="wizard.html">Run setup →</a>';
+        return;
+      }
+      const cfg = cfgData.config;
+
+      document.getElementById('model-name').textContent =
+        FRIENDLY_BOARD_NAMES[cfg.board] || cfg.board_name;
+      document.getElementById('model-sku').textContent = cfg.board_name;
+      document.getElementById('firmware-version').textContent = cfg.firmware_version || 'Unknown';
+
+      const healthEl = document.getElementById('health-status');
+      if (statusData.collector_running && statusData.age_seconds < 10) {
+        healthEl.textContent = 'Connected -- data updating normally';
+        healthEl.style.color = 'var(--teal)';
+      } else if (statusData.collector_running) {
+        healthEl.textContent = 'Connected, but data is ' + Math.round(statusData.age_seconds) + 's old';
+        healthEl.style.color = 'var(--warn)';
+      } else {
+        healthEl.textContent = 'Not connected';
+        healthEl.style.color = 'var(--err)';
+      }
+
+      loadingEl.style.display = 'none';
+      contentEl.style.display = 'block';
+    } catch (e) {
+      loadingEl.style.display = 'none';
+      errorEl.style.display = 'block';
+      errorEl.textContent = 'Request failed: ' + e.message;
+    }
+  }
 
   // ---------------------------------------------------------------------
   // Load real current state
@@ -456,6 +555,7 @@
   document.getElementById('save-btn-screen').addEventListener('click', () =>
     saveConfig(document.getElementById('save-status-screen'), document.getElementById('save-btn-screen')));
 
+  loadGeneralInfo();
   loadCurrentConfig();
 </script>
 </body>
