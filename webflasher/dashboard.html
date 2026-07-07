@@ -1,0 +1,393 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Tiny Screen Settings</title>
+<style>
+  :root {
+    --bg: #0b1418;
+    --panel: #101c22;
+    --panel-raised: #142027;
+    --teal: #4fd1c5;
+    --teal-dim: #2b6b64;
+    --text: #eaf6f4;
+    --subtext: #8fb0ac;
+    --border: #1e3a3a;
+    --warn: #ffb454;
+    --err: #ff9a7a;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    display: flex;
+    min-height: 100vh;
+  }
+
+  .sidebar {
+    width: 200px; flex-shrink: 0;
+    background: var(--panel);
+    border-right: 1px solid var(--border);
+    padding: 26px 16px;
+  }
+  .sidebar h1 { font-size: 20px; margin: 0 0 28px; padding-left: 8px; }
+  .nav-item {
+    padding: 11px 14px; border-radius: 8px; cursor: pointer;
+    color: var(--subtext); font-size: 14.5px; margin-bottom: 4px;
+  }
+  .nav-item:hover { color: var(--text); }
+  .nav-item.active { background: var(--panel-raised); color: var(--teal); font-weight: 600; }
+
+  .main { flex: 1; padding: 32px 40px; max-width: 780px; }
+  .main h2 { font-size: 22px; margin: 0 0 22px; }
+
+  .tab-panel { display: none; }
+  .tab-panel.active { display: block; }
+
+  .card {
+    background: var(--panel); border: 1px solid var(--border); border-radius: 14px;
+    padding: 22px 24px; margin-bottom: 18px;
+  }
+  .card-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 4px; }
+  .card-title { font-size: 15.5px; font-weight: 700; }
+  .card-desc { color: var(--subtext); font-size: 13px; margin: 4px 0 0; }
+
+  .toggle {
+    position: relative; width: 40px; height: 22px; flex-shrink: 0;
+    background: #2c3f3d; border-radius: 12px; cursor: pointer; transition: background 0.15s;
+  }
+  .toggle.on { background: var(--teal); }
+  .toggle .knob {
+    position: absolute; top: 2px; left: 2px; width: 18px; height: 18px;
+    background: #fff; border-radius: 50%; transition: left 0.15s;
+  }
+  .toggle.on .knob { left: 20px; }
+  .toggle.disabled { opacity: 0.4; cursor: not-allowed; }
+
+  .page-list { display: flex; flex-direction: column; gap: 8px; margin-top: 14px; }
+  .page-item {
+    display: flex; align-items: center; gap: 12px;
+    background: var(--panel-raised); border: 1px solid var(--border); border-radius: 10px;
+    padding: 12px 14px; cursor: grab;
+  }
+  .page-item.dragging { opacity: 0.4; }
+  .page-item .handle { color: var(--subtext); font-size: 14px; user-select: none; }
+  .page-item .label { flex: 1; font-size: 14px; }
+  .page-item.disabled-page .label { color: var(--subtext); }
+  .style-select {
+    font-size: 12.5px; color: var(--subtext); background: #0c1a1f;
+    border: 1px solid var(--border); border-radius: 6px; padding: 5px 8px;
+  }
+  .style-select:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  .cycle-row { display: flex; gap: 10px; margin-top: 14px; }
+  .radio-btn, .interval-btn {
+    padding: 8px 16px; border-radius: 8px; cursor: pointer; font-size: 13px;
+    border: 1px solid var(--border); background: #0c1a1f; color: var(--subtext);
+  }
+  .radio-btn.active, .interval-btn.active { border-color: var(--teal); color: var(--teal); background: rgba(79,209,197,0.08); }
+  .interval-row { display: none; gap: 8px; margin-top: 10px; }
+  .interval-row.visible { display: flex; }
+
+  .placeholder-badge {
+    font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.04em;
+    color: var(--subtext); background: #0c1a1f; border: 1px solid var(--border);
+    padding: 3px 8px; border-radius: 5px;
+  }
+  .coming-soon { text-align: center; padding: 60px 20px; color: var(--subtext); }
+  .coming-soon .big { font-size: 16px; color: var(--text); margin-bottom: 6px; }
+
+  .save-bar {
+    position: sticky; bottom: 0; background: var(--bg);
+    padding: 18px 0 4px; margin-top: 8px;
+    display: flex; align-items: center; gap: 16px;
+  }
+  .btn {
+    padding: 11px 24px; border-radius: 10px; border: none;
+    background: var(--teal); color: #06201d; font-weight: 700; font-size: 14.5px; cursor: pointer;
+  }
+  .btn:hover { background: #6fe2d7; }
+  .btn:disabled { background: #2c3f3d; color: #6a827e; cursor: not-allowed; }
+  .status-msg { font-size: 13.5px; }
+  .status-msg.ok { color: var(--teal); }
+  .status-msg.err { color: var(--err); }
+
+  .loading, .error-banner { color: var(--subtext); font-size: 14px; padding: 20px 0; }
+  .error-banner { color: var(--err); }
+  .error-banner a { color: var(--teal); }
+</style>
+</head>
+<body>
+  <div class="sidebar">
+    <h1>TinyScreen</h1>
+    <div class="nav-item active" data-tab="general">General</div>
+    <div class="nav-item" data-tab="layouts">Layouts</div>
+    <div class="nav-item" data-tab="screen">Screen</div>
+  </div>
+
+  <div class="main">
+    <!-- General: placeholder for now -->
+    <section class="tab-panel" data-panel="general">
+      <h2>General</h2>
+      <div class="card coming-soon">
+        <div class="big">Coming soon</div>
+        <div>Device info, firmware version, and diagnostics will live here.</div>
+      </div>
+    </section>
+
+    <!-- Layouts: the real, working tab this round -->
+    <section class="tab-panel active" data-panel="layouts">
+      <h2>Layouts</h2>
+      <div id="layouts-loading" class="loading">Loading current settings…</div>
+      <div id="layouts-error" class="error-banner" style="display:none;"></div>
+      <div id="layouts-content" style="display:none;">
+
+        <div class="card">
+          <div class="card-title">Display Carousel</div>
+          <div class="card-desc">Drag to reorder. Toggle a page off to skip it without losing your place in the order.</div>
+          <div class="page-list" id="page-list"></div>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <div>
+              <div class="card-title">Automatic Carousel</div>
+              <div class="card-desc">Cycle through enabled pages on a timer, instead of staying on one.</div>
+            </div>
+          </div>
+          <div class="cycle-row">
+            <div class="radio-btn" data-mode="static">Static</div>
+            <div class="radio-btn" data-mode="auto">Auto-cycle</div>
+          </div>
+          <div class="interval-row" id="interval-row">
+            <div class="interval-btn" data-interval="5">5s</div>
+            <div class="interval-btn" data-interval="10">10s</div>
+            <div class="interval-btn" data-interval="30">30s</div>
+            <div class="interval-btn" data-interval="60">1m</div>
+          </div>
+        </div>
+
+        <div class="save-bar">
+          <button class="btn" id="save-btn">Save changes</button>
+          <span class="status-msg" id="save-status"></span>
+        </div>
+      </div>
+    </section>
+
+    <!-- Screen: placeholder for now -->
+    <section class="tab-panel" data-panel="screen">
+      <h2>Screen</h2>
+      <div class="card coming-soon">
+        <div class="big">Coming soon</div>
+        <div>Brightness, night mode, and screensaver controls will live here.</div>
+      </div>
+    </section>
+  </div>
+
+<script>
+  // ---------------------------------------------------------------------
+  // Tab switching
+  // ---------------------------------------------------------------------
+  document.querySelectorAll('.nav-item').forEach(item => {
+    item.addEventListener('click', () => {
+      document.querySelectorAll('.nav-item').forEach(i => i.classList.remove('active'));
+      document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+      item.classList.add('active');
+      document.querySelector(`.tab-panel[data-panel="${item.dataset.tab}"]`).classList.add('active');
+    });
+  });
+
+  // ---------------------------------------------------------------------
+  // Layouts tab: page metadata and state
+  // ---------------------------------------------------------------------
+  const ALL_PAGES = [
+    { id: 'cpu', label: 'CPU Usage' },
+    { id: 'ram', label: 'RAM Usage' },
+    { id: 'mmc', label: 'MMC Usage' },
+    { id: 'net', label: 'Network Usage' },
+    { id: 'temp', label: 'Temperature' },
+    { id: 'nas', label: 'NAS Usage' },
+  ];
+  const pageLabel = id => (ALL_PAGES.find(p => p.id === id) || {}).label || id;
+
+  let pageOrder = ALL_PAGES.map(p => p.id); // current display order, enabled or not
+  let enabledPages = new Set();
+  let cycleMode = 'static';
+  let cycleSeconds = 10;
+  let currentBoard = 0;
+  let currentBrightness = 100; // preserved untouched -- Screen tab will own this later
+
+  function renderPageList() {
+    const list = document.getElementById('page-list');
+    list.innerHTML = '';
+    pageOrder.forEach(id => {
+      const enabled = enabledPages.has(id);
+      const item = document.createElement('div');
+      item.className = 'page-item' + (enabled ? '' : ' disabled-page');
+      item.draggable = true;
+      item.dataset.id = id;
+      item.innerHTML = `
+        <span class="handle">⠿</span>
+        <span class="label">${pageLabel(id)}</span>
+        <select class="style-select" disabled title="Coming soon">
+          <option>Default</option>
+        </select>
+        <div class="toggle ${enabled ? 'on' : ''}" data-id="${id}">
+          <div class="knob"></div>
+        </div>
+      `;
+      list.appendChild(item);
+    });
+    attachDragHandlers();
+    attachToggleHandlers();
+  }
+
+  function attachToggleHandlers() {
+    document.querySelectorAll('.toggle[data-id]').forEach(t => {
+      t.addEventListener('click', () => {
+        const id = t.dataset.id;
+        if (enabledPages.has(id)) enabledPages.delete(id);
+        else enabledPages.add(id);
+        renderPageList();
+      });
+    });
+  }
+
+  // Native HTML5 drag-and-drop reordering -- no external library needed.
+  let draggedId = null;
+  function attachDragHandlers() {
+    document.querySelectorAll('.page-item').forEach(item => {
+      item.addEventListener('dragstart', () => {
+        draggedId = item.dataset.id;
+        item.classList.add('dragging');
+      });
+      item.addEventListener('dragend', () => item.classList.remove('dragging'));
+      item.addEventListener('dragover', (e) => e.preventDefault());
+      item.addEventListener('drop', (e) => {
+        e.preventDefault();
+        const targetId = item.dataset.id;
+        if (draggedId === targetId) return;
+        const fromIdx = pageOrder.indexOf(draggedId);
+        const toIdx = pageOrder.indexOf(targetId);
+        pageOrder.splice(fromIdx, 1);
+        pageOrder.splice(toIdx, 0, draggedId);
+        renderPageList();
+      });
+    });
+  }
+
+  document.querySelectorAll('.radio-btn[data-mode]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.radio-btn[data-mode]').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      cycleMode = btn.dataset.mode;
+      document.getElementById('interval-row').classList.toggle('visible', cycleMode === 'auto');
+    });
+  });
+  document.querySelectorAll('.interval-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.interval-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      cycleSeconds = parseInt(btn.dataset.interval, 10);
+    });
+  });
+
+  // ---------------------------------------------------------------------
+  // Load real current state
+  // ---------------------------------------------------------------------
+  async function loadCurrentConfig() {
+    const loadingEl = document.getElementById('layouts-loading');
+    const errorEl = document.getElementById('layouts-error');
+    const contentEl = document.getElementById('layouts-content');
+    try {
+      const res = await fetch('/api/current_config');
+      const data = await res.json();
+      if (!data.ok) {
+        loadingEl.style.display = 'none';
+        errorEl.style.display = 'block';
+        errorEl.innerHTML = (data.error || 'Could not reach the device.') +
+          ' <a href="wizard.html">Run setup →</a>';
+        return;
+      }
+      const cfg = data.config;
+      currentBoard = cfg.board;
+      currentBrightness = cfg.brightness;
+      cycleMode = cfg.cycle_mode;
+      cycleSeconds = cfg.cycle_seconds;
+      enabledPages = new Set(cfg.pages);
+      // Enabled pages first, in their configured order; anything not
+      // currently enabled gets appended after, so it's still reachable
+      // to turn back on without hunting for it.
+      pageOrder = [...cfg.pages, ...ALL_PAGES.map(p => p.id).filter(id => !cfg.pages.includes(id))];
+
+      document.querySelectorAll('.radio-btn[data-mode]').forEach(b => {
+        b.classList.toggle('active', b.dataset.mode === cycleMode);
+      });
+      document.getElementById('interval-row').classList.toggle('visible', cycleMode === 'auto');
+      document.querySelectorAll('.interval-btn').forEach(b => {
+        b.classList.toggle('active', parseInt(b.dataset.interval, 10) === cycleSeconds);
+      });
+
+      renderPageList();
+      loadingEl.style.display = 'none';
+      contentEl.style.display = 'block';
+    } catch (e) {
+      loadingEl.style.display = 'none';
+      errorEl.style.display = 'block';
+      errorEl.textContent = 'Request failed: ' + e.message;
+    }
+  }
+
+  // ---------------------------------------------------------------------
+  // Save
+  // ---------------------------------------------------------------------
+  document.getElementById('save-btn').addEventListener('click', async () => {
+    const finalPages = pageOrder.filter(id => enabledPages.has(id));
+    const statusEl = document.getElementById('save-status');
+    if (finalPages.length === 0) {
+      statusEl.textContent = 'Enable at least one page.';
+      statusEl.className = 'status-msg err';
+      return;
+    }
+    const saveBtn = document.getElementById('save-btn');
+    saveBtn.disabled = true;
+    statusEl.textContent = 'Saving…';
+    statusEl.className = 'status-msg';
+    try {
+      const res = await fetch('/api/configure', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          board: currentBoard,
+          pages: finalPages,
+          cycle_mode: cycleMode,
+          cycle_seconds: cycleSeconds,
+          brightness: currentBrightness,
+        }),
+      });
+      const data = await res.json();
+      if (data.ok && data.acked) {
+        statusEl.textContent = '✓ Saved.';
+        statusEl.className = 'status-msg ok';
+      } else if (data.ok) {
+        statusEl.textContent = 'Sent — no confirmation seen, but it likely worked.';
+        statusEl.className = 'status-msg ok';
+      } else {
+        statusEl.textContent = '✗ ' + (data.error || 'Could not save.');
+        statusEl.className = 'status-msg err';
+      }
+    } catch (e) {
+      statusEl.textContent = '✗ Request failed: ' + e.message;
+      statusEl.className = 'status-msg err';
+    } finally {
+      saveBtn.disabled = false;
+    }
+  });
+
+  loadCurrentConfig();
+</script>
+</body>
+</html>
