@@ -245,7 +245,13 @@ def _decimal_gb(num_bytes: float) -> float:
 
 
 def get_mmc(path="/"):
-    """Root/OS storage usage."""
+    """Root/OS storage usage. `path` should be the HOST's real root
+    filesystem, not the container's own "/" -- see the --disk-path
+    default in main(), which uses TINYSCREEN_HOST_ROOT for exactly this
+    reason (discovered directly: moving Docker's own data-root to a
+    different drive changed what the container's own "/" reported,
+    since it started reflecting that drive instead of the actual
+    onboard MMC)."""
     du = psutil.disk_usage(path)
     return _decimal_gb(du.total), round(du.percent, 1)
 
@@ -424,8 +430,12 @@ def main():
     parser.add_argument("--baud", type=int, default=DEFAULT_BAUD)
     parser.add_argument("--interval", type=float, default=POLL_INTERVAL_SEC)
     parser.add_argument("--iface", default=NET_IFACE, help="Limit network stats to one interface")
-    parser.add_argument("--disk-path", default="/",
-                         help="Path/mount used for MMC (root storage) usage stats")
+    parser.add_argument("--disk-path", default=os.environ.get("TINYSCREEN_HOST_ROOT", "/"),
+                         help="Path/mount used for MMC (root storage) usage stats -- "
+                              "the host's real root via TINYSCREEN_HOST_ROOT when running "
+                              "in the packaged container, since the container's own \"/\" "
+                              "is backed by Docker's storage driver, not necessarily the "
+                              "same disk as the host's actual OS/eMMC")
     parser.add_argument("--data-path", default=os.environ.get("TINYSCREEN_DATA_PATH", "/DATA"),
                          help="Path/mount used for NAS storage-pool detection (ZimaOS's /DATA convention)")
     parser.add_argument("--print-only", action="store_true", help="Print JSON instead of sending over serial")

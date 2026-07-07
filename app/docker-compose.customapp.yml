@@ -35,6 +35,7 @@ services:
       - TINYSCREEN_SERIAL_PORT=
       - TINYSCREEN_HOST_NET_DEV=/host_net_dev
       - TINYSCREEN_DATA_PATH=/host_data
+      - TINYSCREEN_HOST_ROOT=/host_root
 
     # The ESP32-S3 shows up as a serial device node, e.g. /dev/ttyACM0
     # (Linux CDC-ACM driver, matching the CH343P/native-USB-CDC bridge
@@ -67,6 +68,30 @@ services:
       - type: bind
         source: /DATA
         target: /host_data
+        read_only: true
+      # The host's real root filesystem -- needed because the CONTAINER's
+      # own "/" is backed by Docker's storage driver, wherever that
+      # physically lives, which is NOT necessarily the same disk as the
+      # host's actual OS/eMMC. This was a real, discovered issue: moving
+      # Docker's own data-root to a new drive (via ZimaOS's "migrate
+      # AppData/AppImages" feature) immediately changed what the
+      # container's own "/" reported, since it started reflecting the new
+      # drive instead of the actual onboard MMC. get_mmc() in
+      # stats_collector.py uses this mount instead of the container's own
+      # "/" specifically to avoid depending on that coincidental (and
+      # apparently not guaranteed) alignment.
+      #
+      # This is a single, non-recursive disk_usage() call on one path --
+      # NOT the kind of directory enumeration (disk_partitions()) the
+      # earlier, since-reverted NAS auto-detection attempt did, so the
+      # "pulls in every other container's overlay" concern that motivated
+      # removing that approach doesn't really apply here: disk_usage()
+      # only ever reports stats for the exact filesystem the given path
+      # resolves to, regardless of what else happens to be visible nested
+      # underneath it.
+      - type: bind
+        source: /
+        target: /host_root
         read_only: true
       # Persists the self-signed HTTPS cert across restarts, so you don't
       # get a fresh "untrusted certificate" browser warning every reboot.
