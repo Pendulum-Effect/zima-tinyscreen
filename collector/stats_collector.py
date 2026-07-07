@@ -244,14 +244,16 @@ def _decimal_gb(num_bytes: float) -> float:
     return round(num_bytes / 1_000_000_000, 1)
 
 
-def get_mmc(path="/"):
-    """Root/OS storage usage. `path` should be the HOST's real root
-    filesystem, not the container's own "/" -- see the --disk-path
-    default in main(), which uses TINYSCREEN_HOST_ROOT for exactly this
-    reason (discovered directly: moving Docker's own data-root to a
-    different drive changed what the container's own "/" reported,
-    since it started reflecting that drive instead of the actual
-    onboard MMC)."""
+def get_mmc(path="/DATA"):
+    """Onboard storage usage. `path` should be ZimaOS/CasaOS's /DATA
+    mount (via TINYSCREEN_DATA_PATH -- see --disk-path default in
+    main()), confirmed via a real df -h check to be the actual onboard
+    partition -- NOT the container's own "/" (backed by Docker's storage
+    driver, wherever that happens to live -- discovered directly: moving
+    Docker's own data-root to a different drive changed what the
+    container's own "/" reported) and NOT literal host root either (a
+    separate, much smaller boot/OS partition, unrelated to the storage
+    concept users actually care about)."""
     du = psutil.disk_usage(path)
     return _decimal_gb(du.total), round(du.percent, 1)
 
@@ -430,12 +432,13 @@ def main():
     parser.add_argument("--baud", type=int, default=DEFAULT_BAUD)
     parser.add_argument("--interval", type=float, default=POLL_INTERVAL_SEC)
     parser.add_argument("--iface", default=NET_IFACE, help="Limit network stats to one interface")
-    parser.add_argument("--disk-path", default=os.environ.get("TINYSCREEN_HOST_ROOT", "/"),
-                         help="Path/mount used for MMC (root storage) usage stats -- "
-                              "the host's real root via TINYSCREEN_HOST_ROOT when running "
-                              "in the packaged container, since the container's own \"/\" "
-                              "is backed by Docker's storage driver, not necessarily the "
-                              "same disk as the host's actual OS/eMMC")
+    parser.add_argument("--disk-path", default=os.environ.get("TINYSCREEN_DATA_PATH", "/DATA"),
+                         help="Path/mount used for MMC (onboard storage) usage stats -- "
+                              "ZimaOS/CasaOS's /DATA convention, confirmed via df -h to be "
+                              "the actual onboard partition (mmcblk0p8 in testing), NOT "
+                              "literal host root (which is a separate, much smaller "
+                              "boot/OS partition unrelated to the storage users actually "
+                              "care about)")
     parser.add_argument("--data-path", default=os.environ.get("TINYSCREEN_DATA_PATH", "/DATA"),
                          help="Path/mount used for NAS storage-pool detection (ZimaOS's /DATA convention)")
     parser.add_argument("--print-only", action="store_true", help="Print JSON instead of sending over serial")
