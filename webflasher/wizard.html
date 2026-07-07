@@ -1,0 +1,519 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Tiny Screen Setup</title>
+<script type="module" src="https://unpkg.com/esp-web-tools@10/dist/web/install-button.js?module"></script>
+<style>
+  :root {
+    --bg: #0b1418;
+    --panel: #101c22;
+    --panel-raised: #142027;
+    --teal: #4fd1c5;
+    --teal-dim: #2b6b64;
+    --text: #eaf6f4;
+    --subtext: #8fb0ac;
+    --border: #1e3a3a;
+    --warn: #ffb454;
+    --err: #ff9a7a;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    background: radial-gradient(circle at 50% 0%, #12232a 0%, var(--bg) 60%);
+    color: var(--text);
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+  }
+  .wizard {
+    width: 100%;
+    max-width: 640px;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    padding: 40px 44px 32px;
+    min-height: 420px;
+    display: flex;
+    flex-direction: column;
+  }
+  .dots {
+    display: flex;
+    gap: 7px;
+    margin-bottom: 28px;
+  }
+  .dots .dot {
+    width: 7px; height: 7px; border-radius: 50%;
+    background: var(--border);
+    transition: background 0.25s;
+  }
+  .dots .dot.done { background: var(--teal-dim); }
+  .dots .dot.active { background: var(--teal); }
+
+  .step { display: none; flex-direction: column; flex: 1; }
+  .step.active { display: flex; }
+
+  h1 { font-size: 26px; margin: 0 0 8px; font-weight: 700; }
+  p.sub { color: var(--subtext); margin: 0 0 24px; line-height: 1.55; font-size: 14.5px; }
+
+  .step-body { flex: 1; }
+
+  .screen-choice { display: flex; gap: 18px; margin-top: 8px; }
+  .screen-card {
+    flex: 1;
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 20px 16px;
+    text-align: center;
+    cursor: pointer;
+    background: var(--panel-raised);
+    transition: border-color 0.15s, background 0.15s;
+  }
+  .screen-card:hover { border-color: var(--teal-dim); }
+  .screen-card.selected { border-color: var(--teal); background: rgba(79, 209, 197, 0.08); }
+  .screen-card .glyph {
+    width: 72px; height: 72px; margin: 0 auto 14px;
+    background: #2a3a3d; border: 3px solid #4a6a6a;
+  }
+  .screen-card.round-ish .glyph { border-radius: 16px; height: 84px; }
+  .screen-card .name { font-weight: 700; font-size: 15px; }
+  .screen-card .dims { color: var(--subtext); font-size: 12.5px; margin-top: 2px; }
+
+  .conn-choice { display: flex; gap: 18px; margin-top: 8px; }
+  .conn-card {
+    flex: 1;
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 22px 16px;
+    text-align: center;
+    cursor: pointer;
+    background: var(--panel-raised);
+  }
+  .conn-card:hover { border-color: var(--teal-dim); }
+  .conn-card.selected { border-color: var(--teal); background: rgba(79, 209, 197, 0.08); }
+  .conn-card .name { font-weight: 700; font-size: 15px; margin-bottom: 4px; }
+  .conn-card .desc { color: var(--subtext); font-size: 12.5px; line-height: 1.4; }
+
+  .plug-art { display: flex; align-items: center; justify-content: center; margin: 20px 0 8px; }
+  .plug-art svg { max-width: 100%; height: auto; }
+
+  .progress-track {
+    height: 10px; border-radius: 6px; background: var(--border);
+    overflow: hidden; margin: 32px 0 10px;
+  }
+  .progress-fill {
+    height: 100%; background: var(--teal); width: 0%;
+    transition: width 0.4s ease;
+  }
+  .progress-label { color: var(--subtext); font-size: 13.5px; }
+  .progress-log {
+    margin-top: 16px; font-family: ui-monospace, monospace; font-size: 11.5px;
+    color: var(--subtext); background: #0c1a1f; border: 1px solid var(--border);
+    border-radius: 8px; padding: 10px 12px; max-height: 140px; overflow-y: auto;
+    white-space: pre-wrap; display: none;
+  }
+  .progress-log.visible { display: block; }
+
+  .complete-glyph {
+    width: 88px; height: 104px; margin: 12px auto 20px;
+    border-radius: 20px; background: #2a3a3d; border: 3px solid var(--teal);
+  }
+
+  .footer { display: flex; justify-content: space-between; align-items: center; margin-top: auto; padding-top: 24px; }
+  .link-btn { background: none; border: none; color: var(--subtext); font-size: 13.5px; cursor: pointer; padding: 8px 0; }
+  .link-btn:hover { color: var(--text); }
+  .btn {
+    padding: 12px 26px; border-radius: 10px; border: none;
+    background: var(--teal); color: #06201d; font-weight: 700; font-size: 15px;
+    cursor: pointer;
+  }
+  .btn:hover { background: #6fe2d7; }
+  .btn:disabled { background: #2c3f3d; color: #6a827e; cursor: not-allowed; }
+
+  .status-msg { font-size: 13.5px; margin-top: 14px; min-height: 18px; }
+  .status-msg.ok { color: var(--teal); }
+  .status-msg.err { color: var(--err); }
+  .status-msg.warn { color: var(--warn); }
+
+  esp-web-install-button { display: block; }
+  esp-web-install-button button {
+    width: 100%; padding: 13px; border-radius: 10px; border: none;
+    background: var(--teal); color: #06201d; font-weight: 700; font-size: 15px; cursor: pointer;
+  }
+  esp-web-install-button button:hover { background: #6fe2d7; }
+</style>
+</head>
+<body>
+  <div class="wizard">
+    <div class="dots" id="dots"></div>
+
+    <!-- Step: welcome -->
+    <section class="step active" data-step="welcome">
+      <div class="step-body">
+        <h1>Welcome to Tiny Screen</h1>
+        <p class="sub">Let's get your display set up. This takes about two minutes.</p>
+      </div>
+      <div class="footer">
+        <span></span>
+        <button class="btn" data-next>Next</button>
+      </div>
+    </section>
+
+    <!-- Step: choose screen -->
+    <section class="step" data-step="board">
+      <div class="step-body">
+        <h1>Choose your screen</h1>
+        <p class="sub">Which display are you setting up?</p>
+        <div class="screen-choice">
+          <div class="screen-card" data-board="0">
+            <div class="glyph" style="border-radius: 6px;"></div>
+            <div class="name">Square, no touch</div>
+            <div class="dims">240×240 · 1.3"</div>
+          </div>
+          <div class="screen-card round-ish" data-board="1">
+            <div class="glyph"></div>
+            <div class="name">Touch</div>
+            <div class="dims">240×280 · 1.69"</div>
+          </div>
+        </div>
+      </div>
+      <div class="footer">
+        <button class="link-btn" data-back>Back</button>
+        <button class="btn" id="board-next" disabled data-next>Next</button>
+      </div>
+    </section>
+
+    <!-- Step: connection method (only shown when Web Serial is actually available) -->
+    <section class="step" data-step="connection">
+      <div class="step-body">
+        <h1>Where's your board connected?</h1>
+        <p class="sub">We can flash it either way.</p>
+        <div class="conn-choice">
+          <div class="conn-card" data-conn="computer">
+            <div class="name">This computer</div>
+            <div class="desc">Plugged into this device via USB-C right now.</div>
+          </div>
+          <div class="conn-card" data-conn="zimablade">
+            <div class="name">The ZimaBlade</div>
+            <div class="desc">Plugged directly into your ZimaBlade/ZimaBoard.</div>
+          </div>
+        </div>
+      </div>
+      <div class="footer">
+        <button class="link-btn" data-back>Back</button>
+        <button class="btn" id="conn-next" disabled data-next>Next</button>
+      </div>
+    </section>
+
+    <!-- Step: plug in -->
+    <section class="step" data-step="plug">
+      <div class="step-body">
+        <h1>Plug in your screen</h1>
+        <p class="sub" id="plug-sub">Connect the screen via USB-C, then continue.</p>
+        <div class="plug-art">
+          <svg width="360" height="120" viewBox="0 0 360 120">
+            <rect x="10" y="24" width="84" height="72" rx="8" fill="#2a3a3d" stroke="#4a6a6a" stroke-width="2"/>
+            <rect x="24" y="36" width="56" height="10" rx="2" fill="#1c2a2c"/>
+            <rect x="24" y="78" width="56" height="8" rx="2" fill="#1c2a2c"/>
+            <path d="M 104 60 C 150 60, 200 60, 246 60" stroke="#4fd1c5" stroke-width="5" fill="none" stroke-linecap="round" opacity="0.6"/>
+            <rect x="96" y="55" width="14" height="10" rx="2" fill="#8fb0ac"/>
+            <rect x="240" y="55" width="14" height="10" rx="2" fill="#8fb0ac"/>
+            <rect x="260" y="20" width="90" height="80" rx="14" fill="#1c2a2c" stroke="var(--teal)" stroke-width="2"/>
+            <rect x="272" y="32" width="66" height="56" rx="8" fill="#2a3a3d"/>
+          </svg>
+        </div>
+      </div>
+      <div class="footer">
+        <button class="link-btn" data-back>Back</button>
+        <button class="btn" data-next>Next</button>
+      </div>
+    </section>
+
+    <!-- Step: flashing (computer path) -->
+    <section class="step" data-step="flash-computer">
+      <div class="step-body">
+        <h1>Connect &amp; flash</h1>
+        <p class="sub">Click below and pick your board's serial port when Chrome asks.</p>
+        <esp-web-install-button id="install-btn" manifest="./manifest-bridge.json">
+          <button slot="activate">Connect &amp; Flash</button>
+          <span slot="unsupported">Your browser doesn't support Web Serial. Please use Chrome or Edge.</span>
+          <span slot="not-allowed">Web Serial isn't allowed here (must be HTTPS or localhost).</span>
+        </esp-web-install-button>
+        <p class="status-msg" id="computer-flash-status">Once you see "Installation complete" above, click Next.</p>
+      </div>
+      <div class="footer">
+        <button class="link-btn" data-back>Back</button>
+        <button class="btn" id="computer-flash-next" data-next>Next</button>
+      </div>
+    </section>
+
+    <!-- Step: flashing (zimablade path) -->
+    <section class="step" data-step="flash-zimablade">
+      <div class="step-body">
+        <h1>Updating firmware</h1>
+        <p class="sub" id="zima-flash-sub">Flashing over the ZimaBlade's USB port — this takes up to a minute or two.</p>
+        <div class="progress-track"><div class="progress-fill" id="zima-progress-fill"></div></div>
+        <p class="progress-label" id="zima-progress-label">Starting…</p>
+        <pre class="progress-log" id="zima-flash-log"></pre>
+      </div>
+      <div class="footer">
+        <button class="link-btn" data-back>Back</button>
+        <button class="btn" id="zima-flash-next" disabled data-next>Next</button>
+      </div>
+    </section>
+
+    <!-- Step: complete -->
+    <section class="step" data-step="complete">
+      <div class="step-body" style="text-align:center;">
+        <h1>Update complete!</h1>
+        <div class="complete-glyph"></div>
+        <p class="sub" id="complete-sub">Your screen is set up with sensible defaults — one page, always on, full brightness.</p>
+        <p class="status-msg" id="complete-status"></p>
+      </div>
+      <div class="footer">
+        <span></span>
+        <button class="btn" id="finish-btn">Let's get started!</button>
+      </div>
+    </section>
+  </div>
+
+<script>
+  // ---------------------------------------------------------------------
+  // Step management
+  // ---------------------------------------------------------------------
+  const hasWebSerial = window.isSecureContext && 'serial' in navigator;
+
+  // The step order adapts at runtime: the "connection" step only exists
+  // in the flow when Web Serial is actually usable in this browsing
+  // context (HTTPS or localhost). Loaded over plain HTTP -- e.g. the
+  // ZimaOS app's default :8989 port -- Web Serial is unavailable
+  // entirely (browser security, not something we can work around), so
+  // there's nothing to choose: the flow goes straight to the
+  // ZimaBlade-side flash path, which is the only thing actually possible.
+  let connMethod = hasWebSerial ? null : 'zimablade';
+  let selectedBoard = null;
+
+  function baseFlow() {
+    const flow = ['welcome', 'board'];
+    if (hasWebSerial) flow.push('connection');
+    flow.push('plug');
+    flow.push(connMethod === 'computer' ? 'flash-computer' : 'flash-zimablade');
+    flow.push('complete');
+    return flow;
+  }
+
+  let flow = baseFlow();
+  let stepIndex = 0;
+
+  function renderDots() {
+    const dotsEl = document.getElementById('dots');
+    dotsEl.innerHTML = '';
+    flow.forEach((_, i) => {
+      const d = document.createElement('div');
+      d.className = 'dot' + (i < stepIndex ? ' done' : i === stepIndex ? ' active' : '');
+      dotsEl.appendChild(d);
+    });
+  }
+
+  function showStep(name) {
+    document.querySelectorAll('.step').forEach(s => {
+      s.classList.toggle('active', s.dataset.step === name);
+    });
+    renderDots();
+  }
+
+  function goTo(index) {
+    // Recompute the flow at each transition -- picking a connection
+    // method inserts/removes which flash step comes later.
+    flow = baseFlow();
+    stepIndex = Math.max(0, Math.min(index, flow.length - 1));
+    const name = flow[stepIndex];
+    showStep(name);
+    if (name === 'plug') {
+      document.getElementById('plug-sub').textContent =
+        connMethod === 'computer'
+          ? 'Connect the screen to this computer via USB-C, then continue.'
+          : "Connect the screen to your ZimaBlade's USB port via USB-C, then continue.";
+    }
+    if (name === 'flash-computer') applyManifestForBoard(selectedBoard);
+    if (name === 'flash-zimablade') startZimaBladeFlash();
+  }
+
+  document.addEventListener('click', (e) => {
+    if (e.target.matches('[data-next]') && !e.target.disabled) goTo(stepIndex + 1);
+    if (e.target.matches('[data-back]')) goTo(stepIndex - 1);
+  });
+
+  // ---------------------------------------------------------------------
+  // Board selection
+  // ---------------------------------------------------------------------
+  document.querySelectorAll('.screen-card').forEach(card => {
+    card.addEventListener('click', () => {
+      document.querySelectorAll('.screen-card').forEach(c => c.classList.remove('selected'));
+      card.classList.add('selected');
+      selectedBoard = parseInt(card.dataset.board, 10);
+      document.getElementById('board-next').disabled = false;
+    });
+  });
+
+  // ---------------------------------------------------------------------
+  // Connection method selection
+  // ---------------------------------------------------------------------
+  document.querySelectorAll('.conn-card').forEach(card => {
+    card.addEventListener('click', () => {
+      document.querySelectorAll('.conn-card').forEach(c => c.classList.remove('selected'));
+      card.classList.add('selected');
+      connMethod = card.dataset.conn;
+      document.getElementById('conn-next').disabled = false;
+    });
+  });
+
+  // ---------------------------------------------------------------------
+  // Computer path: ESP Web Tools flash, then push default config over
+  // the same WebSerial connection
+  // ---------------------------------------------------------------------
+  const NATIVE_USB_BOARDS = [1];
+
+  function applyManifestForBoard(boardId) {
+    const isNative = NATIVE_USB_BOARDS.includes(boardId);
+    document.getElementById('install-btn').setAttribute(
+      'manifest', isNative ? './manifest-native.json' : './manifest-bridge.json'
+    );
+  }
+
+  function defaultConfigFor(boardId) {
+    return { board: boardId, pages: ['temp'], cycle_mode: 'static', cycle_seconds: 10, brightness: 100 };
+  }
+
+  async function pushDefaultConfigViaWebSerial(boardId, statusCb) {
+    if (!('serial' in navigator)) {
+      statusCb('Web Serial not supported in this browser.', 'err');
+      return false;
+    }
+    let port;
+    try {
+      port = await navigator.serial.requestPort();
+      await port.open({ baudRate: 115200 });
+    } catch (e) {
+      statusCb('Could not open the serial port: ' + e.message, 'err');
+      return false;
+    }
+    try {
+      const writer = port.writable.getWriter();
+      const payload = JSON.stringify({ cmd: 'set_config', ...defaultConfigFor(boardId) }) + '\n';
+      await writer.write(new TextEncoder().encode(payload));
+      writer.releaseLock();
+
+      const reader = port.readable.getReader();
+      const decoder = new TextDecoder();
+      let buf = '';
+      let acked = false;
+      const deadline = Date.now() + 4000;
+      while (Date.now() < deadline && !acked) {
+        const { value, done } = await Promise.race([
+          reader.read(),
+          new Promise(resolve => setTimeout(() => resolve({ value: undefined, done: false }), 300)),
+        ]);
+        if (done) break;
+        if (value) {
+          buf += decoder.decode(value, { stream: true });
+          if (buf.includes('"ack":"set_config"')) acked = true;
+        }
+      }
+      reader.releaseLock();
+      statusCb(acked ? 'Settings applied.' : 'Sent — no confirmation seen, but it likely worked.', 'ok');
+      return true;
+    } catch (e) {
+      statusCb('Error while sending settings: ' + e.message, 'err');
+      return false;
+    } finally {
+      try { await port.close(); } catch (e) {}
+    }
+  }
+
+  // Best-effort status update -- NOT the sole way to proceed, since ESP
+  // Web Tools' own UI already shows clear completion/error feedback
+  // directly, and the exact state string values here weren't fully
+  // confirmable from available docs.
+  document.getElementById('install-btn').addEventListener('state-changed', (ev) => {
+    const state = ev.detail && ev.detail.state;
+    const statusEl = document.getElementById('computer-flash-status');
+    if (state === 'FINISHED') {
+      statusEl.textContent = '✓ Flashed successfully. Click Next to continue.';
+      statusEl.className = 'status-msg ok';
+    } else if (state === 'ERROR') {
+      statusEl.textContent = '✗ Flashing failed — try again, then click Next once it succeeds.';
+      statusEl.className = 'status-msg err';
+    }
+  });
+
+  // ---------------------------------------------------------------------
+  // ZimaBlade path: /api/flash then /api/configure with defaults
+  // ---------------------------------------------------------------------
+  async function startZimaBladeFlash() {
+    const fill = document.getElementById('zima-progress-fill');
+    const label = document.getElementById('zima-progress-label');
+    const log = document.getElementById('zima-flash-log');
+    const nextBtn = document.getElementById('zima-flash-next');
+    nextBtn.disabled = true;
+    fill.style.width = '10%';
+    label.textContent = 'Flashing firmware…';
+    log.classList.remove('visible');
+
+    try {
+      const flashRes = await fetch('/api/flash', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ board: selectedBoard }),
+      });
+      const flashData = await flashRes.json();
+      if (flashData.log) {
+        log.textContent = flashData.log;
+        log.classList.add('visible');
+      }
+      if (!flashData.ok) {
+        label.textContent = '✗ ' + (flashData.hint || flashData.error || 'Flashing failed.');
+        fill.style.width = '10%';
+        return;
+      }
+
+      fill.style.width = '60%';
+      label.textContent = 'Applying default settings…';
+
+      const cfgRes = await fetch('/api/configure', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(defaultConfigFor(selectedBoard)),
+      });
+      const cfgData = await cfgRes.json();
+
+      fill.style.width = '100%';
+      if (cfgData.ok) {
+        label.textContent = '✓ Done.';
+        nextBtn.disabled = false;
+      } else {
+        label.textContent = '✗ ' + (cfgData.error || 'Could not apply settings.');
+      }
+    } catch (e) {
+      label.textContent = '✗ Request failed: ' + e.message;
+    }
+  }
+
+  // ---------------------------------------------------------------------
+  // Finish
+  // ---------------------------------------------------------------------
+  document.getElementById('finish-btn').addEventListener('click', () => {
+    // The Layouts/Screen customization dashboard doesn't exist yet --
+    // until it does, send people to the existing settings page so
+    // there's still a way to change pages/brightness today.
+    window.location.href = 'settings.html';
+  });
+
+  goTo(0);
+</script>
+</body>
+</html>
