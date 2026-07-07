@@ -278,6 +278,26 @@ def api_configure():
         collector.resume()
 
 
+@app.route("/api/firmware_info", methods=["GET"])
+def api_firmware_info():
+    """Reports the firmware version bundled in THIS running image, stamped
+    at CI build time from FIRMWARE_VERSION in main.cpp (see
+    .github/workflows/docker-build-push.yml's "Stage firmware binaries"
+    step). Compared against a device's own reported version (from
+    get_config, via /api/current_config) to tell the General tab's
+    "Check for Update" whether a newer firmware is actually available to
+    flash -- not auto-generated from the git commit, so unrelated
+    Python/dashboard-only changes don't make every deploy look like a
+    firmware update.
+    """
+    version_file = FIRMWARE_DIR / "version.txt"
+    try:
+        version = version_file.read_text().strip()
+    except (FileNotFoundError, OSError):
+        version = None
+    return jsonify({"ok": version is not None, "bundled_version": version})
+
+
 @app.route("/api/current_config", methods=["GET"])
 def api_current_config():
     """Queries the device's actual current saved config via the get_config

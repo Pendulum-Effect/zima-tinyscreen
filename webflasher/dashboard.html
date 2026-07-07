@@ -155,8 +155,9 @@
             <div>
               <div class="card-title">Software Version</div>
               <div class="card-desc" id="firmware-version">—</div>
+              <div class="card-desc" id="update-status" style="margin-top:6px;"></div>
             </div>
-            <button class="btn" disabled title="Coming soon">Check for Update</button>
+            <button class="btn" id="update-btn" disabled>Check for Update</button>
           </div>
         </div>
 
@@ -428,6 +429,18 @@
       const cfgData = await cfgRes.json();
       const statusData = await statusRes.json();
 
+      // Isolated on purpose: this is a lower-stakes, additional lookup,
+      // not essential to the core tabs. A failure here (e.g. an older
+      // server without this route, returning a non-JSON error page)
+      // should never block General/Layouts/Screen from rendering.
+      let fwData = { ok: false, bundled_version: null };
+      try {
+        const fwRes = await fetch('/api/firmware_info');
+        fwData = await fwRes.json();
+      } catch (e) {
+        // leave fwData as the safe default
+      }
+
       if (!cfgData.ok) {
         showError((cfgData.error || 'Could not reach the device.') + ' <a href="wizard.html">Run setup →</a>');
         return;
@@ -439,6 +452,29 @@
         FRIENDLY_BOARD_NAMES[cfg.board] || cfg.board_name;
       document.getElementById('model-sku').textContent = cfg.board_name;
       document.getElementById('firmware-version').textContent = cfg.firmware_version || 'Unknown';
+
+      const updateBtn = document.getElementById('update-btn');
+      const updateStatus = document.getElementById('update-status');
+      if (fwData.ok && fwData.bundled_version) {
+        if (fwData.bundled_version !== cfg.firmware_version) {
+          updateStatus.textContent = 'Update available: v' + fwData.bundled_version;
+          updateStatus.style.color = 'var(--teal)';
+          updateBtn.textContent = 'Update Firmware';
+          updateBtn.disabled = false;
+          updateBtn.dataset.targetVersion = fwData.bundled_version;
+        } else {
+          updateStatus.textContent = 'Up to date.';
+          updateStatus.style.color = 'var(--subtext)';
+          updateBtn.textContent = 'Up to Date';
+          updateBtn.disabled = true;
+        }
+      } else {
+        updateStatus.textContent = "Couldn't determine the latest available version.";
+        updateStatus.style.color = 'var(--subtext)';
+        updateBtn.textContent = 'Check for Update';
+        updateBtn.disabled = true;
+      }
+
       const healthEl = document.getElementById('health-status');
       if (statusData.collector_running && statusData.age_seconds < 10) {
         healthEl.textContent = 'Connected -- data updating normally';
@@ -538,6 +574,43 @@
     saveConfig(document.getElementById('save-status'), document.getElementById('save-btn')));
   document.getElementById('save-btn-screen').addEventListener('click', () =>
     saveConfig(document.getElementById('save-status-screen'), document.getElementById('save-btn-screen')));
+
+  // ---------------------------------------------------------------------
+  // Update Firmware -- reuses the existing /api/flash endpoint. No
+  // /api/configure call needed afterward: a normal firmware reflash only
+  // overwrites the application/bootloader/partitions, not NVS, so the
+  // device's saved pages/cycle/brightness survive untouched and it just
+  // resumes with the same settings once it reboots.
+  // ---------------------------------------------------------------------
+  document.getElementById('update-btn').addEventListener('click', async () => {
+    const btn = document.getElementById('update-btn');
+    const statusEl = document.getElementById('update-status');
+    const targetVersion = btn.dataset.targetVersion;
+    btn.disabled = true;
+    statusEl.textContent = 'Updating firmware to v' + targetVersion + '…';
+    statusEl.style.color = 'var(--subtext)';
+    try {
+      const res = await fetch('/api/flash', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ board: currentBoard }),
+      });
+      const data = await res.json();
+      if (data.ok) {
+        statusEl.textContent = '✓ Updated. Refreshing…';
+        statusEl.style.color = 'var(--teal)';
+        setTimeout(() => loadAllDeviceInfo(), 3000); // give the board a moment to reboot
+      } else {
+        statusEl.textContent = '✗ ' + (data.hint || data.error || 'Update failed.');
+        statusEl.style.color = 'var(--err)';
+        btn.disabled = false;
+      }
+    } catch (e) {
+      statusEl.textContent = '✗ Request failed: ' + e.message;
+      statusEl.style.color = 'var(--err)';
+      btn.disabled = false;
+    }
+  });
 
   loadAllDeviceInfo();
 </script>
