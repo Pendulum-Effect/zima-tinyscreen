@@ -46,6 +46,16 @@ jobs:
           cp firmware/.pio/build/esp32-s3-tinyscreen-native/bootloader.bin webflasher/firmware/native/
           cp firmware/.pio/build/esp32-s3-tinyscreen-native/partitions.bin webflasher/firmware/native/
           cp firmware/.pio/build/esp32-s3-tinyscreen-native/firmware.bin webflasher/firmware/native/
+          # Stamp the image with the version string currently in main.cpp,
+          # so the running server can tell "what firmware version am I
+          # bundling" and compare it against what a device actually
+          # reports (see server.py's /api/firmware_info and the General
+          # tab's "Check for Update"). This is NOT auto-generated from the
+          # git commit -- it only changes when FIRMWARE_VERSION in
+          # main.cpp is deliberately bumped, so unrelated Python/dashboard
+          # changes don't make every deploy look like a firmware update.
+          grep -oP '(?<=#define FIRMWARE_VERSION ")[^"]+' firmware/src/main.cpp > webflasher/firmware/version.txt
+          cat webflasher/firmware/version.txt
 
       - name: Upload firmware artifact for the next job
         uses: actions/upload-artifact@v4
