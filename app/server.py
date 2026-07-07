@@ -278,6 +278,60 @@ def api_configure():
         collector.resume()
 
 
+@app.route("/api/current_config", methods=["GET"])
+def api_current_config():
+    """Queries the device's actual current saved config via the get_config
+    firmware command -- previously this whole protocol was write-only, so
+    the only way to know what was currently configured was to remember
+    whatever was last sent. Needed for the settings dashboard to show
+    real current state (pages, cycle mode, brightness, board, firmware
+    version) instead of just being another blind form.
+    """
+    port = detect_port()
+    if not port:
+        return jsonify({"ok": False, "error": "No ESP32 serial device found. Is it plugged in?"}), 400
+
+    collector.pause()
+    ser = None
+    try:
+        ser = RawSerialPort(port, baudrate=115200, timeout=2)
+        time.sleep(2)  # let the board's USB settle if it just reset
+
+        ser.write(b'{"cmd":"get_config"}\n')
+
+        buf = b""
+        deadline = time.time() + 4
+        result = None
+        while time.time() < deadline and result is None:
+            chunk = ser.read(256)
+            if not chunk:
+                continue
+            buf += chunk
+            while b"\n" in buf:
+                line, buf = buf.split(b"\n", 1)
+                try:
+                    parsed = json.loads(line.decode("utf-8", errors="ignore"))
+                except (json.JSONDecodeError, UnicodeDecodeError):
+                    continue
+                if isinstance(parsed, dict) and parsed.get("ack") == "get_config":
+                    result = parsed
+                    break
+
+        if result is None:
+            return jsonify({"ok": False, "error": "No response from device -- is it configured yet?"}), 504
+
+        return jsonify({"ok": True, "config": result})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+    finally:
+        if ser:
+            try:
+                ser.close()
+            except Exception:
+                pass
+        collector.resume()
+
+
 # ---------------------------------------------------------------------
 # Server-side flash (same deal -- no computer/WebSerial needed)
 # ---------------------------------------------------------------------

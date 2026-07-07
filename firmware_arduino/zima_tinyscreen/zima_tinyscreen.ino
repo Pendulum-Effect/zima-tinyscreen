@@ -31,6 +31,13 @@
 #include <Arduino_GFX_Library.h>
 #include <ArduinoJson.h>
 
+// Bump this string whenever a firmware change is meaningful enough for a
+// user to want to know it happened -- shown in the settings dashboard's
+// "Software Version" field via the get_config command below. No
+// auto-update-checking mechanism exists yet (that's a separate, not-yet
+// -built feature) -- this just answers "what's currently on my device."
+#define FIRMWARE_VERSION "1.0.0"
+
 // Note: screen dimensions are NOT fixed -- board 1 (1.69") is 240x280,
 // taller than board 0's 240x240. See screenW/screenH globals, set from
 // the active BoardProfile in initDisplay(), and the SY() helper below
@@ -593,6 +600,30 @@ void handleSetConfig(JsonDocument &doc) {
   }
 }
 
+// Reports the current saved config back over Serial -- previously this
+// whole protocol was write-only (settings.html/onboard.html/wizard.html
+// could only ever SEND a config, never ask "what's currently set?").
+// Needed for the settings dashboard to show real current state instead
+// of just being another blind form.
+void handleGetConfig() {
+  JsonDocument doc;
+  doc["ack"] = "get_config";
+  doc["configured"] = config.configured;
+  doc["board"] = config.boardId;
+  doc["board_name"] = BOARD_PROFILES[config.boardId].name;
+  JsonArray pages = doc["pages"].to<JsonArray>();
+  for (int i = 0; i < config.numPages; i++) {
+    pages.add(config.pages[i]);
+  }
+  doc["cycle_mode"] = config.autoCycle ? "auto" : "static";
+  doc["cycle_seconds"] = config.cycleSeconds;
+  doc["brightness"] = config.brightness;
+  doc["firmware_version"] = FIRMWARE_VERSION;
+
+  serializeJson(doc, Serial);
+  Serial.println();
+}
+
 void handleLine(const String &line) {
   JsonDocument doc;
   DeserializationError err = deserializeJson(doc, line);
@@ -602,6 +633,10 @@ void handleLine(const String &line) {
 
   if (doc["cmd"].is<const char *>() && strcmp(doc["cmd"], "set_config") == 0) {
     handleSetConfig(doc);
+    return;
+  }
+  if (doc["cmd"].is<const char *>() && strcmp(doc["cmd"], "get_config") == 0) {
+    handleGetConfig();
     return;
   }
 
