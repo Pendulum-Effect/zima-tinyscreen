@@ -146,7 +146,10 @@
               <div class="card-title" id="model-name">—</div>
               <div class="card-desc" id="model-sku">—</div>
               <div class="card-desc" id="health-status" style="margin-top:10px;">—</div>
+              <div class="card-desc" id="firmware-version" style="margin-top:10px;">—</div>
+              <div class="card-desc" id="update-status" style="margin-top:2px;"></div>
             </div>
+            <button class="btn" id="update-btn" disabled>Check for Update</button>
           </div>
         </div>
 
@@ -154,10 +157,9 @@
           <div class="card-header">
             <div>
               <div class="card-title">Software Version</div>
-              <div class="card-desc" id="firmware-version">—</div>
-              <div class="card-desc" id="update-status" style="margin-top:6px;"></div>
+              <div class="card-desc" id="app-version-status">Checking…</div>
             </div>
-            <button class="btn" id="update-btn" disabled>Check for Update</button>
+            <button class="btn" disabled title="Applying updates automatically is coming soon">Update App</button>
           </div>
         </div>
 
@@ -441,6 +443,29 @@
         // leave fwData as the safe default
       }
 
+      // Same isolation reasoning for the app/container version check.
+      let appVerData = { ok: false };
+      try {
+        const appVerRes = await fetch('/api/app_version');
+        appVerData = await appVerRes.json();
+      } catch (e) {
+        // leave appVerData as the safe default
+      }
+      const appVerStatusEl = document.getElementById('app-version-status');
+      if (appVerData.ok && appVerData.latest_commit) {
+        appVerStatusEl.textContent = appVerData.update_available
+          ? 'Update available (v' + appVerData.latest_commit.slice(0, 7) + ')'
+          : 'Up to date (v' + appVerData.current_commit.slice(0, 7) + ')';
+        appVerStatusEl.style.color = appVerData.update_available ? 'var(--teal)' : 'var(--subtext)';
+      } else if (appVerData.ok) {
+        appVerStatusEl.textContent = 'v' + appVerData.current_commit.slice(0, 7) +
+          " (couldn't reach GitHub to check for updates)";
+        appVerStatusEl.style.color = 'var(--subtext)';
+      } else {
+        appVerStatusEl.textContent = "Couldn't determine.";
+        appVerStatusEl.style.color = 'var(--subtext)';
+      }
+
       if (!cfgData.ok) {
         showError((cfgData.error || 'Could not reach the device.') + ' <a href="wizard.html">Run setup →</a>');
         return;
@@ -451,7 +476,8 @@
       document.getElementById('model-name').textContent =
         FRIENDLY_BOARD_NAMES[cfg.board] || cfg.board_name;
       document.getElementById('model-sku').textContent = cfg.board_name;
-      document.getElementById('firmware-version').textContent = cfg.firmware_version || 'Unknown';
+      document.getElementById('firmware-version').textContent =
+        'Firmware: v' + (cfg.firmware_version || 'Unknown');
 
       const updateBtn = document.getElementById('update-btn');
       const updateStatus = document.getElementById('update-status');

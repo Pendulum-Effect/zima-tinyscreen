@@ -28,6 +28,8 @@ import sys
 import subprocess
 import threading
 import time
+import urllib.request
+import urllib.error
 from pathlib import Path
 
 from flask import Flask, jsonify, request, send_from_directory
@@ -276,6 +278,55 @@ def api_configure():
             except Exception:
                 pass
         collector.resume()
+
+
+@app.route("/api/app_version", methods=["GET"])
+def api_app_version():
+    """Stage 1 of the app/container updater: detection only, no auto-apply
+    yet (see the project discussion on Watchtower vs. a custom
+    self-updater -- this deliberately doesn't touch the Docker socket at
+    all). Compares the commit SHA this image was built from (stamped at
+    CI build time, see .github/workflows/docker-build-push.yml's "Stamp
+    app version" step) against GitHub's actual latest commit on the same
+    branch, via a plain public API call -- no Docker Hub API or image
+    digest involved, sidestepping the chicken-and-egg problem of a
+    running container never being able to know its own image's digest
+    from the inside.
+    """
+    version_file = WEBFLASHER_DIR / "app_version.json"
+    try:
+        baked_in = json.loads(version_file.read_text())
+        current_commit = baked_in["commit"]
+        branch = baked_in["branch"]
+        repo = baked_in["repo"]
+    except (FileNotFoundError, OSError, json.JSONDecodeError, KeyError):
+        return jsonify({"ok": False, "error": "No app_version.json baked into this image."})
+
+    api_url = f"https://api.github.com/repos/{repo}/commits/{branch}"
+    try:
+        req = urllib.request.Request(api_url, headers={"Accept": "application/vnd.github+json"})
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            latest = json.loads(resp.read().decode("utf-8"))
+        latest_commit = latest["sha"]
+    except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError,
+            json.JSONDecodeError, KeyError) as e:
+        # GitHub being unreachable/rate-limited shouldn't be treated as a
+        # hard error -- just report that we couldn't determine it, same
+        # pattern as the firmware update check.
+        return jsonify({
+            "ok": True,
+            "current_commit": current_commit,
+            "latest_commit": None,
+            "update_available": False,
+            "note": f"Could not reach GitHub: {e}",
+        })
+
+    return jsonify({
+        "ok": True,
+        "current_commit": current_commit,
+        "latest_commit": latest_commit,
+        "update_available": current_commit != latest_commit,
+    })
 
 
 @app.route("/api/firmware_info", methods=["GET"])
