@@ -258,33 +258,53 @@ def get_mmc(path="/DATA"):
     return _decimal_gb(du.total), round(du.percent, 1)
 
 
-def get_nas_pool(data_path, mmc_total_bytes):
-    """Detects a ZimaOS/CasaOS storage pool via a single, narrow,
-    non-recursive bind mount of /DATA (see app/docker-compose.yml) --
-    deliberately NOT the sprawling recursive host-root mount used by an
-    earlier, since-reverted version of this feature, which pulled in
-    every other container's own overlay filesystem and correlated with a
-    serious, separate connectivity regression.
+def get_nas_pool(data_path):
+    """Detects additional attached drives/pools via ZimaOS/CasaOS's real,
+    confirmed convention: each additional drive shows up as its OWN
+    separate, distinct mount point nested under <data_path>/.media/<name>
+    -- e.g. /dev/sda mounted at /DATA/.media/SSD -- NOT as an expansion
+    of /DATA's own top-level capacity.
 
-    ZimaOS/CasaOS always has a /DATA mount, even with no extra drives
-    attached (backed by the OS disk itself in that case). When a real
-    storage pool is created from additional SATA/PCIe drives, ZimaOS
-    expands that same /DATA mount to cover the pooled capacity. So: if
-    /DATA's total capacity is basically the same as the OS/MMC disk's own
-    total, there's no real separate pool yet; if it's meaningfully
-    larger, that difference in scale is the pool.
+    This replaces an earlier, incorrect implementation that assumed
+    ZimaOS expands /DATA's own reported size to cover a pool and tried to
+    detect that via comparing total capacities. Real mount output (`mount
+    | grep data` inside the running container, after attaching a real
+    SSD and letting ZimaOS mount it) showed the actual behavior directly:
+        /dev/mmcblk0p8 on /host_data type ext4
+        /dev/sda on /host_data/.media/SSD type btrfs
+    /DATA's own reported size never changed at all -- the additional
+    drive was always a fully separate mount alongside it, not merged in.
 
     Returns (available: bool, total_gb: float, pct: float).
     """
-    try:
-        du = psutil.disk_usage(data_path)
-    except (PermissionError, FileNotFoundError, OSError):
+    media_dir = os.path.join(data_path, ".media")
+    if not os.path.isdir(media_dir):
         return False, 0.0, 0.0
 
-    if mmc_total_bytes and abs(du.total - mmc_total_bytes) / mmc_total_bytes < 0.01:
-        return False, 0.0, 0.0  # /DATA is just the OS disk, no separate pool
+    try:
+        entries = os.listdir(media_dir)
+    except OSError:
+        return False, 0.0, 0.0
 
-    return True, _decimal_gb(du.total), round(du.percent, 1)
+    total = 0
+    used = 0
+    found = False
+    for name in entries:
+        mount_path = os.path.join(media_dir, name)
+        if not os.path.ismount(mount_path):
+            continue  # a plain subdirectory, not an actual separate drive
+        try:
+            du = psutil.disk_usage(mount_path)
+        except (PermissionError, FileNotFoundError, OSError):
+            continue
+        total += du.total
+        used += du.used
+        found = True
+
+    if not found or total == 0:
+        return False, 0.0, 0.0
+    pct = round((used / total) * 100, 1)
+    return True, _decimal_gb(total), pct
 
 
 # --------------------------------------------------------------------------
@@ -469,8 +489,7 @@ def main():
                 cpu_watts = power_meter.sample_watts()
                 ram_total, ram_pct = get_ram()
                 mmc_total, mmc_pct = get_mmc(args.disk_path)
-                mmc_total_bytes = psutil.disk_usage(args.disk_path).total
-                nas_available, nas_total, nas_pct = get_nas_pool(args.data_path, mmc_total_bytes)
+                nas_available, nas_total, nas_pct = get_nas_pool(args.data_path)
                 rx_mbps, tx_mbps = net_meter.sample_mbps()
             except Exception as e:
                 # Never let a single bad reading crash the whole
