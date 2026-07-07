@@ -100,6 +100,10 @@
   .coming-soon { text-align: center; padding: 60px 20px; color: var(--subtext); }
   .coming-soon .big { font-size: 16px; color: var(--text); margin-bottom: 6px; }
 
+  .brightness-row { display: flex; align-items: center; gap: 16px; margin-top: 14px; }
+  .brightness-slider { flex: 1; accent-color: var(--teal); height: 6px; }
+  .brightness-value { font-size: 14px; color: var(--subtext); min-width: 42px; text-align: right; }
+
   .save-bar {
     position: sticky; bottom: 0; background: var(--bg);
     padding: 18px 0 4px; margin-top: 8px;
@@ -177,12 +181,45 @@
       </div>
     </section>
 
-    <!-- Screen: placeholder for now -->
+    <!-- Screen -->
     <section class="tab-panel" data-panel="screen">
       <h2>Screen</h2>
-      <div class="card coming-soon">
-        <div class="big">Coming soon</div>
-        <div>Brightness, night mode, and screensaver controls will live here.</div>
+      <div id="screen-loading" class="loading">Loading current settings…</div>
+      <div id="screen-error" class="error-banner" style="display:none;"></div>
+      <div id="screen-content" style="display:none;">
+
+        <div class="card">
+          <div class="card-title">Brightness</div>
+          <div class="brightness-row">
+            <input type="range" id="brightness-slider" min="1" max="100" value="100" class="brightness-slider">
+            <span class="brightness-value" id="brightness-value">100%</span>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <div>
+              <div class="card-title">Night Mode</div>
+              <div class="card-desc">Schedule a time for the screen to dim or change pages automatically.</div>
+            </div>
+            <span class="placeholder-badge">Coming soon</span>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <div>
+              <div class="card-title">Screensaver</div>
+              <div class="card-desc">If there's been no touch input for a while, show a screensaver.</div>
+            </div>
+            <span class="placeholder-badge">Coming soon</span>
+          </div>
+        </div>
+
+        <div class="save-bar">
+          <button class="btn" id="save-btn-screen">Save changes</button>
+          <span class="status-msg" id="save-status-screen"></span>
+        </div>
       </div>
     </section>
   </div>
@@ -296,12 +333,25 @@
   });
 
   // ---------------------------------------------------------------------
+  // Screen tab: brightness
+  // ---------------------------------------------------------------------
+  const brightnessSlider = document.getElementById('brightness-slider');
+  const brightnessValue = document.getElementById('brightness-value');
+  brightnessSlider.addEventListener('input', () => {
+    currentBrightness = parseInt(brightnessSlider.value, 10);
+    brightnessValue.textContent = currentBrightness + '%';
+  });
+
+  // ---------------------------------------------------------------------
   // Load real current state
   // ---------------------------------------------------------------------
   async function loadCurrentConfig() {
     const loadingEl = document.getElementById('layouts-loading');
     const errorEl = document.getElementById('layouts-error');
     const contentEl = document.getElementById('layouts-content');
+    const screenLoadingEl = document.getElementById('screen-loading');
+    const screenErrorEl = document.getElementById('screen-error');
+    const screenContentEl = document.getElementById('screen-content');
     try {
       const res = await fetch('/api/current_config');
       const data = await res.json();
@@ -309,6 +359,10 @@
         loadingEl.style.display = 'none';
         errorEl.style.display = 'block';
         errorEl.innerHTML = (data.error || 'Could not reach the device.') +
+          ' <a href="wizard.html">Run setup →</a>';
+        screenLoadingEl.style.display = 'none';
+        screenErrorEl.style.display = 'block';
+        screenErrorEl.innerHTML = (data.error || 'Could not reach the device.') +
           ' <a href="wizard.html">Run setup →</a>';
         return;
       }
@@ -334,25 +388,35 @@
       renderPageList();
       loadingEl.style.display = 'none';
       contentEl.style.display = 'block';
+
+      brightnessSlider.value = currentBrightness;
+      brightnessValue.textContent = currentBrightness + '%';
+      screenLoadingEl.style.display = 'none';
+      screenContentEl.style.display = 'block';
     } catch (e) {
       loadingEl.style.display = 'none';
       errorEl.style.display = 'block';
       errorEl.textContent = 'Request failed: ' + e.message;
+      screenLoadingEl.style.display = 'none';
+      screenErrorEl.style.display = 'block';
+      screenErrorEl.textContent = 'Request failed: ' + e.message;
     }
   }
 
   // ---------------------------------------------------------------------
-  // Save
+  // Save -- shared by both tabs, since they edit pieces of the same
+  // underlying device config (there's no separate "just brightness" vs
+  // "just pages" call in the protocol). Always sends everything currently
+  // known, so saving from either tab can't accidentally revert an
+  // unsaved change made on the other one.
   // ---------------------------------------------------------------------
-  document.getElementById('save-btn').addEventListener('click', async () => {
+  async function saveConfig(statusEl, saveBtn) {
     const finalPages = pageOrder.filter(id => enabledPages.has(id));
-    const statusEl = document.getElementById('save-status');
     if (finalPages.length === 0) {
       statusEl.textContent = 'Enable at least one page.';
       statusEl.className = 'status-msg err';
       return;
     }
-    const saveBtn = document.getElementById('save-btn');
     saveBtn.disabled = true;
     statusEl.textContent = 'Saving…';
     statusEl.className = 'status-msg';
@@ -385,7 +449,12 @@
     } finally {
       saveBtn.disabled = false;
     }
-  });
+  }
+
+  document.getElementById('save-btn').addEventListener('click', () =>
+    saveConfig(document.getElementById('save-status'), document.getElementById('save-btn')));
+  document.getElementById('save-btn-screen').addEventListener('click', () =>
+    saveConfig(document.getElementById('save-status-screen'), document.getElementById('save-btn-screen')));
 
   loadCurrentConfig();
 </script>
