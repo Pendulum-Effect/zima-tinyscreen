@@ -392,12 +392,34 @@
   });
 
   // ---------------------------------------------------------------------
-  // General tab: device info + health
+  // Load real current device state -- fetched EXACTLY ONCE per page load
+  // and shared across all three tabs. Previously General and Layouts/
+  // Screen each independently called /api/current_config, meaning every
+  // page load fired two concurrent requests to an endpoint that pauses
+  // the collector and opens the serial port exclusively -- two
+  // overlapping connections to the same device at once, which can
+  // corrupt what either one reads back. That's likely what caused the
+  // device to get stuck showing "no data" for extended periods.
   // ---------------------------------------------------------------------
-  async function loadGeneralInfo() {
-    const loadingEl = document.getElementById('general-loading');
-    const errorEl = document.getElementById('general-error');
-    const contentEl = document.getElementById('general-content');
+  async function loadAllDeviceInfo() {
+    const loadingEls = [
+      document.getElementById('general-loading'),
+      document.getElementById('layouts-loading'),
+      document.getElementById('screen-loading'),
+    ];
+    const errorEls = [
+      document.getElementById('general-error'),
+      document.getElementById('layouts-error'),
+      document.getElementById('screen-error'),
+    ];
+    const showError = (msg) => {
+      loadingEls.forEach(el => el.style.display = 'none');
+      errorEls.forEach(el => {
+        el.style.display = 'block';
+        el.innerHTML = msg;
+      });
+    };
+
     try {
       const [cfgRes, statusRes] = await Promise.all([
         fetch('/api/current_config'),
@@ -407,19 +429,16 @@
       const statusData = await statusRes.json();
 
       if (!cfgData.ok) {
-        loadingEl.style.display = 'none';
-        errorEl.style.display = 'block';
-        errorEl.innerHTML = (cfgData.error || 'Could not reach the device.') +
-          ' <a href="wizard.html">Run setup →</a>';
+        showError((cfgData.error || 'Could not reach the device.') + ' <a href="wizard.html">Run setup →</a>');
         return;
       }
       const cfg = cfgData.config;
 
+      // -- General tab --
       document.getElementById('model-name').textContent =
         FRIENDLY_BOARD_NAMES[cfg.board] || cfg.board_name;
       document.getElementById('model-sku').textContent = cfg.board_name;
       document.getElementById('firmware-version').textContent = cfg.firmware_version || 'Unknown';
-
       const healthEl = document.getElementById('health-status');
       if (statusData.collector_running && statusData.age_seconds < 10) {
         healthEl.textContent = 'Connected -- data updating normally';
@@ -431,41 +450,10 @@
         healthEl.textContent = 'Not connected';
         healthEl.style.color = 'var(--err)';
       }
+      document.getElementById('general-loading').style.display = 'none';
+      document.getElementById('general-content').style.display = 'block';
 
-      loadingEl.style.display = 'none';
-      contentEl.style.display = 'block';
-    } catch (e) {
-      loadingEl.style.display = 'none';
-      errorEl.style.display = 'block';
-      errorEl.textContent = 'Request failed: ' + e.message;
-    }
-  }
-
-  // ---------------------------------------------------------------------
-  // Load real current state
-  // ---------------------------------------------------------------------
-  async function loadCurrentConfig() {
-    const loadingEl = document.getElementById('layouts-loading');
-    const errorEl = document.getElementById('layouts-error');
-    const contentEl = document.getElementById('layouts-content');
-    const screenLoadingEl = document.getElementById('screen-loading');
-    const screenErrorEl = document.getElementById('screen-error');
-    const screenContentEl = document.getElementById('screen-content');
-    try {
-      const res = await fetch('/api/current_config');
-      const data = await res.json();
-      if (!data.ok) {
-        loadingEl.style.display = 'none';
-        errorEl.style.display = 'block';
-        errorEl.innerHTML = (data.error || 'Could not reach the device.') +
-          ' <a href="wizard.html">Run setup →</a>';
-        screenLoadingEl.style.display = 'none';
-        screenErrorEl.style.display = 'block';
-        screenErrorEl.innerHTML = (data.error || 'Could not reach the device.') +
-          ' <a href="wizard.html">Run setup →</a>';
-        return;
-      }
-      const cfg = data.config;
+      // -- Layouts tab --
       currentBoard = cfg.board;
       currentBrightness = cfg.brightness;
       cycleMode = cfg.cycle_mode;
@@ -485,20 +473,16 @@
       });
 
       renderPageList();
-      loadingEl.style.display = 'none';
-      contentEl.style.display = 'block';
+      document.getElementById('layouts-loading').style.display = 'none';
+      document.getElementById('layouts-content').style.display = 'block';
 
+      // -- Screen tab --
       brightnessSlider.value = currentBrightness;
       brightnessValue.textContent = currentBrightness + '%';
-      screenLoadingEl.style.display = 'none';
-      screenContentEl.style.display = 'block';
+      document.getElementById('screen-loading').style.display = 'none';
+      document.getElementById('screen-content').style.display = 'block';
     } catch (e) {
-      loadingEl.style.display = 'none';
-      errorEl.style.display = 'block';
-      errorEl.textContent = 'Request failed: ' + e.message;
-      screenLoadingEl.style.display = 'none';
-      screenErrorEl.style.display = 'block';
-      screenErrorEl.textContent = 'Request failed: ' + e.message;
+      showError('Request failed: ' + e.message);
     }
   }
 
@@ -555,8 +539,7 @@
   document.getElementById('save-btn-screen').addEventListener('click', () =>
     saveConfig(document.getElementById('save-status-screen'), document.getElementById('save-btn-screen')));
 
-  loadGeneralInfo();
-  loadCurrentConfig();
+  loadAllDeviceInfo();
 </script>
 </body>
 </html>
