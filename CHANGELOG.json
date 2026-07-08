@@ -2,6 +2,16 @@
   "_comment": "Human-readable changelog for the dashboard's About tab -- written for people, not commit archaeologists. The dashboard fetches this from GitHub at page load (baked copy as fallback), so add an entry here with each release and every install sees it. Newest first. Dates are YYYY-MM-DD.",
   "entries": [
     {
+      "version": "0.8.9.5",
+      "date": "2026-07-08",
+      "title": "Layouts polish",
+      "notes": [
+        "Fixed the save banner sticking around after saving on Safari, and made it fit comfortably on phone screens.",
+        "CPU, RAM, and Network pages are now called 'Utilization' (with tidy short names on the previews), the carousel thumbnails grew to fill the row, and the previews lost their little page-indicator dots.",
+        "On phones, each page's preview and layout picker now stack neatly in the center instead of spilling off the edge."
+      ]
+    },
+    {
       "version": "0.8.9.4",
       "date": "2026-07-08",
       "title": "Layouts, reimagined",

@@ -112,6 +112,12 @@
     .nav-item { margin-bottom: 0; flex: 1; justify-content: center; padding: 10px 6px; }
     .nav-item .nav-label { display: none; }
     .nav-item svg { width: 19px; height: 19px; }
+
+    /* Page cards stack on small screens: preview centered, layout picker
+       centered beneath it, so nothing pokes out of the card. */
+    .page-card .page-body { flex-direction: column; gap: 14px; align-items: center; }
+    .page-card .layout-side { width: 100%; text-align: center; }
+    .style-select { min-width: 0; max-width: 100%; }
   }
 
   .tab-panel { display: none; }
@@ -146,10 +152,11 @@
   }
 
   /* Display Carousel: horizontal strip of page thumbnails in play order */
-  .carousel-strip { display: flex; gap: 14px; margin-top: 16px; flex-wrap: wrap; }
-  .strip-item { text-align: center; cursor: grab; }
+  .carousel-strip { display: flex; gap: 12px; margin-top: 16px; flex-wrap: wrap; }
+  .strip-item { flex: 1 1 0; min-width: 88px; max-width: 132px; text-align: center; cursor: grab; }
   .strip-item.dragging { opacity: 0.4; }
   .strip-item .thumb { border-radius: 12px; overflow: hidden; border: 1px solid var(--border); }
+  .strip-item .thumb svg { width: 100%; height: auto; display: block; }
   .strip-item .strip-label { font-size: 11.5px; color: var(--subtext); margin-top: 6px; }
   .strip-nudge { display: flex; justify-content: center; gap: 6px; margin-top: 4px; }
   .strip-nudge button {
@@ -165,7 +172,8 @@
   .page-card .preview-wrap .thumb { border-radius: 14px; overflow: hidden; border: 1px solid var(--border); display: inline-block; }
   .page-card .preview-caption { font-size: 11.5px; color: var(--subtext); margin-top: 6px; }
   .page-card .layout-side { flex: 1; }
-  .enabled-label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--subtext); margin-bottom: 6px; text-align: right; }
+  .page-state { display: flex; align-items: center; gap: 10px; }
+  .enabled-label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--subtext); }
   .enabled-label.on { color: var(--teal); }
   .style-select {
     font-size: 13px; color: var(--subtext); background: #0c1a1f;
@@ -199,15 +207,24 @@
      there are unsaved changes, and stays put across tab switches. */
   .save-banner {
     position: absolute; top: 14px; left: 50%;
-    transform: translate(-50%, calc(-100% - 20px));
-    transition: transform 0.3s ease;
-    display: flex; align-items: center; gap: 14px;
+    /* Hidden state avoids calc() inside translate() -- Safari fails to
+       parse %-and-px calc there, leaving the transform invalid and the
+       banner permanently visible. Fixed offset + fade is bulletproof. */
+    transform: translate(-50%, -90px);
+    opacity: 0; visibility: hidden; pointer-events: none;
+    transition: transform 0.3s ease, opacity 0.3s ease, visibility 0.3s;
+    display: flex; align-items: center; justify-content: center;
+    flex-wrap: wrap; gap: 8px 14px;
+    max-width: calc(100% - 24px);
     background: var(--panel-raised); border: 1px solid var(--teal-dim);
     border-radius: 12px; padding: 10px 12px 10px 18px;
     box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
-    z-index: 20; white-space: nowrap;
+    z-index: 20;
   }
-  .save-banner.visible { transform: translate(-50%, 0); }
+  .save-banner.visible {
+    transform: translate(-50%, 0);
+    opacity: 1; visibility: visible; pointer-events: auto;
+  }
   .save-banner .banner-msg { font-size: 13.5px; }
   .banner-discard {
     background: none; border: none; color: var(--subtext);
@@ -321,7 +338,7 @@
 
         <div class="card">
           <div class="card-title">Display Carousel</div>
-          <div class="card-desc">Click and drag to change the order pages appear on the screen.</div>
+          <div class="card-desc">Use the arrows to change the order pages appear on the screen.</div>
           <div class="carousel-strip" id="carousel-strip"></div>
           <div class="card-desc" id="carousel-empty" style="display:none; margin-top:14px;">
             Nothing here yet — turn on a page below and it'll join the carousel.
@@ -334,7 +351,10 @@
               <div class="card-title">Automatic Carousel</div>
               <div class="card-desc">Cycle through your pages on a timer, instead of staying on one.</div>
             </div>
-            <div class="toggle" id="autocycle-toggle"><div class="knob"></div></div>
+            <div class="page-state">
+              <div class="enabled-label" id="autocycle-label">Disabled</div>
+              <div class="toggle" id="autocycle-toggle"><div class="knob"></div></div>
+            </div>
           </div>
           <div class="interval-row" id="interval-row">
             <div class="interval-btn" data-interval="5">5s</div>
@@ -452,13 +472,16 @@
   // ---------------------------------------------------------------------
   // Layouts tab: page metadata and state
   // ---------------------------------------------------------------------
+  // label: full name shown in cards and under thumbnails.
+  // short: compact title drawn INSIDE the preview mock, where space is
+  // tight ("utilization" would dwarf the tiny screen).
   const ALL_PAGES = [
-    { id: 'cpu',  label: 'CPU Usage',     desc: 'How hard the processor is working right now.',  kind: 'ring', unit: '%' },
-    { id: 'ram',  label: 'RAM Usage',     desc: 'How much memory is in use.',                    kind: 'ring', unit: '%' },
-    { id: 'mmc',  label: 'MMC Usage',     desc: 'Space used on the built-in storage.',           kind: 'ring', unit: '%' },
-    { id: 'net',  label: 'Network Usage', desc: 'Live upload and download speeds.',              kind: 'net' },
-    { id: 'temp', label: 'Temperature',   desc: 'How warm the processor is running.',            kind: 'ring', unit: '°C' },
-    { id: 'nas',  label: 'NAS Usage',     desc: 'Space used across your storage pool.',          kind: 'ring', unit: '%' },
+    { id: 'cpu',  label: 'CPU Utilization',     short: 'CPU UTIL.',   desc: 'How hard the processor is working right now.',  kind: 'ring', unit: '%' },
+    { id: 'ram',  label: 'RAM Utilization',     short: 'RAM UTIL.',   desc: 'How much memory is in use.',                    kind: 'ring', unit: '%' },
+    { id: 'mmc',  label: 'MMC Usage',           short: 'MMC USAGE',   desc: 'Space used on the built-in storage.',           kind: 'ring', unit: '%' },
+    { id: 'net',  label: 'Network Utilization', short: 'NET UTIL.',   desc: 'Live upload and download speeds.',              kind: 'net' },
+    { id: 'temp', label: 'Temperature',         short: 'TEMPERATURE', desc: 'How warm the processor is running.',            kind: 'ring', unit: '°C' },
+    { id: 'nas',  label: 'NAS Usage',           short: 'NAS USAGE',   desc: 'Space used across your storage pool.',          kind: 'ring', unit: '%' },
   ];
   const pageDef = id => ALL_PAGES.find(p => p.id === id) || { id, label: id, desc: '', kind: 'ring', unit: '%' };
   const pageLabel = id => pageDef(id).label;
@@ -476,30 +499,28 @@
         : 15 + Math.floor(Math.random() * 70);
     }
     const val = PREVIEW_VALUES[id];
-    const c = 50, r = 30, circ = 2 * Math.PI * r;
+    const c = 50, r = 31, circ = 2 * Math.PI * r;
     const frac = def.unit === '°C' ? Math.min(val / 90, 1) : val / 100;
     let center;
     if (def.kind === 'net') {
-      center = '<text x="50" y="46" text-anchor="middle" fill="#4fd1c5" font-size="11" font-family="sans-serif">↑ ' +
+      center = '<text x="50" y="50" text-anchor="middle" fill="#4fd1c5" font-size="11" font-family="sans-serif">↑ ' +
         (PREVIEW_VALUES[id] % 9 + 1) + '.' + (PREVIEW_VALUES[id] % 7) + ' MB/s</text>' +
-        '<text x="50" y="62" text-anchor="middle" fill="#8fb0ac" font-size="11" font-family="sans-serif">↓ ' +
+        '<text x="50" y="66" text-anchor="middle" fill="#8fb0ac" font-size="11" font-family="sans-serif">↓ ' +
         (PREVIEW_VALUES[id] % 5) + '.' + (PREVIEW_VALUES[id] % 8) + ' MB/s</text>';
     } else {
       center =
-        '<circle cx="' + c + '" cy="52" r="' + r + '" fill="none" stroke="#1e3a3a" stroke-width="7"/>' +
-        '<circle cx="' + c + '" cy="52" r="' + r + '" fill="none" stroke="#4fd1c5" stroke-width="7" ' +
+        '<circle cx="' + c + '" cy="56" r="' + r + '" fill="none" stroke="#1e3a3a" stroke-width="7"/>' +
+        '<circle cx="' + c + '" cy="56" r="' + r + '" fill="none" stroke="#4fd1c5" stroke-width="7" ' +
         'stroke-linecap="round" stroke-dasharray="' + (circ * frac).toFixed(1) + ' ' + circ.toFixed(1) + '" ' +
         'transform="rotate(-90 ' + c + ' 52)"/>' +
-        '<text x="' + c + '" y="57" text-anchor="middle" fill="#eaf6f4" font-size="14" font-weight="700" ' +
+        '<text x="' + c + '" y="61" text-anchor="middle" fill="#eaf6f4" font-size="14" font-weight="700" ' +
         'font-family="sans-serif">' + val + def.unit + '</text>';
     }
     return '<svg width="' + size + '" height="' + size + '" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">' +
       '<rect width="100" height="100" fill="#08141a"/>' +
       '<text x="50" y="16" text-anchor="middle" fill="#8fb0ac" font-size="8.5" letter-spacing="1" ' +
-      'font-family="sans-serif">' + def.label.toUpperCase() + '</text>' +
+      'font-family="sans-serif">' + (def.short || def.label.toUpperCase()) + '</text>' +
       center +
-      '<circle cx="42" cy="91" r="2" fill="#4fd1c5"/><circle cx="50" cy="91" r="2" fill="#2c3f3d"/>' +
-      '<circle cx="58" cy="91" r="2" fill="#2c3f3d"/>' +
       '</svg>';
   }
 
@@ -621,6 +642,7 @@
       desc.textContent = def.desc;
       left.appendChild(title); left.appendChild(desc);
       const right = document.createElement('div');
+      right.className = 'page-state';
       const stateLabel = document.createElement('div');
       stateLabel.className = 'enabled-label' + (enabled ? ' on' : '');
       stateLabel.textContent = enabled ? 'Enabled' : 'Disabled';
@@ -674,10 +696,16 @@
   }
 
   // Automatic Carousel toggle (replaces the old Static / Auto-cycle pair)
+  function setAutocycleLabel(on) {
+    const l = document.getElementById('autocycle-label');
+    l.textContent = on ? 'Enabled' : 'Disabled';
+    l.classList.toggle('on', on);
+  }
   document.getElementById('autocycle-toggle').addEventListener('click', function () {
     const on = !this.classList.contains('on');
     this.classList.toggle('on', on);
     cycleMode = on ? 'auto' : 'static';
+    setAutocycleLabel(on);
     document.getElementById('interval-row').classList.toggle('visible', on);
     markDirty();
   });
@@ -925,6 +953,7 @@
       pageOrder = [...cfg.pages, ...ALL_PAGES.map(p => p.id).filter(id => !cfg.pages.includes(id))];
 
       document.getElementById('autocycle-toggle').classList.toggle('on', cycleMode === 'auto');
+      setAutocycleLabel(cycleMode === 'auto');
       document.getElementById('interval-row').classList.toggle('visible', cycleMode === 'auto');
       document.querySelectorAll('.interval-btn[data-interval]').forEach(b => {
         b.classList.toggle('active', parseInt(b.dataset.interval, 10) === cycleSeconds);
