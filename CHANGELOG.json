@@ -2,6 +2,15 @@
   "_comment": "Human-readable changelog for the dashboard's About tab -- written for people, not commit archaeologists. The dashboard fetches this from GitHub at page load (baked copy as fallback), so add an entry here with each release and every install sees it. Newest first. Dates are YYYY-MM-DD.",
   "entries": [
     {
+      "version": "0.8.9.2",
+      "date": "2026-07-08",
+      "title": "A proper window",
+      "notes": [
+        "The dashboard now lives in its own self-contained window -- sidebar and content each get their own panel, floating over the same ambient background as the setup wizard. It should feel right at home next to ZimaOS's own settings.",
+        "Works on small screens too: the window goes edge-to-edge and the navigation moves to the top."
+      ]
+    },
+    {
       "version": "0.8.9.1",
       "date": "2026-07-08",
       "title": "Wizard glow-up",
