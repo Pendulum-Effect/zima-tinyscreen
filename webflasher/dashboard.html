@@ -277,6 +277,46 @@
     transform: translate(-50%, 0);
     opacity: 1; visibility: visible; pointer-events: auto;
   }
+
+  /* Update-confirmation modal: the whole window shrinks back while the
+     dialog pops over it. Overlay lives at body level so it doesn't scale
+     with the window. */
+  .app-window { transition: transform 0.25s ease, filter 0.25s ease; }
+  .app-window.shrunk { transform: scale(0.965); filter: brightness(0.7); }
+  .modal-overlay {
+    position: fixed; inset: 0; z-index: 40;
+    background: rgba(4, 10, 13, 0.55);
+    display: none; align-items: center; justify-content: center;
+    padding: 20px;
+  }
+  .modal-overlay.open { display: flex; }
+  .modal {
+    background: var(--panel-raised); border: 1px solid var(--border);
+    border-radius: 16px; padding: 26px 28px;
+    max-width: 440px; width: 100%;
+    box-shadow: 0 24px 70px rgba(0, 0, 0, 0.6);
+    animation: modalIn 0.25s ease;
+  }
+  @keyframes modalIn {
+    from { opacity: 0; transform: scale(0.94) translateY(10px); }
+    to   { opacity: 1; transform: none; }
+  }
+  .modal details { margin-top: 14px; }
+  .modal summary { color: var(--teal); font-size: 13.5px; cursor: pointer; }
+  .modal-notes-body { max-height: 220px; overflow-y: auto; margin-top: 10px; }
+  .modal-notes-body .note-ver { color: var(--teal); font-weight: 600; font-size: 13px; margin-top: 10px; }
+  .modal-notes-body .card-desc { margin-top: 2px; }
+  .modal-actions { display: flex; gap: 12px; justify-content: flex-end; align-items: center; margin-top: 22px; }
+
+  /* Device preview glyph (wizard-style frame around a live-ish mock) */
+  .device-preview {
+    background: #08141a; border: 2px solid #4a6a6a;
+    display: flex; align-items: center; justify-content: center;
+    overflow: hidden; flex-shrink: 0;
+  }
+
+  /* General page: every action button the same footprint */
+  .btn-uniform { min-width: 168px; }
   .save-banner .banner-msg { font-size: 13.5px; }
   .banner-discard {
     background: none; border: none; color: var(--subtext);
@@ -341,8 +381,9 @@
               <div class="card-desc" id="health-status" style="margin-top:10px;">—</div>
               <div class="card-desc" id="firmware-version" style="margin-top:10px;">—</div>
               <div class="card-desc" id="update-status" style="margin-top:2px;"></div>
+              <button class="btn btn-uniform" id="update-btn" style="display:none; margin-top:14px;">Update Firmware</button>
             </div>
-            <button class="btn" id="update-btn" disabled>Check for Update</button>
+            <div class="device-preview" id="device-preview" title="A little preview of what's on the screen right now"></div>
           </div>
         </div>
 
@@ -353,7 +394,7 @@
               <div class="card-desc" id="app-version-status">Checking…</div>
               <div class="card-desc" id="app-update-note" style="margin-top:2px; display:none;"></div>
             </div>
-            <button class="btn" id="update-app-btn" disabled>Update App</button>
+            <button class="btn btn-uniform" id="update-app-btn" data-mode="check">Check for Update</button>
           </div>
         </div>
 
@@ -363,7 +404,7 @@
               <div class="card-title">Debugging</div>
               <div class="card-desc">Check API status and view the firmware update outcomes.</div>
             </div>
-            <button class="btn" disabled title="Coming soon">View Logs</button>
+            <button class="btn btn-uniform" disabled title="Coming soon">View Logs</button>
           </div>
         </div>
 
@@ -374,7 +415,7 @@
               <div class="card-desc">Having issues? Start the first-time setup process.</div>
               <div class="card-desc" id="reset-status" style="margin-top:2px; display:none;"></div>
             </div>
-            <button class="btn" id="reset-device-btn">Reset</button>
+            <button class="btn btn-uniform" id="reset-device-btn">Reset</button>
           </div>
         </div>
 
@@ -520,6 +561,21 @@
     </section>
   </div>
   </div>
+
+<div class="modal-overlay" id="update-modal">
+  <div class="modal">
+    <div class="card-title">Update TinyScreen</div>
+    <div class="card-desc" id="modal-text" style="margin-top:10px;">—</div>
+    <details id="modal-notes">
+      <summary>View patch notes</summary>
+      <div class="modal-notes-body" id="modal-notes-body"></div>
+    </details>
+    <div class="modal-actions">
+      <button class="banner-discard" id="modal-cancel">Cancel</button>
+      <button class="btn btn-uniform" id="modal-continue">Continue</button>
+    </div>
+  </div>
+</div>
 
 <script>
   // ---------------------------------------------------------------------
@@ -935,39 +991,7 @@
       // Human version string ("v0.8.6.2") when the image has one baked
       // in, short commit SHA as the fallback for older images. Detection
       // itself still keys off commits server-side; this is display only.
-      const verLabel = (d, which) => {
-        if (which === 'current') return d.version ? 'v' + d.version : 'v' + d.current_commit.slice(0, 7);
-        return d.latest_version ? 'v' + d.latest_version : 'v' + d.latest_commit.slice(0, 7);
-      };
-      const appVerStatusEl = document.getElementById('app-version-status');
-      const updateAppBtn = document.getElementById('update-app-btn');
-      const updateNoteEl = document.getElementById('app-update-note');
-      if (appVerData.ok && appVerData.latest_commit) {
-        appVerStatusEl.textContent = appVerData.update_available
-          ? 'Update available (' + verLabel(appVerData, 'latest') + ')'
-          : 'Up to date (' + verLabel(appVerData, 'current') + ')';
-        appVerStatusEl.title = 'commit ' + appVerData.current_commit.slice(0, 7);
-        appVerStatusEl.style.color = appVerData.update_available ? 'var(--teal)' : 'var(--subtext)';
-        if (appVerData.update_available) {
-          if (appVerData.update_ready) {
-            updateAppBtn.disabled = false;
-            updateAppBtn.onclick = () => startAppUpdate(updateAppBtn, appVerStatusEl, appVerData);
-          } else {
-            updateAppBtn.title = 'One-click updates need the Docker socket mounted -- ' +
-              'remove and reinstall the app with the updated compose config to enable them.';
-            updateNoteEl.textContent = 'To apply it: remove + reinstall the app in ZimaOS ' +
-              'with the updated compose config (one time -- future updates will be one-click).';
-            updateNoteEl.style.display = 'block';
-          }
-        }
-      } else if (appVerData.ok) {
-        appVerStatusEl.textContent = verLabel(appVerData, 'current') +
-          " (couldn't reach GitHub to check for updates)";
-        appVerStatusEl.style.color = 'var(--subtext)';
-      } else {
-        appVerStatusEl.textContent = "Couldn't determine.";
-        appVerStatusEl.style.color = 'var(--subtext)';
-      }
+      renderAppVersion(appVerData);
 
       // Surface a refused / rolled-back / failed previous update attempt
       // (persisted in the state file across the swap) -- otherwise a
@@ -995,32 +1019,42 @@
       const cfg = cfgData.config;
 
       // -- General tab --
-      document.getElementById('model-name').textContent =
-        FRIENDLY_BOARD_NAMES[cfg.board] || cfg.board_name;
-      document.getElementById('model-sku').textContent = cfg.board_name;
+      // Same naming/description scheme as the wizard's board cards.
+      const DEVICE_INFO = {
+        0: { name: 'ESP32-S3-LCD-1.3',   desc: '240\u00d7240 \u00b7 1.3" \u00b7 Non-touch display',      tall: false },
+        1: { name: 'ESP32-S3-TOUCH-1.69', desc: '240\u00d7280 \u00b7 1.69" \u00b7 Touch-enabled display', tall: true },
+      };
+      const dev = DEVICE_INFO[cfg.board] || { name: cfg.board_name, desc: '', tall: false };
+      document.getElementById('model-name').textContent = dev.name;
+      document.getElementById('model-sku').textContent = dev.desc;
+      // Wizard-style device glyph with a mock of the first enabled page
+      // inside -- a little "what's on the screen" preview.
+      const dp = document.getElementById('device-preview');
+      dp.style.width = '88px';
+      dp.style.height = dev.tall ? '102px' : '88px';
+      dp.style.borderRadius = dev.tall ? '16px' : '8px';
+      const firstPage = (cfg.pages && cfg.pages[0]) || 'temp';
+      dp.innerHTML = previewSVG(firstPage, 84);
       document.getElementById('firmware-version').textContent =
         'Firmware: v' + (cfg.firmware_version || 'Unknown');
 
       const updateBtn = document.getElementById('update-btn');
       const updateStatus = document.getElementById('update-status');
+      updateBtn.style.display = 'none';  // contextual: only shown when there IS one
       if (fwData.ok && fwData.bundled_version) {
         if (fwData.bundled_version !== cfg.firmware_version) {
           updateStatus.textContent = 'Update available: v' + fwData.bundled_version;
           updateStatus.style.color = 'var(--teal)';
-          updateBtn.textContent = 'Update Firmware';
+          updateBtn.style.display = 'inline-block';
           updateBtn.disabled = false;
           updateBtn.dataset.targetVersion = fwData.bundled_version;
         } else {
           updateStatus.textContent = 'Up to date.';
           updateStatus.style.color = 'var(--subtext)';
-          updateBtn.textContent = 'Up to Date';
-          updateBtn.disabled = true;
         }
       } else {
         updateStatus.textContent = "Couldn't determine the latest available version.";
         updateStatus.style.color = 'var(--subtext)';
-        updateBtn.textContent = 'Check for Update';
-        updateBtn.disabled = true;
       }
 
       const healthEl = document.getElementById('health-status');
@@ -1126,19 +1160,8 @@
   // known, so saving from either tab can't accidentally revert an
   // unsaved change made on the other one.
   // ---------------------------------------------------------------------
-  async function startAppUpdate(btn, statusEl, verData) {
-    // Two-click confirm on the button itself -- no modal machinery needed,
-    // and misclicks can't trigger a restart.
-    if (btn.dataset.armed !== '1') {
-      btn.dataset.armed = '1';
-      btn.textContent = 'Confirm — app restarts (~30s)';
-      setTimeout(() => {
-        btn.dataset.armed = '';
-        btn.textContent = 'Update App';
-      }, 6000);
-      return;
-    }
-    btn.dataset.armed = '';
+  async function runAppUpdate(btn, statusEl, verData) {
+    // Confirmation already happened in the update modal.
     btn.disabled = true;
     btn.textContent = 'Updating…';
 
@@ -1411,6 +1434,138 @@
       btn.disabled = false;
       btn.textContent = 'Reset';
     }
+  });
+
+  // ---------------------------------------------------------------------
+  // Software Version card: live "Check for Update" plus the update
+  // confirmation modal (the window shrinks back, a dialog confirms the
+  // target version with expandable patch notes -- replaces the old
+  // click-twice-to-confirm button).
+  // ---------------------------------------------------------------------
+  const verLabel = (d, which) => {
+    if (which === 'current') return d.version ? 'v' + d.version : 'v' + d.current_commit.slice(0, 7);
+    return d.latest_version ? 'v' + d.latest_version : 'v' + d.latest_commit.slice(0, 7);
+  };
+  let lastAppVer = null;
+
+  function renderAppVersion(d) {
+    lastAppVer = d;
+    const statusEl = document.getElementById('app-version-status');
+    const btn = document.getElementById('update-app-btn');
+    const noteEl = document.getElementById('app-update-note');
+    btn.disabled = false;
+    btn.title = '';
+    noteEl.style.display = 'none';
+    if (d.ok && d.latest_commit) {
+      statusEl.textContent = d.update_available
+        ? 'Update available (' + verLabel(d, 'latest') + ')'
+        : 'Up to date (' + verLabel(d, 'current') + ')';
+      statusEl.title = 'commit ' + d.current_commit.slice(0, 7);
+      statusEl.style.color = d.update_available ? 'var(--teal)' : 'var(--subtext)';
+      if (d.update_available && d.update_ready) {
+        btn.textContent = 'Update App';
+        btn.dataset.mode = 'update';
+      } else {
+        if (d.update_available) {
+          noteEl.textContent = 'To apply it: remove + reinstall the app in ZimaOS ' +
+            'with the updated compose config (one time -- future updates will be one-click).';
+          noteEl.style.display = 'block';
+        }
+        btn.textContent = 'Check for Update';
+        btn.dataset.mode = 'check';
+      }
+    } else if (d.ok) {
+      statusEl.textContent = verLabel(d, 'current') +
+        " (couldn't reach GitHub to check for updates)";
+      statusEl.style.color = 'var(--subtext)';
+      btn.textContent = 'Check for Update';
+      btn.dataset.mode = 'check';
+    } else {
+      statusEl.textContent = "Couldn't determine.";
+      statusEl.style.color = 'var(--subtext)';
+      btn.textContent = 'Check for Update';
+      btn.dataset.mode = 'check';
+    }
+  }
+
+  document.getElementById('update-app-btn').addEventListener('click', async function () {
+    if (this.dataset.mode === 'update') {
+      openUpdateModal();
+      return;
+    }
+    // mode: check -- re-ask the server (which asks GitHub) right now.
+    const statusEl = document.getElementById('app-version-status');
+    this.disabled = true;
+    statusEl.textContent = 'Checking\u2026';
+    statusEl.style.color = 'var(--subtext)';
+    let data;
+    try {
+      const res = await fetch('/api/app_version');
+      data = await res.json();
+    } catch (e) {
+      data = { ok: false };
+    }
+    renderAppVersion(data);
+  });
+
+  // -- the modal itself --
+  function openUpdateModal() {
+    const d = lastAppVer;
+    document.getElementById('modal-text').textContent =
+      "You're about to update to " + verLabel(d, 'latest') +
+      '. This takes a minute or two, and the app restarts partway through.';
+    document.getElementById('modal-notes').open = false;
+    const notesBody = document.getElementById('modal-notes-body');
+    notesBody.textContent = 'Loading\u2026';
+    document.getElementById('update-modal').classList.add('open');
+    document.querySelector('.app-window').classList.add('shrunk');
+    loadPatchNotes(d);
+  }
+
+  function closeUpdateModal() {
+    document.getElementById('update-modal').classList.remove('open');
+    document.querySelector('.app-window').classList.remove('shrunk');
+  }
+
+  async function loadPatchNotes(d) {
+    const body = document.getElementById('modal-notes-body');
+    let entries = [];
+    try {
+      const res = await fetch('/api/about');
+      const about = await res.json();
+      entries = (about.changelog && about.changelog.entries) || [];
+    } catch (e) { /* fall through to the empty-state text */ }
+    // Everything newer than what's installed; if the installed version
+    // isn't in the list (dev builds), show the most recent few.
+    const idx = entries.findIndex(e => e.version === d.version);
+    const relevant = idx > 0 ? entries.slice(0, idx) : entries.slice(0, 3);
+    body.textContent = '';
+    if (!relevant.length) {
+      body.textContent = "Couldn't load the patch notes -- the update is still fine to run.";
+      return;
+    }
+    relevant.forEach(entry => {
+      const v = document.createElement('div');
+      v.className = 'note-ver';
+      v.textContent = 'v' + entry.version + (entry.title ? ' \u00b7 ' + entry.title : '');
+      body.appendChild(v);
+      (entry.notes || []).forEach(n => {
+        const line = document.createElement('div');
+        line.className = 'card-desc';
+        line.textContent = '\u2022 ' + n;
+        body.appendChild(line);
+      });
+    });
+  }
+
+  document.getElementById('modal-cancel').addEventListener('click', closeUpdateModal);
+  document.getElementById('update-modal').addEventListener('click', function (e) {
+    if (e.target === this) closeUpdateModal();  // click outside = cancel
+  });
+  document.getElementById('modal-continue').addEventListener('click', () => {
+    closeUpdateModal();
+    runAppUpdate(document.getElementById('update-app-btn'),
+                 document.getElementById('app-version-status'), lastAppVer);
   });
 
   // ---------------------------------------------------------------------

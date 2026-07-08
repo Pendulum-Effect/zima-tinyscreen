@@ -2,6 +2,15 @@
   "_comment": "Human-readable changelog for the dashboard's About tab -- written for people, not commit archaeologists. The dashboard fetches this from GitHub at page load (baked copy as fallback), so add an entry here with each release and every install sees it. Newest first. Dates are YYYY-MM-DD.",
   "entries": [
     {
+      "version": "0.8.9.8",
+      "date": "2026-07-08",
+      "title": "A friendlier front page",
+      "notes": [
+        "The General tab got a redesign: your device card now shows a live-style preview of the screen, uses the same naming as the setup wizard, and only offers a firmware update button when there's actually an update.",
+        "Checking for app updates is now a button, no page refresh needed -- and updating shows a proper confirmation window with the patch notes right there."
+      ]
+    },
+    {
       "version": "0.8.9.7",
       "date": "2026-07-08",
       "title": "Screen page upgrades",

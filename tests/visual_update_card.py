@@ -31,7 +31,7 @@ BASE_CONFIG = {"ok": True, "config": {
 LAST_CONFIGURE_BODY = {}
 BASE_STATUS = {"ok": True, "collector_running": True, "age_seconds": 1.0,
                "last_stats": {}}
-FW_INFO = {"ok": True, "bundled_version": "1.0.0"}
+FW_INFO = {"ok": True, "bundled_version": "1.1.0"}
 
 
 def app_version():
