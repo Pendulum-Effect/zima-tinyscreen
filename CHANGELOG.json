@@ -2,6 +2,16 @@
   "_comment": "Human-readable changelog for the dashboard's About tab -- written for people, not commit archaeologists. The dashboard fetches this from GitHub at page load (baked copy as fallback), so add an entry here with each release and every install sees it. Newest first. Dates are YYYY-MM-DD.",
   "entries": [
     {
+      "version": "0.8.9.6",
+      "date": "2026-07-08",
+      "title": "Carousel fine-tuning",
+      "notes": [
+        "Fixed the preview gauges looking slightly off-center (the colored arc wasn't sitting on its track).",
+        "When the carousel wraps to a second row on narrower windows, the thumbnails now stay the same size across rows.",
+        "'Temperature' is now 'CPU Temperature', to be clearer about what it's measuring."
+      ]
+    },
+    {
       "version": "0.8.9.5",
       "date": "2026-07-08",
       "title": "Layouts polish",
