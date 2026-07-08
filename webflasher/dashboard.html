@@ -40,7 +40,7 @@
     gap: 14px;
     width: 100%;
     max-width: 1150px;
-    height: calc(100vh - 56px);
+    height: 80vh; /* ~10% of the viewport above and below */
     min-height: 540px;
     background: rgba(16, 28, 34, 0.55);
     border: 1px solid var(--border);
@@ -58,11 +58,13 @@
     display: flex;
     flex-direction: column;
   }
-  .sidebar h1 { font-size: 20px; margin: 0 0 26px; padding-left: 8px; }
+  .sidebar h1 { font-size: 20px; margin: 0 0 42px; padding-left: 8px; }
   .nav-item {
+    display: flex; align-items: center; gap: 10px;
     padding: 11px 14px; border-radius: 8px; cursor: pointer;
     color: var(--subtext); font-size: 14.5px; margin-bottom: 4px;
   }
+  .nav-item svg { width: 17px; height: 17px; flex-shrink: 0; }
   .nav-item:hover { color: var(--text); }
   .nav-item.active { background: var(--panel-raised); color: var(--teal); font-weight: 600; }
 
@@ -102,10 +104,13 @@
       align-items: center;
       gap: 4px;
       padding: 10px 12px;
-      overflow-x: auto;
     }
-    .sidebar h1 { margin: 0 14px 0 4px; font-size: 17px; white-space: nowrap; }
-    .nav-item { margin-bottom: 0; white-space: nowrap; }
+    .sidebar h1 { margin: 0 10px 0 4px; font-size: 17px; white-space: nowrap; }
+    /* Icons carry the navigation on small screens -- labels hide so the
+       bar never needs to scroll sideways. */
+    .nav-item { margin-bottom: 0; flex: 1; justify-content: center; padding: 10px 6px; }
+    .nav-item .nav-label { display: none; }
+    .nav-item svg { width: 19px; height: 19px; }
   }
 
   .tab-panel { display: none; }
@@ -200,10 +205,22 @@
   <div class="app-window">
   <div class="sidebar">
     <h1>TinyScreen</h1>
-    <div class="nav-item active" data-tab="general">General</div>
-    <div class="nav-item" data-tab="layouts">Layouts</div>
-    <div class="nav-item" data-tab="screen">Screen</div>
-    <div class="nav-item" data-tab="about">About</div>
+    <div class="nav-item active" data-tab="general">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg>
+      <span class="nav-label">General</span>
+    </div>
+    <div class="nav-item" data-tab="layouts">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+      <span class="nav-label">Layouts</span>
+    </div>
+    <div class="nav-item" data-tab="screen">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+      <span class="nav-label">Screen</span>
+    </div>
+    <div class="nav-item" data-tab="about">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+      <span class="nav-label">About</span>
+    </div>
   </div>
 
   <div class="main">
