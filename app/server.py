@@ -540,6 +540,52 @@ def api_update_state():
     return jsonify({"ok": True, "state": state})
 
 
+@app.route("/api/about", methods=["GET"])
+def api_about():
+    """Content for the dashboard's About tab. The REPO copies of
+    about.json and CHANGELOG.json are the single source of truth
+    (per-project decision: no maintaining the same info in two places),
+    so this fetches them live from raw.githubusercontent.com on each
+    page load -- meaning credits/changelog edits apply to every install
+    WITHOUT shipping a new image. The copies baked into the image at
+    build time are the offline fallback, so the tab still works when
+    GitHub is unreachable.
+    """
+    # Which repo/branch to fetch from comes from the same CI-stamped
+    # file the version check uses -- never hardcoded.
+    repo, branch = None, None
+    try:
+        baked_ver = json.loads((WEBFLASHER_DIR / "app_version.json").read_text())
+        repo, branch = baked_ver.get("repo"), baked_ver.get("branch")
+    except (FileNotFoundError, OSError, json.JSONDecodeError):
+        pass
+
+    def load(filename):
+        if repo and branch:
+            try:
+                url = f"https://raw.githubusercontent.com/{repo}/{branch}/{filename}"
+                with urllib.request.urlopen(url, timeout=5) as resp:
+                    return json.loads(resp.read().decode("utf-8")), "github"
+            except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError,
+                    json.JSONDecodeError):
+                pass
+        try:
+            return json.loads((WEBFLASHER_DIR / filename).read_text()), "baked"
+        except (FileNotFoundError, OSError, json.JSONDecodeError):
+            return None, "missing"
+
+    about, about_src = load("about.json")
+    changelog, changelog_src = load("CHANGELOG.json")
+    if about is None and changelog is None:
+        return jsonify({"ok": False, "error": "No About content available."})
+    return jsonify({
+        "ok": True,
+        "about": about,
+        "changelog": changelog,
+        "source": {"about": about_src, "changelog": changelog_src},
+    })
+
+
 @app.route("/api/firmware_info", methods=["GET"])
 def api_firmware_info():
     """Reports the firmware version bundled in THIS running image, stamped

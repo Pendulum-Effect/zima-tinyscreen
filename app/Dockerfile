@@ -17,6 +17,11 @@ COPY app/server.py app/server.py
 COPY app/dockerapi.py app/dockerapi.py
 COPY app/self_update_helper.py app/self_update_helper.py
 COPY app/canonical_config.json app/canonical_config.json
+# About-page content: the repo copies are the source of truth (the server
+# fetches them live from GitHub so edits apply without a release), but
+# baked copies keep the About tab working when GitHub is unreachable.
+COPY about.json webflasher/about.json
+COPY CHANGELOG.json webflasher/CHANGELOG.json
 COPY app/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 

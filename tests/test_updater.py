@@ -578,6 +578,70 @@ class TestServerEndpoints(UpdaterTestBase):
             if wrote:
                 version_json.unlink()
 
+    def test_about_endpoint_github_and_fallback(self):
+        import json as _json
+        import shutil
+        # Stage the baked copies the Dockerfile would create at build time
+        # (the repo tree deliberately does NOT duplicate them into
+        # webflasher/ -- root about.json/CHANGELOG.json are the only copies)
+        staged = []
+        for fname in ("about.json", "CHANGELOG.json"):
+            dest = self.server.WEBFLASHER_DIR / fname
+            if not dest.exists():
+                shutil.copy(ROOT / fname, dest)
+                staged.append(dest)
+        self.addCleanup(lambda: [p.unlink() for p in staged])
+        version_json = self.server.WEBFLASHER_DIR / "app_version.json"
+        wrote = not version_json.exists()
+        if wrote:
+            version_json.write_text(_json.dumps({
+                "version": "0.8.7.0", "commit": "a" * 40,
+                "branch": "master", "repo": "Pendulum-Effect/zima-tinyscreen"}))
+
+        class FakeResp:
+            def __init__(self, payload):
+                self._p = payload
+            def read(self):
+                return self._p
+            def __enter__(self):
+                return self
+            def __exit__(self, *a):
+                return False
+
+        def github_ok(url, timeout=5):
+            u = url if isinstance(url, str) else url.full_url
+            if u.endswith("/about.json"):
+                return FakeResp(_json.dumps({"project": {"name": "FromGitHub"}}).encode())
+            if u.endswith("/CHANGELOG.json"):
+                return FakeResp(_json.dumps({"entries": [{"version": "9.9.9"}]}).encode())
+            raise AssertionError("unexpected " + u)
+
+        def github_down(url, timeout=5):
+            import urllib.error
+            raise urllib.error.URLError("no network")
+
+        orig = self.server.urllib.request.urlopen
+        try:
+            # 1) GitHub reachable -> live content wins, source says github
+            self.server.urllib.request.urlopen = github_ok
+            d = self.app.get("/api/about").get_json()
+            self.assertTrue(d["ok"])
+            self.assertEqual(d["about"]["project"]["name"], "FromGitHub")
+            self.assertEqual(d["source"], {"about": "github", "changelog": "github"})
+
+            # 2) GitHub down -> baked repo copies serve as fallback
+            self.server.urllib.request.urlopen = github_down
+            d = self.app.get("/api/about").get_json()
+            self.assertTrue(d["ok"])
+            self.assertEqual(d["source"]["about"], "baked")
+            self.assertEqual(d["about"]["project"]["name"], "TinyScreen")
+            self.assertTrue(any(e["version"] == "0.8.7.0"
+                                for e in d["changelog"]["entries"]))
+        finally:
+            self.server.urllib.request.urlopen = orig
+            if wrote:
+                version_json.unlink()
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

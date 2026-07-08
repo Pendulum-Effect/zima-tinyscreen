@@ -272,15 +272,8 @@
     <!-- About -->
     <section class="tab-panel" data-panel="about">
       <h2>About</h2>
-      <div class="card">
-        <div class="card-header">
-          <div>
-            <div class="card-title">About TinyScreen</div>
-            <div class="card-desc">Project info, version history, and credits.</div>
-          </div>
-          <span class="placeholder-badge">Coming soon</span>
-        </div>
-      </div>
+      <div id="about-loading" class="loading">Loading…</div>
+      <div id="about-content" style="display:none;"></div>
     </section>
   </div>
 
@@ -702,6 +695,153 @@
       'unreachable, check the app in ZimaOS — a container named tinyscreen-dashboard-old ' +
       'holds the previous version.';
     statusEl.style.color = '#e8a87c';
+  }
+
+  // ---------------------------------------------------------------------
+  // About tab -- content comes from about.json + CHANGELOG.json in the
+  // GitHub repo (via /api/about), so it can be updated without shipping
+  // a new image. Loaded lazily on first visit to the tab, and rendered
+  // with createElement/textContent throughout: this content arrives from
+  // the network, so it never goes anywhere near innerHTML.
+  // ---------------------------------------------------------------------
+  let aboutLoaded = false;
+  document.querySelector('.nav-item[data-tab="about"]').addEventListener('click', () => {
+    if (!aboutLoaded) { aboutLoaded = true; loadAboutTab(); }
+  });
+
+  async function loadAboutTab() {
+    const loadingEl = document.getElementById('about-loading');
+    const contentEl = document.getElementById('about-content');
+    let data;
+    try {
+      const res = await fetch('/api/about');
+      data = await res.json();
+    } catch (e) {
+      data = { ok: false };
+    }
+    loadingEl.style.display = 'none';
+    contentEl.style.display = 'block';
+    if (!data.ok) {
+      const err = document.createElement('div');
+      err.className = 'card';
+      err.textContent = "Couldn't load the About content. It lives in the project's GitHub repo -- try again once this device can reach the internet.";
+      contentEl.appendChild(err);
+      return;
+    }
+
+    const el = (tag, cls, text) => {
+      const n = document.createElement(tag);
+      if (cls) n.className = cls;
+      if (text !== undefined) n.textContent = text;
+      return n;
+    };
+    const link = (href, text) => {
+      const a = document.createElement('a');
+      a.href = href; a.target = '_blank'; a.rel = 'noopener';
+      a.textContent = text;
+      a.style.color = 'var(--teal)';
+      return a;
+    };
+    const card = (titleText) => {
+      const c = el('div', 'card');
+      if (titleText) c.appendChild(el('div', 'card-title', titleText));
+      contentEl.appendChild(c);
+      return c;
+    };
+
+    const about = data.about || {};
+
+    // -- project / author / repo --
+    if (about.project) {
+      const p = about.project;
+      const c = card(p.name || 'TinyScreen');
+      if (p.tagline) c.appendChild(el('div', 'card-desc', p.tagline));
+      if (p.description) {
+        const d = el('div', 'card-desc', p.description);
+        d.style.marginTop = '10px';
+        c.appendChild(d);
+      }
+      const meta = el('div', 'card-desc');
+      meta.style.marginTop = '10px';
+      if (p.author && p.author.name) {
+        meta.appendChild(document.createTextNode('Made by '));
+        meta.appendChild(p.author.url ? link(p.author.url, p.author.name)
+                                      : document.createTextNode(p.author.name));
+      }
+      if (p.repo_url) {
+        meta.appendChild(document.createTextNode('  ·  '));
+        meta.appendChild(link(p.repo_url, 'Source on GitHub'));
+      }
+      c.appendChild(meta);
+    }
+
+    // -- AI acknowledgement --
+    if (about.ai && about.ai.text) {
+      const c = card(about.ai.heading || 'Built with AI');
+      c.appendChild(el('div', 'card-desc', about.ai.text));
+    }
+
+    // -- third-party acknowledgements --
+    if (about.acknowledgements && Array.isArray(about.acknowledgements.items)) {
+      const ack = about.acknowledgements;
+      const c = card(ack.heading || 'Acknowledgements');
+      if (ack.intro) c.appendChild(el('div', 'card-desc', ack.intro));
+      ack.items.forEach(item => {
+        const row = el('div');
+        row.style.marginTop = '12px';
+        const title = el('div');
+        title.appendChild(item.url ? link(item.url, item.name) : el('span', null, item.name));
+        if (item.by) title.appendChild(document.createTextNode(' — ' + item.by));
+        row.appendChild(title);
+        if (item.note) row.appendChild(el('div', 'card-desc', item.note));
+        c.appendChild(row);
+      });
+    }
+
+    // -- license --
+    if (about.license) {
+      const lic = about.license;
+      const c = card('License');
+      const line = el('div', 'card-desc');
+      if (lic.url && lic.name) line.appendChild(link(lic.url, lic.name));
+      else if (lic.name) line.textContent = lic.name;
+      c.appendChild(line);
+      if (lic.summary) {
+        const s = el('div', 'card-desc', lic.summary);
+        s.style.marginTop = '6px';
+        c.appendChild(s);
+      }
+    }
+
+    // -- changelog --
+    const entries = (data.changelog && Array.isArray(data.changelog.entries))
+      ? data.changelog.entries : [];
+    if (entries.length) {
+      const c = card("What's changed");
+      entries.forEach(entry => {
+        const row = el('div');
+        row.style.marginTop = '14px';
+        const head = el('div');
+        const v = el('span', null, 'v' + entry.version);
+        v.style.color = 'var(--teal)';
+        v.style.fontWeight = '600';
+        head.appendChild(v);
+        if (entry.title) head.appendChild(document.createTextNode('  ' + entry.title));
+        if (entry.date) {
+          const d = el('span', null, '  ·  ' + entry.date);
+          d.style.color = 'var(--subtext)';
+          d.style.fontSize = '0.85em';
+          head.appendChild(d);
+        }
+        row.appendChild(head);
+        (entry.notes || []).forEach(note => {
+          const n = el('div', 'card-desc', '• ' + note);
+          n.style.marginTop = '3px';
+          row.appendChild(n);
+        });
+        c.appendChild(row);
+      });
+    }
   }
 
   async function saveConfig(statusEl, saveBtn) {

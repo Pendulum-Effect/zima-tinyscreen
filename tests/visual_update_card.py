@@ -85,6 +85,12 @@ class Stub(BaseHTTPRequestHandler):
                 if st is None:
                     return self._send({"error": "down"}, 503)
                 return self._send(st)
+            if route == "/api/about":
+                about = json.loads((ROOT / "about.json").read_text())
+                changelog = json.loads((ROOT / "CHANGELOG.json").read_text())
+                return self._send({"ok": True, "about": about,
+                                   "changelog": changelog,
+                                   "source": {"about": "github", "changelog": "github"}})
             mapping = {"/api/current_config": BASE_CONFIG,
                        "/api/status": BASE_STATUS,
                        "/api/firmware_info": FW_INFO,

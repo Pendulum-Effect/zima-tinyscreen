@@ -1,0 +1,42 @@
+{
+  "_comment": "Human-readable changelog for the dashboard's About tab -- written for people, not commit archaeologists. The dashboard fetches this from GitHub at page load (baked copy as fallback), so add an entry here with each release and every install sees it. Newest first. Dates are YYYY-MM-DD.",
+  "entries": [
+    {
+      "version": "0.8.7.0",
+      "date": "2026-07-07",
+      "title": "The About page",
+      "notes": [
+        "The About tab is now a real page: project info, credits for the open-source projects TinyScreen is built on, license details, and this changelog.",
+        "All of it is pulled straight from the GitHub repo, so it stays current without needing an app update."
+      ]
+    },
+    {
+      "version": "0.8.6.3",
+      "date": "2026-07-07",
+      "title": "A tiny test balloon",
+      "notes": [
+        "Added an About tab placeholder to the sidebar.",
+        "Honestly, this release mostly existed to prove the new one-click updater worked on real hardware. (It did.)"
+      ]
+    },
+    {
+      "version": "0.8.6.2",
+      "date": "2026-07-07",
+      "title": "One-click updates",
+      "notes": [
+        "The Update App button now actually updates the app: one click (plus a confirm), about 30 seconds, done.",
+        "If anything goes wrong mid-update, it automatically rolls back to the version you were on and tells you what happened.",
+        "Versions now have friendly numbers like this one, instead of git commit codes.",
+        "Fixed the dashboard opening on the Layouts tab while the sidebar claimed you were on General."
+      ]
+    },
+    {
+      "version": "0.8.6.1",
+      "date": "2026-07-07",
+      "title": "Update detection",
+      "notes": [
+        "The dashboard now notices when a newer version of the app has been published and says so on the General tab."
+      ]
+    }
+  ]
+}

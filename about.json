@@ -1,0 +1,82 @@
+{
+  "_comment": "Single source of truth for the dashboard's About tab. The running app fetches THIS FILE from GitHub at page load (falling back to the copy baked into the image if GitHub is unreachable), so editing it here updates every install's About page without a new release. Keep the tone casual -- this is user-facing.",
+  "project": {
+    "name": "TinyScreen",
+    "tagline": "A tiny external status display for your ZimaBoard or ZimaBlade.",
+    "description": "TinyScreen streams live system stats -- CPU, RAM, storage, network, temperature -- from a ZimaOS device to a small ESP32-S3 display plugged into its USB port. It also handles flashing the display's firmware and configuring what it shows, all from this dashboard.",
+    "repo_url": "https://github.com/Pendulum-Effect/zima-tinyscreen",
+    "author": {
+      "name": "Pendulum-Effect",
+      "url": "https://github.com/Pendulum-Effect"
+    }
+  },
+  "ai": {
+    "heading": "Built with AI",
+    "text": "This project was developed in collaboration with Claude, Anthropic's AI assistant -- the code, tests, and a good chunk of the debugging came out of a long-running conversation between the author and the AI. Design decisions, hardware testing, and stubbornness were supplied by the human."
+  },
+  "acknowledgements": {
+    "heading": "Standing on shoulders",
+    "intro": "TinyScreen leans on some excellent open-source work. Thanks to the people behind:",
+    "items": [
+      {
+        "name": "GFX Library for Arduino (Arduino_GFX)",
+        "by": "moononournation",
+        "url": "https://github.com/moononournation/Arduino_GFX",
+        "note": "Drives both supported LCD panels. All the pixels you see on the little screen go through this library."
+      },
+      {
+        "name": "ArduinoJson",
+        "by": "Beno\u00eet Blanchon",
+        "url": "https://arduinojson.org",
+        "note": "Parses and builds the JSON messages the display and the app exchange over USB. MIT licensed."
+      },
+      {
+        "name": "ESP Web Tools",
+        "by": "ESPHome / Open Home Foundation",
+        "url": "https://esphome.github.io/esp-web-tools/",
+        "note": "Powers in-browser firmware flashing over WebSerial in the setup wizard. Apache 2.0 licensed."
+      },
+      {
+        "name": "esptool",
+        "by": "Espressif Systems",
+        "url": "https://github.com/espressif/esptool",
+        "note": "Does the actual server-side firmware flashing when the display is plugged straight into the ZimaBoard. GPL 2.0 licensed, invoked as a standalone tool."
+      },
+      {
+        "name": "Arduino core for ESP32",
+        "by": "Espressif Systems",
+        "url": "https://github.com/espressif/arduino-esp32",
+        "note": "The framework the firmware is built on. LGPL 2.1 licensed."
+      },
+      {
+        "name": "PlatformIO",
+        "by": "PlatformIO Labs",
+        "url": "https://platformio.org",
+        "note": "Builds the firmware, both locally and in CI. Apache 2.0 licensed."
+      },
+      {
+        "name": "Flask",
+        "by": "the Pallets team",
+        "url": "https://flask.palletsprojects.com",
+        "note": "Serves this very dashboard. BSD 3-Clause licensed."
+      },
+      {
+        "name": "psutil",
+        "by": "Giampaolo Rodol\u00e0 and contributors",
+        "url": "https://github.com/giampaolo/psutil",
+        "note": "Gathers most of the system stats that end up on the screen. BSD 3-Clause licensed."
+      },
+      {
+        "name": "ZimaOS",
+        "by": "IceWhale Technology",
+        "url": "https://www.zimaspace.com/",
+        "note": "The platform this whole thing lives on -- TinyScreen installs as a ZimaOS custom app and follows its CasaOS app conventions."
+      }
+    ]
+  },
+  "license": {
+    "name": "PolyForm Noncommercial License 1.0.0",
+    "url": "https://polyformproject.org/licenses/noncommercial/1.0.0",
+    "summary": "Free to use, modify, share, and fork for any noncommercial purpose -- hobby projects, personal setups, education, tinkering. If you want to use it commercially, get in touch. See the LICENSE file in the repository for the full terms."
+  }
+}
