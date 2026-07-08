@@ -23,7 +23,7 @@ settings page rather than at compile time:
 
 Which pages to show (CPU load/wattage, RAM, MMC storage, network, temperature),
 cycling behavior, and brightness are all configured through
-`webflasher/settings.html` and pushed to the device over WebSerial right
+`webflasher/wizard.html` and pushed to the device over WebSerial right
 after flashing — see "Configure and flash from the browser" below.
 
 Pin mappings for both boards were extracted from Waveshare's schematic
@@ -31,14 +31,14 @@ PDFs / wiki and cross-checked against known ESP32-S3 hardware facts. Both
 boards have been flash-tested against physical hardware and confirmed
 working end-to-end (live ZimaBlade data, multi-page carousel, auto-cycle,
 brightness, and — for board 1 — touch swipe navigation), including via
-the fully server-side `onboard.html` flow with no computer involved.
+the fully server-side wizard flow (`wizard.html`) with no computer involved.
 
 ```
 zima-tinyscreen/
 ├── collector/            Python stats collector (runs on the ZimaBlade/ZimaBoard)
 ├── firmware/              ESP32-S3 firmware (PlatformIO, C++) -- supports both boards
 ├── firmware_arduino/      Same firmware as an Arduino IDE sketch folder
-├── webflasher/            settings.html (configurator) + index.html (WebSerial flasher)
+├── webflasher/            wizard.html (setup) + dashboard.html (settings dashboard)
 ├── app/                   ZimaOS/Docker packaging (serves webflasher on :8989 / :8990)
 └── README.md
 ```
@@ -90,7 +90,7 @@ physically plugged in. Pick whichever matches your situation.
 
 ### 2a. Board plugged into your computer (browser + WebSerial)
 
-**Use `https://<zima-ip>:8990/settings.html`** as the starting point (not
+**Use `https://<zima-ip>:8990/wizard.html`** as the starting point (not
 port 8989 — since the settings page hands off to the flasher page via a
 relative link, staying on HTTPS the whole way through matters, or
 WebSerial will break on the second page). You'll get an "untrusted
@@ -98,10 +98,10 @@ certificate" warning the first time; click through it once (see the
 "WebSerial flasher access" section below for why).
 
 The flow:
-1. **`settings.html`** — pick your board model, which stat pages to show,
+1. **`wizard.html`** — pick your board model and connection, then flash;
    static vs auto-cycle (with interval), and brightness. Click **Continue
    to Flasher**.
-2. **`index.html`** — shows a summary of your choices, then flash as
+2. **`dashboard.html`** — pick your stat pages, brightness, night mode, and more,
    usual with **Connect & Flash** ([ESP Web Tools](https://esphome.github.io/esp-web-tools/)
    under the hood, via WebSerial).
 3. Once flashing finishes, click **Send Settings to Device** — this opens
@@ -113,7 +113,7 @@ The flow:
 
 ### 2b. Board plugged directly into the ZimaBlade/ZimaBoard (no computer needed)
 
-**Use `http://<zima-ip>:8989/onboard.html`** (plain HTTP is fine here —
+**Use `http://<zima-ip>:8989/wizard.html`** (plain HTTP is fine here —
 this page doesn't use WebSerial at all, it talks to the board through the
 app's own server-side endpoints instead, which have direct USB access to
 whatever's plugged into the ZimaBlade itself).
@@ -148,8 +148,8 @@ needs an entirely separate compiled binary from board 0. GitHub Actions
 compiles **both** variants (`firmware/platformio.ini` defines two
 environments) on every push, and bakes both into the Docker image — see
 `.github/workflows/docker-build-push.yml`. Both the browser flasher
-(`index.html`, via `manifest-bridge.json`/`manifest-native.json`) and the
-on-device flasher (`onboard.html`, via `/api/flash`'s `board` parameter)
+(`wizard.html`, via `manifest-bridge.json`/`manifest-native.json`) and the
+on-device flasher (also `wizard.html`, via `/api/flash`'s `board` parameter)
 pick the correct variant based on which board you selected.
 
 ## 3. Run the collector
@@ -304,7 +304,7 @@ a `"cmd"` field is treated as a command rather than a stats update:
 ```
 
 The firmware acks with `{"ack":"set_config","ok":true}` and persists the
-config to NVS. Both `webflasher/index.html` (via WebSerial) and
+config to NVS. Both `webflasher/wizard.html` (via WebSerial) and
 `server.py`'s `/api/configure` (via direct serial, for on-device setup)
 send this same command — they're just two different transports for the
 same protocol.
@@ -312,9 +312,9 @@ same protocol.
 `server.py` also exposes:
 - `GET /api/status` — latest stats + whether the collector is currently running
 - `POST /api/configure` — body is the same fields as the `set_config`
-  command above (minus the `cmd` wrapper); used by `onboard.html`
+  command above (minus the `cmd` wrapper); used by `wizard.html`
 - `POST /api/flash` — flashes the bundled firmware via `esptool`; used by
-  `onboard.html`
+  `wizard.html`
 
 ## Customizing the look
 

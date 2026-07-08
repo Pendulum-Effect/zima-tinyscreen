@@ -2,6 +2,16 @@
   "_comment": "Human-readable changelog for the dashboard's About tab -- written for people, not commit archaeologists. The dashboard fetches this from GitHub at page load (baked copy as fallback), so add an entry here with each release and every install sees it. Newest first. Dates are YYYY-MM-DD.",
   "entries": [
     {
+      "version": "0.8.9.1",
+      "date": "2026-07-08",
+      "title": "Wizard glow-up",
+      "notes": [
+        "The setup wizard got friendlier: clearer language throughout, proper names for both screens, links to where you can buy them, and smooth transitions between steps.",
+        "Finishing setup now takes you to the dashboard (it used to drop you on an old settings page).",
+        "Retired three leftover pages from earlier in the project -- old links to them redirect to the right place."
+      ]
+    },
+    {
       "version": "0.8.9.0",
       "date": "2026-07-08",
       "title": "Reset Device",

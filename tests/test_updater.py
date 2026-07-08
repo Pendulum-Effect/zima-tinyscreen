@@ -722,6 +722,21 @@ class TestServerEndpoints(UpdaterTestBase):
         finally:
             self.server.detect_port = orig
 
+    def test_legacy_pages_redirect(self):
+        for old, new in [("/settings.html", "/dashboard.html"),
+                         ("/index.html", "/dashboard.html"),
+                         ("/onboard.html", "/wizard.html")]:
+            r = self.app.get(old)
+            self.assertEqual(r.status_code, 302, old)
+            self.assertTrue(r.headers["Location"].endswith(new), (old, r.headers["Location"]))
+        # root serves the dashboard now
+        r = self.app.get("/")
+        self.assertEqual(r.status_code, 200)
+        self.assertIn(b"TinyScreen", r.data)
+        # current pages still served directly
+        for page in ("/wizard.html", "/dashboard.html"):
+            self.assertEqual(self.app.get(page).status_code, 200, page)
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

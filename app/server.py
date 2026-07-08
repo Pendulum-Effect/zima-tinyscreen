@@ -32,7 +32,7 @@ import urllib.request
 import urllib.error
 from pathlib import Path
 
-from flask import Flask, jsonify, request, send_from_directory
+from flask import Flask, jsonify, redirect, request, send_from_directory
 
 from dockerapi import DockerClient, DockerAPIError
 
@@ -205,9 +205,22 @@ collector = CollectorManager()
 # Static file serving
 # ---------------------------------------------------------------------
 
+# The legacy pages (index.html WebSerial flasher, settings.html
+# configurator, onboard.html on-device flow) are retired as of 0.8.9.1 --
+# the wizard + dashboard fully replaced them. Old bookmarks and README
+# links redirect to their modern equivalents instead of 404ing.
+LEGACY_REDIRECTS = {
+    "index.html": "/dashboard.html",
+    "settings.html": "/dashboard.html",
+    "onboard.html": "/wizard.html",
+}
+
+
 @app.route("/")
 @app.route("/<path:filename>")
-def serve_flasher(filename="index.html"):
+def serve_flasher(filename="dashboard.html"):
+    if filename in LEGACY_REDIRECTS:
+        return redirect(LEGACY_REDIRECTS[filename], code=302)
     return send_from_directory(WEBFLASHER_DIR, filename)
 
 

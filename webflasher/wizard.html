@@ -55,7 +55,14 @@
   .dots .dot.active { background: var(--teal); }
 
   .step { display: none; flex-direction: column; flex: 1; }
-  .step.active { display: flex; }
+  .step.active { display: flex; animation: stepIn 0.35s ease; }
+  @keyframes stepIn {
+    from { opacity: 0; transform: translateY(10px); }
+    to   { opacity: 1; transform: none; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .step.active { animation: none; }
+  }
 
   h1 { font-size: 26px; margin: 0 0 8px; font-weight: 700; }
   p.sub { color: var(--subtext); margin: 0 0 24px; line-height: 1.55; font-size: 14.5px; }
@@ -75,13 +82,26 @@
   }
   .screen-card:hover { border-color: var(--teal-dim); }
   .screen-card.selected { border-color: var(--teal); background: rgba(79, 209, 197, 0.08); }
+  .screen-card .glyph-wrap {
+    height: 96px; display: flex; align-items: center; justify-content: center;
+    margin-bottom: 14px;
+  }
   .screen-card .glyph {
-    width: 72px; height: 72px; margin: 0 auto 14px;
+    width: 72px; height: 72px;
     background: #2a3a3d; border: 3px solid #4a6a6a;
   }
   .screen-card.round-ish .glyph { border-radius: 16px; height: 84px; }
   .screen-card .name { font-weight: 700; font-size: 15px; }
   .screen-card .dims { color: var(--subtext); font-size: 12.5px; margin-top: 2px; }
+  .screen-card .kind { color: var(--subtext); font-size: 12.5px; margin-top: 2px; }
+
+  .help-banner {
+    margin-top: 18px; padding: 12px 14px;
+    background: var(--panel-raised); border: 1px solid var(--border);
+    border-radius: 10px; font-size: 12.5px; color: var(--subtext); line-height: 1.55;
+  }
+  .help-banner a { color: var(--teal); text-decoration: none; }
+  .help-banner a:hover { text-decoration: underline; }
 
   .conn-choice { display: flex; gap: 18px; margin-top: 8px; }
   .conn-card {
@@ -154,12 +174,12 @@
     <!-- Step: welcome -->
     <section class="step active" data-step="welcome">
       <div class="step-body">
-        <h1>Welcome to Tiny Screen</h1>
-        <p class="sub">Let's get your display set up. This takes about two minutes.</p>
+        <h1>Say hello to TinyScreen</h1>
+        <p class="sub">Your ZimaBoard's stats, on a little screen of their own. Setup only takes a couple of minutes — let's do it.</p>
       </div>
       <div class="footer">
         <span></span>
-        <button class="btn" data-next>Next</button>
+        <button class="btn" data-next>Get Started</button>
       </div>
     </section>
 
@@ -170,15 +190,24 @@
         <p class="sub">Which display are you setting up?</p>
         <div class="screen-choice">
           <div class="screen-card" data-board="0">
-            <div class="glyph" style="border-radius: 6px;"></div>
-            <div class="name">Square, no touch</div>
+            <div class="glyph-wrap"><div class="glyph" style="border-radius: 6px;"></div></div>
+            <div class="name">ESP32-S3-LCD-1.3</div>
             <div class="dims">240×240 · 1.3"</div>
+            <div class="kind">Non-touch display</div>
           </div>
           <div class="screen-card round-ish" data-board="1">
-            <div class="glyph"></div>
-            <div class="name">Touch</div>
+            <div class="glyph-wrap"><div class="glyph"></div></div>
+            <div class="name">ESP32-S3-TOUCH-1.69</div>
             <div class="dims">240×280 · 1.69"</div>
+            <div class="kind">Touch-enabled display</div>
           </div>
+        </div>
+        <div class="help-banner">
+          Not sure which one you have, or need to grab one? Here's the
+          <a href="https://www.waveshare.com/esp32-s3-lcd-1.3.htm?sku=30558" target="_blank" rel="noopener">ESP32-S3-LCD-1.3</a>
+          and the
+          <a href="https://www.waveshare.com/esp32-s3-touch-lcd-1.69.htm" target="_blank" rel="noopener">ESP32-S3-TOUCH-1.69</a>
+          from Waveshare. Either one connects with a USB-C or USB-A cable.
         </div>
       </div>
       <div class="footer">
@@ -190,16 +219,16 @@
     <!-- Step: connection method (only shown when Web Serial is actually available) -->
     <section class="step" data-step="connection">
       <div class="step-body">
-        <h1>Where's your board connected?</h1>
-        <p class="sub">We can flash it either way.</p>
+        <h1>Where's it plugged in?</h1>
+        <p class="sub">Either works — just tell us where the screen is connected right now.</p>
         <div class="conn-choice">
           <div class="conn-card" data-conn="computer">
             <div class="name">This computer</div>
-            <div class="desc">Plugged into this device via USB-C right now.</div>
+            <div class="desc">Plugged into the computer you're using right now.</div>
           </div>
           <div class="conn-card" data-conn="zimablade">
-            <div class="name">The ZimaBlade</div>
-            <div class="desc">Plugged directly into your ZimaBlade/ZimaBoard.</div>
+            <div class="name">Your ZimaBlade</div>
+            <div class="desc">Plugged straight into the ZimaBlade or ZimaBoard.</div>
           </div>
         </div>
       </div>
@@ -212,8 +241,8 @@
     <!-- Step: plug in -->
     <section class="step" data-step="plug">
       <div class="step-body">
-        <h1>Plug in your screen</h1>
-        <p class="sub" id="plug-sub">Connect the screen via USB-C, then continue.</p>
+        <h1>Plug it in</h1>
+        <p class="sub" id="plug-sub">Connect the screen with a USB-C or USB-A cable, then continue.</p>
         <div class="plug-art">
           <svg width="360" height="120" viewBox="0 0 360 120">
             <rect x="10" y="24" width="84" height="72" rx="8" fill="#2a3a3d" stroke="#4a6a6a" stroke-width="2"/>
@@ -236,8 +265,8 @@
     <!-- Step: flashing (computer path) -->
     <section class="step" data-step="flash-computer">
       <div class="step-body">
-        <h1>Connect &amp; flash</h1>
-        <p class="sub">Click below and pick your board's serial port when Chrome asks.</p>
+        <h1>Time to flash</h1>
+        <p class="sub">Click the button below, then pick your screen from the list your browser shows.</p>
         <esp-web-install-button id="install-btn" manifest="./manifest-bridge.json">
           <button slot="activate">Connect &amp; Flash</button>
           <span slot="unsupported">Your browser doesn't support Web Serial. Please use Chrome or Edge.</span>
@@ -254,8 +283,8 @@
     <!-- Step: flashing (zimablade path) -->
     <section class="step" data-step="flash-zimablade">
       <div class="step-body">
-        <h1>Updating firmware</h1>
-        <p class="sub" id="zima-flash-sub">Flashing over the ZimaBlade's USB port — this takes up to a minute or two.</p>
+        <h1>Setting things up</h1>
+        <p class="sub" id="zima-flash-sub">Installing the firmware on your screen. Hang tight — this usually takes a minute or two.</p>
         <div class="progress-track"><div class="progress-fill" id="zima-progress-fill"></div></div>
         <p class="progress-label" id="zima-progress-label">Starting…</p>
         <pre class="progress-log" id="zima-flash-log"></pre>
@@ -269,9 +298,9 @@
     <!-- Step: complete -->
     <section class="step" data-step="complete">
       <div class="step-body" style="text-align:center;">
-        <h1>Update complete!</h1>
+        <h1>You're all set</h1>
         <div class="complete-glyph"></div>
-        <p class="sub" id="complete-sub">Your screen is set up with sensible defaults — one page, always on, full brightness.</p>
+        <p class="sub" id="complete-sub">Your screen is up and running with sensible defaults. Head to the dashboard to pick your pages, set brightness, schedule night mode, and more.</p>
         <p class="status-msg" id="complete-status"></p>
       </div>
       <div class="footer">
@@ -336,8 +365,8 @@
     if (name === 'plug') {
       document.getElementById('plug-sub').textContent =
         connMethod === 'computer'
-          ? 'Connect the screen to this computer via USB-C, then continue.'
-          : "Connect the screen to your ZimaBlade's USB port via USB-C, then continue.";
+          ? 'Connect the screen to this computer with a USB-C or USB-A cable, then continue.'
+          : "Connect the screen to your ZimaBlade with a USB-C or USB-A cable, then continue.";
     }
     if (name === 'flash-computer') applyManifestForBoard(selectedBoard);
     if (name === 'flash-zimablade') startZimaBladeFlash();
@@ -507,10 +536,7 @@
   // Finish
   // ---------------------------------------------------------------------
   document.getElementById('finish-btn').addEventListener('click', () => {
-    // The Layouts/Screen customization dashboard doesn't exist yet --
-    // until it does, send people to the existing settings page so
-    // there's still a way to change pages/brightness today.
-    window.location.href = 'settings.html';
+    window.location.href = 'dashboard.html';
   });
 
   goTo(0);
