@@ -59,6 +59,13 @@ class Stats:
     nas_available: bool
     nas_total_gb: float
     nas_pct: float
+    # Minutes since UTC midnight -- the display board has no clock of its
+    # own, so night mode and the clock screensaver run on host-supplied
+    # time, extrapolated between updates on the board side. UTC (not
+    # local) deliberately: this container's TZ is UTC regardless of the
+    # user's location, so the user's timezone offset travels separately
+    # (captured from the browser at save time, see dashboard.html).
+    utc_min: int
 
 
 # --------------------------------------------------------------------------
@@ -512,6 +519,7 @@ def main():
                 nas_available=nas_available,
                 nas_total_gb=nas_total,
                 nas_pct=nas_pct,
+                utc_min=(lambda t: t.tm_hour * 60 + t.tm_min)(time.gmtime()),
             )
 
             payload = json.dumps(asdict(stats), separators=(",", ":")) + "\n"

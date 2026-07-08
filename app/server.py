@@ -240,6 +240,31 @@ def status():
 # Server-side configure (board plugged into this ZimaBlade, not a computer)
 # ---------------------------------------------------------------------
 
+def build_set_config_payload(cfg):
+    """The serial set_config command for a dashboard/wizard save request.
+    The original fields always send (every caller has always supplied
+    them); the night-mode/screensaver fields added in firmware 1.1.0 are
+    passthrough-only-if-present, preserving the firmware's own
+    "only update fields that appear in the command" semantics -- an old
+    wizard page or a partial save can never silently reset a schedule.
+    """
+    payload = {
+        "cmd": "set_config",
+        "board": int(cfg.get("board", 0)),
+        "pages": cfg.get("pages", ["temp"]),
+        "cycle_mode": cfg.get("cycle_mode", "static"),
+        "cycle_seconds": int(cfg.get("cycle_seconds", 10)),
+        "brightness": int(cfg.get("brightness", 100)),
+    }
+    for key, cast in [("night_enabled", bool), ("night_start_min", int),
+                      ("night_end_min", int), ("night_brightness", int),
+                      ("tz_offset_min", int), ("saver_enabled", bool),
+                      ("saver_minutes", int), ("saver_style", str)]:
+        if key in cfg:
+            payload[key] = cast(cfg[key])
+    return payload
+
+
 @app.route("/api/configure", methods=["POST"])
 def api_configure():
     cfg = request.get_json(force=True, silent=True) or {}
@@ -253,14 +278,7 @@ def api_configure():
         ser = RawSerialPort(port, baudrate=115200, timeout=2)
         time.sleep(2)  # let the board's USB settle if it just reset
 
-        payload = json.dumps({
-            "cmd": "set_config",
-            "board": int(cfg.get("board", 0)),
-            "pages": cfg.get("pages", ["temp"]),
-            "cycle_mode": cfg.get("cycle_mode", "static"),
-            "cycle_seconds": int(cfg.get("cycle_seconds", 10)),
-            "brightness": int(cfg.get("brightness", 100)),
-        }) + "\n"
+        payload = json.dumps(build_set_config_payload(cfg)) + "\n"
         ser.write(payload.encode("utf-8"))
 
         acked = False

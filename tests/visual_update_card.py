@@ -22,9 +22,13 @@ SCENARIO = {"name": "ready", "update_started_at": None}
 
 BASE_CONFIG = {"ok": True, "config": {
     "board": 1, "board_name": "ESP32-S3-Touch-LCD-1.69", "configured": True,
-    "firmware_version": "1.0.0",
-    "pages": [{"id": "temp", "enabled": True}, {"id": "cpu", "enabled": True}],
-    "cycle_mode": "static", "cycle_seconds": 10, "brightness": 100}}
+    "firmware_version": "1.1.0", "has_touch": True,
+    "pages": ["temp", "cpu"],
+    "cycle_mode": "static", "cycle_seconds": 10, "brightness": 100,
+    "night_enabled": True, "night_start_min": 1320, "night_end_min": 420,
+    "night_brightness": 15, "tz_offset_min": -300,
+    "saver_enabled": True, "saver_minutes": 10, "saver_style": "clock"}}
+LAST_CONFIGURE_BODY = {}
 BASE_STATUS = {"ok": True, "collector_running": True, "age_seconds": 1.0,
                "last_stats": {}}
 FW_INFO = {"ok": True, "bundled_version": "1.0.0"}
@@ -105,6 +109,12 @@ class Stub(BaseHTTPRequestHandler):
         self._send({"ok": False}, 404)
 
     def do_POST(self):
+        if self.path == "/api/configure":
+            length = int(self.headers.get("Content-Length") or 0)
+            body = json.loads(self.rfile.read(length)) if length else {}
+            LAST_CONFIGURE_BODY.clear()
+            LAST_CONFIGURE_BODY.update(body)
+            return self._send({"ok": True, "acked": True})
         if self.path == "/api/update_app":
             SCENARIO["update_started_at"] = time.time()
             return self._send({"ok": True, "status": "started"})

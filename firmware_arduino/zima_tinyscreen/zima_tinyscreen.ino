@@ -36,7 +36,7 @@
 // "Software Version" field via the get_config command below. No
 // auto-update-checking mechanism exists yet (that's a separate, not-yet
 // -built feature) -- this just answers "what's currently on my device."
-#define FIRMWARE_VERSION "1.0.0"
+#define FIRMWARE_VERSION "1.1.0"
 
 // Note: screen dimensions are NOT fixed -- board 1 (1.69") is 240x280,
 // taller than board 0's 240x240. See screenW/screenH globals, set from
@@ -99,6 +99,25 @@ struct Config {
   bool autoCycle = false;
   int cycleSeconds = 10;
   int brightness = 100; // 0-100
+
+  // Night mode: between nightStartMin and nightEndMin (minutes since
+  // local midnight, window may wrap past midnight), use nightBrightness
+  // instead of brightness. 0 = backlight fully off. Local time is
+  // computed from host-supplied UTC (see utc_min in the stats payload)
+  // plus tzOffsetMin, which the dashboard captures from the browser at
+  // save time -- the board itself has no clock and no timezone database.
+  bool nightEnabled = false;
+  int nightStartMin = 1320;   // 22:00
+  int nightEndMin = 420;      //  7:00
+  int nightBrightness = 10;   // 0-100, 0 = screen off
+  int tzOffsetMin = 0;        // local = UTC + offset (e.g. -300 for UTC-5)
+
+  // Screensaver: after saverMinutes with no touch input, show a
+  // screensaver until the next touch. Touch-triggered, so only
+  // meaningful on boards with a touch panel; ignored otherwise.
+  bool saverEnabled = false;
+  int saverMinutes = 5;
+  char saverStyle[8] = "clock"; // "clock" (drifting time) or "blank" (screen off)
 } config;
 
 Preferences prefs;
@@ -110,6 +129,18 @@ void loadConfig() {
   config.autoCycle = prefs.getBool("autoCycle", false);
   config.cycleSeconds = prefs.getInt("cycleSec", 10);
   config.brightness = prefs.getInt("brightness", 100);
+  // Night mode / screensaver (added in 1.1.0) -- the getX defaults mean a
+  // device upgrading from 1.0.0 NVS data just gets both features off,
+  // exactly as if freshly configured.
+  config.nightEnabled = prefs.getBool("nightEn", false);
+  config.nightStartMin = prefs.getInt("nightStart", 1320);
+  config.nightEndMin = prefs.getInt("nightEnd", 420);
+  config.nightBrightness = prefs.getInt("nightBri", 10);
+  config.tzOffsetMin = prefs.getInt("tzOffset", 0);
+  config.saverEnabled = prefs.getBool("saverEn", false);
+  config.saverMinutes = prefs.getInt("saverMin", 5);
+  String saverStyle = prefs.getString("saverStyle", "clock");
+  saverStyle.toCharArray(config.saverStyle, 8);
   String pagesCsv = prefs.getString("pages", "temp");
   prefs.end();
 
@@ -150,6 +181,14 @@ void saveConfig() {
   prefs.putBool("autoCycle", config.autoCycle);
   prefs.putInt("cycleSec", config.cycleSeconds);
   prefs.putInt("brightness", config.brightness);
+  prefs.putBool("nightEn", config.nightEnabled);
+  prefs.putInt("nightStart", config.nightStartMin);
+  prefs.putInt("nightEnd", config.nightEndMin);
+  prefs.putInt("nightBri", config.nightBrightness);
+  prefs.putInt("tzOffset", config.tzOffsetMin);
+  prefs.putBool("saverEn", config.saverEnabled);
+  prefs.putInt("saverMin", config.saverMinutes);
+  prefs.putString("saverStyle", config.saverStyle);
   String pagesCsv = "";
   for (int i = 0; i < config.numPages; i++) {
     if (i > 0) pagesCsv += ",";
@@ -157,6 +196,62 @@ void saveConfig() {
   }
   prefs.putString("pages", pagesCsv);
   prefs.end();
+}
+
+// ---------------------------------------------------------------------
+// Wall-clock time (host-supplied) + night mode + screensaver state
+//
+// The board has no RTC: the collector includes "utc_min" (minutes since
+// UTC midnight) in every stats payload (~1/sec), and we extrapolate
+// between updates with millis(). Worst case without any data the clock
+// simply isn't known and night mode stays out of the way (full normal
+// brightness) -- fail-safe by construction.
+//
+// minutesInWindow()/extrapolateLocalMin() are deliberately PURE
+// functions (no globals) so the exact shipped code can be compiled and
+// unit-tested on a host machine -- see tests/test_firmware_logic.cpp.
+// ---------------------------------------------------------------------
+
+int lastUtcMin = -1;              // -1 = no time received yet
+unsigned long lastUtcAtMs = 0;
+
+unsigned long lastTouchMs = 0;    // any finger contact, not just swipes
+bool saverActive = false;
+bool swallowGesture = false;      // eat the swipe that wakes the saver
+int lastAppliedBrightness = -1;   // pct; -1 forces first application
+unsigned long lastBrightnessCheckMs = 0;
+
+// True when nowMin lies inside [startMin, endMin), handling windows that
+// wrap past midnight (start > end, e.g. 22:00-07:00). start == end is
+// treated as an empty window, not 24h -- a zero-length schedule almost
+// certainly means a misconfigured form, and "night mode never engages"
+// is the recoverable failure mode (the screen stays visible).
+bool minutesInWindow(int nowMin, int startMin, int endMin) {
+  if (nowMin < 0 || startMin == endMin) return false;
+  if (startMin < endMin) return nowMin >= startMin && nowMin < endMin;
+  return nowMin >= startMin || nowMin < endMin;  // wraps midnight
+}
+
+// Current local time in minutes since midnight, extrapolated from the
+// last host-supplied UTC reading; -1 if no reading yet. Extrapolation
+// keeps working across a data outage (millis() keeps counting), and the
+// double-mod handles negative results from negative tz offsets.
+int extrapolateLocalMin(int lastUtc, unsigned long lastAtMs,
+                        unsigned long nowMs, int tzOffset) {
+  if (lastUtc < 0) return -1;
+  long elapsedMin = (long)((nowMs - lastAtMs) / 60000UL);
+  long local = ((long)lastUtc + elapsedMin + (long)tzOffset) % 1440L;
+  return (int)((local + 1440L) % 1440L);
+}
+
+int effectiveBrightnessPct() {
+  int nowLocal = extrapolateLocalMin(lastUtcMin, lastUtcAtMs, millis(),
+                                     config.tzOffsetMin);
+  if (config.nightEnabled &&
+      minutesInWindow(nowLocal, config.nightStartMin, config.nightEndMin)) {
+    return config.nightBrightness;
+  }
+  return config.brightness;
 }
 
 // Note: intentionally no activeProfile() helper function here -- a
@@ -244,7 +339,14 @@ void initDisplay() {
 }
 
 void applyBrightness() {
-  pwmWriteBacklight(BOARD_PROFILES[config.boardId].lcd_bl, map(config.brightness, 0, 100, 0, 255));
+  // Night mode aware: what actually reaches the backlight is the
+  // effective brightness (night window may substitute a dimmer value),
+  // and a blank-style active screensaver forces the backlight off
+  // entirely regardless of everything else.
+  int pct = effectiveBrightnessPct();
+  if (saverActive && strcmp(config.saverStyle, "blank") == 0) pct = 0;
+  pwmWriteBacklight(BOARD_PROFILES[config.boardId].lcd_bl, map(pct, 0, 100, 0, 255));
+  lastAppliedBrightness = pct;
 }
 
 // ---------------------------------------------------------------------
@@ -298,6 +400,7 @@ void advancePage(int dir) {
   currentPageIdx = (currentPageIdx + dir + config.numPages) % config.numPages;
   lastCycleMs = millis();
 }
+
 
 // ---------------------------------------------------------------------
 // Drawing helpers
@@ -512,6 +615,7 @@ int pollTouchSwipe() {
 
   bool isDown = fingerNum > 0;
   int x = ((xh & 0x0F) << 8) | xl;
+  if (isDown) lastTouchMs = millis();  // screensaver idle timer
 
   int result = GESTURE_NONE;
   if (isDown && !touchIsDown) {
@@ -530,6 +634,39 @@ int pollTouchSwipe() {
     else if (deltaX >= SWIPE_THRESHOLD_PX) result = GESTURE_RIGHT;
   }
   return result;
+}
+
+// ---------------------------------------------------------------------
+// Screensaver drawing -- "clock" style shows the local time, drifting to
+// a different position each minute so no pixel stays lit (burn-in
+// protection, the whole reason a screensaver exists). "blank" style
+// never reaches here: applyBrightness() cuts the backlight instead and
+// loop() skips drawing entirely.
+// ---------------------------------------------------------------------
+
+void drawScreensaver() {
+  canvas->fillScreen(COL_BG);
+  int nowLocal = extrapolateLocalMin(lastUtcMin, lastUtcAtMs, millis(),
+                                     config.tzOffsetMin);
+  if (nowLocal >= 0) {
+    char timeStr[6];
+    snprintf(timeStr, sizeof(timeStr), "%d:%02d", nowLocal / 60, nowLocal % 60);
+    canvas->setTextColor(COL_SUBTEXT);
+    canvas->setTextSize(3);
+    int16_t x1, y1; uint16_t w, h;
+    canvas->getTextBounds(timeStr, 0, 0, &x1, &y1, &w, &h);
+    // Drift: derive the position from the minute value itself, keeping
+    // the text fully on screen. A simple hash walks it around.
+    int spanX = screenW - (int)w - 8;
+    int spanY = screenH - (int)h - 8;
+    int px = 4 + (nowLocal * 37) % (spanX > 0 ? spanX : 1);
+    int py = 4 + (nowLocal * 53) % (spanY > 0 ? spanY : 1);
+    canvas->setCursor(px, py + h);
+    canvas->print(timeStr);
+  }
+  // No time known yet -> stays a dark screen, which is a perfectly fine
+  // screensaver too.
+  canvas->flush();
 }
 
 // ---------------------------------------------------------------------
@@ -583,6 +720,28 @@ void handleSetConfig(JsonDocument &doc) {
     if (!boardChanged && wasConfigured) applyBrightness();
   }
 
+  // Night mode / screensaver (1.1.0). Same only-if-present convention as
+  // every field above, so older senders never clobber these.
+  if (doc["night_enabled"].is<bool>())   config.nightEnabled = doc["night_enabled"];
+  if (doc["night_start_min"].is<int>())  config.nightStartMin = constrain((int)doc["night_start_min"], 0, 1439);
+  if (doc["night_end_min"].is<int>())    config.nightEndMin = constrain((int)doc["night_end_min"], 0, 1439);
+  if (doc["night_brightness"].is<int>()) config.nightBrightness = constrain((int)doc["night_brightness"], 0, 100);
+  if (doc["tz_offset_min"].is<int>())    config.tzOffsetMin = constrain((int)doc["tz_offset_min"], -840, 840);
+  if (doc["saver_enabled"].is<bool>())   config.saverEnabled = doc["saver_enabled"];
+  if (doc["saver_minutes"].is<int>())    config.saverMinutes = constrain((int)doc["saver_minutes"], 1, 240);
+  if (doc["saver_style"].is<const char *>()) {
+    const char *s = doc["saver_style"];
+    if (strcmp(s, "clock") == 0 || strcmp(s, "blank") == 0) strcpy(config.saverStyle, s);
+  }
+  // Settings may have changed what the backlight should be doing right
+  // now (e.g. night mode just enabled mid-window, or saver turned off
+  // while active) -- recompute immediately rather than waiting for the
+  // once-a-second check in loop().
+  if (!boardChanged && wasConfigured) {
+    if (!config.saverEnabled) saverActive = false;
+    applyBrightness();
+  }
+
   config.configured = true;
   saveConfig();
 
@@ -618,6 +777,15 @@ void handleGetConfig() {
   doc["cycle_mode"] = config.autoCycle ? "auto" : "static";
   doc["cycle_seconds"] = config.cycleSeconds;
   doc["brightness"] = config.brightness;
+  doc["night_enabled"] = config.nightEnabled;
+  doc["night_start_min"] = config.nightStartMin;
+  doc["night_end_min"] = config.nightEndMin;
+  doc["night_brightness"] = config.nightBrightness;
+  doc["tz_offset_min"] = config.tzOffsetMin;
+  doc["saver_enabled"] = config.saverEnabled;
+  doc["saver_minutes"] = config.saverMinutes;
+  doc["saver_style"] = config.saverStyle;
+  doc["has_touch"] = BOARD_PROFILES[config.boardId].hasTouch;
   doc["firmware_version"] = FIRMWARE_VERSION;
 
   serializeJson(doc, Serial);
@@ -654,6 +822,16 @@ void handleLine(const String &line) {
   stats.nas_available  = doc["nas_available"] | stats.nas_available;
   stats.nas_total_gb   = doc["nas_total_gb"] | stats.nas_total_gb;
   stats.nas_pct        = doc["nas_pct"] | stats.nas_pct;
+  // Host wall-clock time (minutes since UTC midnight), for night mode and
+  // the clock screensaver -- the board has no RTC of its own. Only update
+  // when actually present, so older collectors keep working unchanged.
+  if (doc["utc_min"].is<int>()) {
+    int m = doc["utc_min"];
+    if (m >= 0 && m < 1440) {
+      lastUtcMin = m;
+      lastUtcAtMs = millis();
+    }
+  }
   stats.last_update_ms = millis();
   haveData = true;
 }
@@ -730,21 +908,60 @@ void loop() {
 
   if (BOARD_PROFILES[config.boardId].hasTouch && now - lastGesturePollMs > GESTURE_POLL_MS) {
     lastGesturePollMs = now;
+    bool wasSaverActive = saverActive;
     // pollTouchSwipe() only ever returns non-NONE once per completed
     // swipe (on finger release), so no separate edge-detection needed
     // here -- see its own comment for why we compute this ourselves
     // instead of trusting the touch chip's built-in gesture recognition.
     int g = pollTouchSwipe();
-    if (g == GESTURE_LEFT) advancePage(1);
+    // Waking the screensaver: pollTouchSwipe() just refreshed lastTouchMs
+    // if a finger is down, so an active saver ends here -- and the touch
+    // that woke it must NOT also act as a page swipe (nobody expects the
+    // wake-up tap to navigate). swallowGesture eats the swipe that
+    // completes from that same finger contact.
+    if (wasSaverActive && touchIsDown) {
+      saverActive = false;
+      swallowGesture = true;
+      applyBrightness();          // restore from blank-style backlight-off
+      drawCurrentScreen();        // don't leave the saver frame up
+      lastDrawMs = now;
+    }
+    if (g != GESTURE_NONE && swallowGesture) {
+      swallowGesture = false;
+    } else if (g == GESTURE_LEFT) advancePage(1);
     else if (g == GESTURE_RIGHT) advancePage(-1);
   }
 
-  if (config.autoCycle && now - lastCycleMs > (unsigned long)config.cycleSeconds * 1000UL) {
+  // Once a second: does the screensaver need to engage, and has the
+  // effective brightness changed (night window opening/closing, or the
+  // extrapolated clock ticking past a boundary)? Backlight writes only
+  // happen when the value actually changed.
+  if (now - lastBrightnessCheckMs > 1000UL) {
+    lastBrightnessCheckMs = now;
+    if (BOARD_PROFILES[config.boardId].hasTouch && config.saverEnabled &&
+        !saverActive &&
+        now - lastTouchMs > (unsigned long)config.saverMinutes * 60000UL) {
+      saverActive = true;
+      applyBrightness();  // blank style cuts the backlight here
+    }
+    int want = effectiveBrightnessPct();
+    if (saverActive && strcmp(config.saverStyle, "blank") == 0) want = 0;
+    if (want != lastAppliedBrightness) applyBrightness();
+  }
+
+  if (config.autoCycle && !saverActive &&
+      now - lastCycleMs > (unsigned long)config.cycleSeconds * 1000UL) {
     advancePage(1);
   }
 
   if (now - lastDrawMs > FRAME_INTERVAL_MS) {
-    drawCurrentScreen();
+    if (saverActive) {
+      // blank style: backlight is off, skip drawing entirely; clock
+      // style: redraw (the time text drifts once a minute).
+      if (strcmp(config.saverStyle, "clock") == 0) drawScreensaver();
+    } else {
+      drawCurrentScreen();
+    }
     lastDrawMs = now;
     pollSerial(); // drain anything that arrived during the draw (the
                   // slowest step here) as soon as possible, rather than

@@ -642,6 +642,26 @@ class TestServerEndpoints(UpdaterTestBase):
             if wrote:
                 version_json.unlink()
 
+    def test_build_set_config_payload_passthrough(self):
+        build = self.server.build_set_config_payload
+        # legacy request (e.g. the wizard): no new fields leak in
+        legacy = build({"board": 1, "pages": ["cpu"], "cycle_mode": "auto",
+                        "cycle_seconds": 5, "brightness": 70})
+        for k in ("night_enabled", "saver_enabled", "tz_offset_min"):
+            self.assertNotIn(k, legacy)
+        self.assertEqual(legacy["cmd"], "set_config")
+        # full dashboard save: everything passes through, typed
+        full = build({"board": 1, "pages": ["cpu"], "cycle_mode": "static",
+                      "cycle_seconds": 10, "brightness": 100,
+                      "night_enabled": True, "night_start_min": 1320,
+                      "night_end_min": 420, "night_brightness": 0,
+                      "tz_offset_min": -300, "saver_enabled": True,
+                      "saver_minutes": 5, "saver_style": "clock"})
+        self.assertIs(full["night_enabled"], True)
+        self.assertEqual(full["night_brightness"], 0)
+        self.assertEqual(full["tz_offset_min"], -300)
+        self.assertEqual(full["saver_style"], "clock")
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

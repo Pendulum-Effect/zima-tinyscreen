@@ -66,6 +66,14 @@
   }
   .toggle.on .knob { left: 20px; }
   .toggle.disabled { opacity: 0.4; cursor: not-allowed; }
+  .radio-row { display: flex; gap: 8px; flex-wrap: wrap; }
+  .night-time-row { display: flex; gap: 18px; align-items: center; }
+  .time-input {
+    background: var(--panel-raised); color: var(--text);
+    border: 1px solid var(--border); border-radius: 8px;
+    padding: 5px 8px; font: inherit; margin-left: 6px;
+    color-scheme: dark; /* dark native time-picker chrome */
+  }
 
   .page-list { display: flex; flex-direction: column; gap: 8px; margin-top: 14px; }
   .page-item {
@@ -246,9 +254,24 @@
           <div class="card-header">
             <div>
               <div class="card-title">Night Mode</div>
-              <div class="card-desc">Schedule a time for the screen to dim or change pages automatically.</div>
+              <div class="card-desc">Dim the screen (or turn it off) on a schedule.</div>
             </div>
-            <span class="placeholder-badge">Coming soon</span>
+            <div class="toggle" id="night-enabled"><div class="knob"></div></div>
+          </div>
+          <div id="night-controls" style="display:none; margin-top:12px;">
+            <div class="night-time-row">
+              <label class="card-desc">From <input type="time" id="night-start" value="22:00" class="time-input"></label>
+              <label class="card-desc">to <input type="time" id="night-end" value="07:00" class="time-input"></label>
+            </div>
+            <div class="brightness-row" style="margin-top:10px;">
+              <span class="card-desc" style="white-space:nowrap;">Night brightness</span>
+              <input type="range" id="night-brightness-slider" min="0" max="100" value="10" class="brightness-slider">
+              <span class="brightness-value" id="night-brightness-value">10%</span>
+            </div>
+            <div class="card-desc" style="margin-top:8px; font-size:0.85em;">
+              0% turns the screen off completely. Times are in your local timezone —
+              if your clocks change for daylight saving, just re-save.
+            </div>
           </div>
         </div>
 
@@ -256,9 +279,27 @@
           <div class="card-header">
             <div>
               <div class="card-title">Screensaver</div>
-              <div class="card-desc">If there's been no touch input for a while, show a screensaver.</div>
+              <div class="card-desc" id="saver-desc">If the screen hasn't been touched for a while, show a screensaver.</div>
             </div>
-            <span class="placeholder-badge">Coming soon</span>
+            <div class="toggle" id="saver-enabled"><div class="knob"></div></div>
+          </div>
+          <div id="saver-controls" style="display:none; margin-top:12px;">
+            <div class="card-desc">Style</div>
+            <div class="radio-row" style="margin-top:6px;">
+              <button class="radio-btn" data-saver-style="clock">Drifting clock</button>
+              <button class="radio-btn" data-saver-style="blank">Screen off</button>
+            </div>
+            <div class="card-desc" style="margin-top:10px;">Start after</div>
+            <div class="radio-row" style="margin-top:6px;">
+              <button class="interval-btn" data-saver-min="1">1 min</button>
+              <button class="interval-btn" data-saver-min="5">5 min</button>
+              <button class="interval-btn" data-saver-min="10">10 min</button>
+              <button class="interval-btn" data-saver-min="15">15 min</button>
+              <button class="interval-btn" data-saver-min="30">30 min</button>
+            </div>
+            <div class="card-desc" style="margin-top:8px; font-size:0.85em;">
+              Any touch wakes the screen back up.
+            </div>
           </div>
         </div>
 
@@ -317,6 +358,9 @@
   let cycleSeconds = 10;
   let currentBoard = 0;
   let currentBrightness = 100; // preserved untouched -- Screen tab will own this later
+  // Night mode / screensaver (firmware 1.1.0)
+  let nightEnabled = false, nightStartMin = 1320, nightEndMin = 420, nightBrightness = 10;
+  let saverEnabled = false, saverMinutes = 5, saverStyle = 'clock';
 
   function renderPageList() {
     const list = document.getElementById('page-list');
@@ -397,6 +441,48 @@
   // Screen tab: brightness
   // ---------------------------------------------------------------------
   const brightnessSlider = document.getElementById('brightness-slider');
+  // -- Night mode / screensaver interactions ------------------------------
+  const timeToMin = t => {
+    const [h, m] = (t || '0:0').split(':').map(Number);
+    return (h * 60 + m) % 1440;
+  };
+  document.getElementById('night-enabled').addEventListener('click', function () {
+    nightEnabled = !nightEnabled;
+    this.classList.toggle('on', nightEnabled);
+    document.getElementById('night-controls').style.display = nightEnabled ? 'block' : 'none';
+  });
+  document.getElementById('night-start').addEventListener('change', function () {
+    nightStartMin = timeToMin(this.value);
+  });
+  document.getElementById('night-end').addEventListener('change', function () {
+    nightEndMin = timeToMin(this.value);
+  });
+  document.getElementById('night-brightness-slider').addEventListener('input', function () {
+    nightBrightness = parseInt(this.value, 10);
+    document.getElementById('night-brightness-value').textContent =
+      nightBrightness === 0 ? 'Off' : nightBrightness + '%';
+  });
+  document.getElementById('saver-enabled').addEventListener('click', function () {
+    if (this.classList.contains('disabled')) return;
+    saverEnabled = !saverEnabled;
+    this.classList.toggle('on', saverEnabled);
+    document.getElementById('saver-controls').style.display = saverEnabled ? 'block' : 'none';
+  });
+  document.querySelectorAll('.radio-btn[data-saver-style]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      saverStyle = btn.dataset.saverStyle;
+      document.querySelectorAll('.radio-btn[data-saver-style]').forEach(b =>
+        b.classList.toggle('active', b === btn));
+    });
+  });
+  document.querySelectorAll('.interval-btn[data-saver-min]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      saverMinutes = parseInt(btn.dataset.saverMin, 10);
+      document.querySelectorAll('.interval-btn[data-saver-min]').forEach(b =>
+        b.classList.toggle('active', b === btn));
+    });
+  });
+
   const brightnessValue = document.getElementById('brightness-value');
   brightnessSlider.addEventListener('input', () => {
     currentBrightness = parseInt(brightnessSlider.value, 10);
@@ -591,6 +677,44 @@
       // -- Screen tab --
       brightnessSlider.value = currentBrightness;
       brightnessValue.textContent = currentBrightness + '%';
+
+      // Night mode + screensaver (firmware 1.1.0). Fall back to sane
+      // defaults when talking to older firmware that doesn't report the
+      // fields; hasTouch falls back per known board profiles.
+      nightEnabled = !!cfg.night_enabled;
+      nightStartMin = Number.isInteger(cfg.night_start_min) ? cfg.night_start_min : 1320;
+      nightEndMin = Number.isInteger(cfg.night_end_min) ? cfg.night_end_min : 420;
+      nightBrightness = Number.isInteger(cfg.night_brightness) ? cfg.night_brightness : 10;
+      saverEnabled = !!cfg.saver_enabled;
+      saverMinutes = Number.isInteger(cfg.saver_minutes) ? cfg.saver_minutes : 5;
+      saverStyle = cfg.saver_style === 'blank' ? 'blank' : 'clock';
+      const hasTouch = ('has_touch' in cfg) ? !!cfg.has_touch : cfg.board === 1;
+
+      const minToTime = m => String(Math.floor(m / 60)).padStart(2, '0') + ':' + String(m % 60).padStart(2, '0');
+      document.getElementById('night-enabled').classList.toggle('on', nightEnabled);
+      document.getElementById('night-controls').style.display = nightEnabled ? 'block' : 'none';
+      document.getElementById('night-start').value = minToTime(nightStartMin);
+      document.getElementById('night-end').value = minToTime(nightEndMin);
+      const nbSlider = document.getElementById('night-brightness-slider');
+      nbSlider.value = nightBrightness;
+      document.getElementById('night-brightness-value').textContent =
+        nightBrightness === 0 ? 'Off' : nightBrightness + '%';
+
+      if (hasTouch) {
+        document.getElementById('saver-enabled').classList.toggle('on', saverEnabled);
+        document.getElementById('saver-controls').style.display = saverEnabled ? 'block' : 'none';
+      } else {
+        // Screensaver wake-up needs a touch panel; this board has none.
+        document.getElementById('saver-desc').textContent =
+          'Requires a touch display — this board has no touch panel.';
+        document.getElementById('saver-enabled').classList.add('disabled');
+        saverEnabled = false;
+      }
+      document.querySelectorAll('.radio-btn[data-saver-style]').forEach(b =>
+        b.classList.toggle('active', b.dataset.saverStyle === saverStyle));
+      document.querySelectorAll('.interval-btn[data-saver-min]').forEach(b =>
+        b.classList.toggle('active', parseInt(b.dataset.saverMin, 10) === saverMinutes));
+
       document.getElementById('screen-loading').style.display = 'none';
       document.getElementById('screen-content').style.display = 'block';
     } catch (e) {
@@ -864,6 +988,18 @@
           cycle_mode: cycleMode,
           cycle_seconds: cycleSeconds,
           brightness: currentBrightness,
+          night_enabled: nightEnabled,
+          night_start_min: nightStartMin,
+          night_end_min: nightEndMin,
+          night_brightness: nightBrightness,
+          // The board has no timezone database; local-time math happens
+          // on-device using this browser-captured offset. (getTimezoneOffset
+          // is minutes BEHIND UTC, hence the sign flip.) DST changes shift
+          // it -- re-saving after a clock change picks up the new offset.
+          tz_offset_min: -new Date().getTimezoneOffset(),
+          saver_enabled: saverEnabled,
+          saver_minutes: saverMinutes,
+          saver_style: saverStyle,
         }),
       });
       const data = await res.json();

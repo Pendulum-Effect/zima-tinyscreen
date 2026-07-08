@@ -2,6 +2,16 @@
   "_comment": "Human-readable changelog for the dashboard's About tab -- written for people, not commit archaeologists. The dashboard fetches this from GitHub at page load (baked copy as fallback), so add an entry here with each release and every install sees it. Newest first. Dates are YYYY-MM-DD.",
   "entries": [
     {
+      "version": "0.8.8.0",
+      "date": "2026-07-08",
+      "title": "Night Mode and Screensaver",
+      "notes": [
+        "Night Mode: dim the screen (or turn it off entirely) on a daily schedule -- great for a display that lives in your bedroom or office.",
+        "Screensaver: on touch displays, show a drifting clock or blank the screen after a few idle minutes. Tap to wake.",
+        "This is the first firmware update since launch (v1.1.0) -- after updating the app, head to the General tab and hit Check for Update to flash it."
+      ]
+    },
+    {
       "version": "0.8.7.0",
       "date": "2026-07-07",
       "title": "The About page",
