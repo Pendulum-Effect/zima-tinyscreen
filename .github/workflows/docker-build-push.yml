@@ -96,8 +96,14 @@ jobs:
           # (a plain public API call, no Docker socket or Docker Hub API
           # needed) to detect when it's running something older than
           # what's on GitHub -- see server.py's /api/app_version.
+          # The human-facing version string comes from the repo-root
+          # VERSION file (MAJOR.MINOR.FEATURE.ITERATION scheme, bumped
+          # every code round). Display only -- update DETECTION still
+          # keys off the commit SHA below, which can't be forgotten the
+          # way a manual bump can.
+          APP_VERSION=$(tr -d '[:space:]' < VERSION 2>/dev/null || echo "unknown")
           cat > webflasher/app_version.json << EOF
-          {"commit": "${{ github.sha }}", "branch": "${{ github.ref_name }}", "repo": "${{ github.repository }}"}
+          {"version": "${APP_VERSION}", "commit": "${{ github.sha }}", "branch": "${{ github.ref_name }}", "repo": "${{ github.repository }}"}
           EOF
           cat webflasher/app_version.json
 
