@@ -36,6 +36,7 @@
   /* The floating window: outer shell holding two distinct inner
      containers (sidebar and content), ZimaOS settings-style. */
   .app-window {
+    position: relative; /* anchors the save banner */
     display: flex;
     gap: 14px;
     width: 100%;
@@ -144,23 +145,36 @@
     color-scheme: dark; /* dark native time-picker chrome */
   }
 
-  .page-list { display: flex; flex-direction: column; gap: 8px; margin-top: 14px; }
-  .page-item {
-    display: flex; align-items: center; gap: 12px;
-    background: var(--panel-raised); border: 1px solid var(--border); border-radius: 10px;
-    padding: 12px 14px; cursor: grab;
+  /* Display Carousel: horizontal strip of page thumbnails in play order */
+  .carousel-strip { display: flex; gap: 14px; margin-top: 16px; flex-wrap: wrap; }
+  .strip-item { text-align: center; cursor: grab; }
+  .strip-item.dragging { opacity: 0.4; }
+  .strip-item .thumb { border-radius: 12px; overflow: hidden; border: 1px solid var(--border); }
+  .strip-item .strip-label { font-size: 11.5px; color: var(--subtext); margin-top: 6px; }
+  .strip-nudge { display: flex; justify-content: center; gap: 6px; margin-top: 4px; }
+  .strip-nudge button {
+    background: none; border: 1px solid var(--border); border-radius: 6px;
+    color: var(--subtext); font-size: 10px; width: 22px; height: 18px;
+    cursor: pointer; line-height: 1; padding: 0;
   }
-  .page-item.dragging { opacity: 0.4; }
-  .page-item .handle { color: var(--subtext); font-size: 14px; user-select: none; }
-  .page-item .label { flex: 1; font-size: 14px; }
-  .page-item.disabled-page .label { color: var(--subtext); }
-  .style-select {
-    font-size: 12.5px; color: var(--subtext); background: #0c1a1f;
-    border: 1px solid var(--border); border-radius: 6px; padding: 5px 8px;
-  }
-  .style-select:disabled { opacity: 0.5; cursor: not-allowed; }
+  .strip-nudge button:hover { color: var(--teal); border-color: var(--teal-dim); }
 
-  .cycle-row { display: flex; gap: 10px; margin-top: 14px; }
+  /* Per-page cards */
+  .page-card .page-body { display: flex; gap: 26px; align-items: center; margin-top: 16px; }
+  .page-card .preview-wrap { text-align: center; }
+  .page-card .preview-wrap .thumb { border-radius: 14px; overflow: hidden; border: 1px solid var(--border); display: inline-block; }
+  .page-card .preview-caption { font-size: 11.5px; color: var(--subtext); margin-top: 6px; }
+  .page-card .layout-side { flex: 1; }
+  .enabled-label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--subtext); margin-bottom: 6px; text-align: right; }
+  .enabled-label.on { color: var(--teal); }
+  .style-select {
+    font-size: 13px; color: var(--subtext); background: #0c1a1f;
+    border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px;
+    min-width: 190px;
+  }
+  .style-select:disabled { opacity: 0.6; cursor: not-allowed; }
+  .layout-hint { font-size: 12px; color: var(--subtext); margin-top: 6px; }
+
   .radio-btn, .interval-btn {
     padding: 8px 16px; border-radius: 8px; cursor: pointer; font-size: 13px;
     border: 1px solid var(--border); background: #0c1a1f; color: var(--subtext);
@@ -181,11 +195,25 @@
   .brightness-slider { flex: 1; accent-color: var(--teal); height: 6px; }
   .brightness-value { font-size: 14px; color: var(--subtext); min-width: 42px; text-align: right; }
 
-  .save-bar {
-    position: sticky; bottom: 0; background: var(--bg);
-    padding: 18px 0 4px; margin-top: 8px;
-    display: flex; align-items: center; gap: 16px;
+  /* Contextual save banner: drops from the top of the window whenever
+     there are unsaved changes, and stays put across tab switches. */
+  .save-banner {
+    position: absolute; top: 14px; left: 50%;
+    transform: translate(-50%, calc(-100% - 20px));
+    transition: transform 0.3s ease;
+    display: flex; align-items: center; gap: 14px;
+    background: var(--panel-raised); border: 1px solid var(--teal-dim);
+    border-radius: 12px; padding: 10px 12px 10px 18px;
+    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
+    z-index: 20; white-space: nowrap;
   }
+  .save-banner.visible { transform: translate(-50%, 0); }
+  .save-banner .banner-msg { font-size: 13.5px; }
+  .banner-discard {
+    background: none; border: none; color: var(--subtext);
+    font-size: 13px; cursor: pointer; padding: 6px 4px;
+  }
+  .banner-discard:hover { color: var(--text); }
   .btn {
     padding: 11px 24px; border-radius: 10px; border: none;
     background: var(--teal); color: #06201d; font-weight: 700; font-size: 14.5px; cursor: pointer;
@@ -203,6 +231,11 @@
 </head>
 <body>
   <div class="app-window">
+  <div class="save-banner" id="save-banner">
+    <span class="banner-msg" id="banner-msg">You have unsaved changes</span>
+    <button class="banner-discard" id="banner-discard">Discard</button>
+    <button class="btn" id="banner-save" style="padding: 8px 18px; font-size: 13.5px;">Save changes</button>
+  </div>
   <div class="sidebar">
     <h1>TinyScreen</h1>
     <div class="nav-item active" data-tab="general">
@@ -288,20 +321,20 @@
 
         <div class="card">
           <div class="card-title">Display Carousel</div>
-          <div class="card-desc">Drag to reorder. Toggle a page off to skip it without losing your place in the order.</div>
-          <div class="page-list" id="page-list"></div>
+          <div class="card-desc">Click and drag to change the order pages appear on the screen.</div>
+          <div class="carousel-strip" id="carousel-strip"></div>
+          <div class="card-desc" id="carousel-empty" style="display:none; margin-top:14px;">
+            Nothing here yet — turn on a page below and it'll join the carousel.
+          </div>
         </div>
 
         <div class="card">
           <div class="card-header">
             <div>
               <div class="card-title">Automatic Carousel</div>
-              <div class="card-desc">Cycle through enabled pages on a timer, instead of staying on one.</div>
+              <div class="card-desc">Cycle through your pages on a timer, instead of staying on one.</div>
             </div>
-          </div>
-          <div class="cycle-row">
-            <div class="radio-btn" data-mode="static">Static</div>
-            <div class="radio-btn" data-mode="auto">Auto-cycle</div>
+            <div class="toggle" id="autocycle-toggle"><div class="knob"></div></div>
           </div>
           <div class="interval-row" id="interval-row">
             <div class="interval-btn" data-interval="5">5s</div>
@@ -311,10 +344,7 @@
           </div>
         </div>
 
-        <div class="save-bar">
-          <button class="btn" id="save-btn">Save changes</button>
-          <span class="status-msg" id="save-status"></span>
-        </div>
+        <div id="page-cards"></div>
       </div>
     </section>
 
@@ -386,10 +416,6 @@
           </div>
         </div>
 
-        <div class="save-bar">
-          <button class="btn" id="save-btn-screen">Save changes</button>
-          <span class="status-msg" id="save-status-screen"></span>
-        </div>
       </div>
     </section>
 
@@ -427,14 +453,55 @@
   // Layouts tab: page metadata and state
   // ---------------------------------------------------------------------
   const ALL_PAGES = [
-    { id: 'cpu', label: 'CPU Usage' },
-    { id: 'ram', label: 'RAM Usage' },
-    { id: 'mmc', label: 'MMC Usage' },
-    { id: 'net', label: 'Network Usage' },
-    { id: 'temp', label: 'Temperature' },
-    { id: 'nas', label: 'NAS Usage' },
+    { id: 'cpu',  label: 'CPU Usage',     desc: 'How hard the processor is working right now.',  kind: 'ring', unit: '%' },
+    { id: 'ram',  label: 'RAM Usage',     desc: 'How much memory is in use.',                    kind: 'ring', unit: '%' },
+    { id: 'mmc',  label: 'MMC Usage',     desc: 'Space used on the built-in storage.',           kind: 'ring', unit: '%' },
+    { id: 'net',  label: 'Network Usage', desc: 'Live upload and download speeds.',              kind: 'net' },
+    { id: 'temp', label: 'Temperature',   desc: 'How warm the processor is running.',            kind: 'ring', unit: '°C' },
+    { id: 'nas',  label: 'NAS Usage',     desc: 'Space used across your storage pool.',          kind: 'ring', unit: '%' },
   ];
-  const pageLabel = id => (ALL_PAGES.find(p => p.id === id) || {}).label || id;
+  const pageDef = id => ALL_PAGES.find(p => p.id === id) || { id, label: id, desc: '', kind: 'ring', unit: '%' };
+  const pageLabel = id => pageDef(id).label;
+
+  // Mock "screenshots" of what each page looks like on the device --
+  // same visual language as the firmware's renderer (dark screen, ring
+  // gauge, footer dots), with plausible random values. SVG so they stay
+  // crisp at both thumbnail sizes.
+  const PREVIEW_VALUES = {};  // stable per page per load
+  function previewSVG(id, size) {
+    const def = pageDef(id);
+    if (!(id in PREVIEW_VALUES)) {
+      PREVIEW_VALUES[id] = def.unit === '°C'
+        ? 35 + Math.floor(Math.random() * 30)
+        : 15 + Math.floor(Math.random() * 70);
+    }
+    const val = PREVIEW_VALUES[id];
+    const c = 50, r = 30, circ = 2 * Math.PI * r;
+    const frac = def.unit === '°C' ? Math.min(val / 90, 1) : val / 100;
+    let center;
+    if (def.kind === 'net') {
+      center = '<text x="50" y="46" text-anchor="middle" fill="#4fd1c5" font-size="11" font-family="sans-serif">↑ ' +
+        (PREVIEW_VALUES[id] % 9 + 1) + '.' + (PREVIEW_VALUES[id] % 7) + ' MB/s</text>' +
+        '<text x="50" y="62" text-anchor="middle" fill="#8fb0ac" font-size="11" font-family="sans-serif">↓ ' +
+        (PREVIEW_VALUES[id] % 5) + '.' + (PREVIEW_VALUES[id] % 8) + ' MB/s</text>';
+    } else {
+      center =
+        '<circle cx="' + c + '" cy="52" r="' + r + '" fill="none" stroke="#1e3a3a" stroke-width="7"/>' +
+        '<circle cx="' + c + '" cy="52" r="' + r + '" fill="none" stroke="#4fd1c5" stroke-width="7" ' +
+        'stroke-linecap="round" stroke-dasharray="' + (circ * frac).toFixed(1) + ' ' + circ.toFixed(1) + '" ' +
+        'transform="rotate(-90 ' + c + ' 52)"/>' +
+        '<text x="' + c + '" y="57" text-anchor="middle" fill="#eaf6f4" font-size="14" font-weight="700" ' +
+        'font-family="sans-serif">' + val + def.unit + '</text>';
+    }
+    return '<svg width="' + size + '" height="' + size + '" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">' +
+      '<rect width="100" height="100" fill="#08141a"/>' +
+      '<text x="50" y="16" text-anchor="middle" fill="#8fb0ac" font-size="8.5" letter-spacing="1" ' +
+      'font-family="sans-serif">' + def.label.toUpperCase() + '</text>' +
+      center +
+      '<circle cx="42" cy="91" r="2" fill="#4fd1c5"/><circle cx="50" cy="91" r="2" fill="#2c3f3d"/>' +
+      '<circle cx="58" cy="91" r="2" fill="#2c3f3d"/>' +
+      '</svg>';
+  }
 
   let pageOrder = ALL_PAGES.map(p => p.id); // current display order, enabled or not
   let enabledPages = new Set();
@@ -446,46 +513,71 @@
   let nightEnabled = false, nightStartMin = 1320, nightEndMin = 420, nightBrightness = 10;
   let saverEnabled = false, saverMinutes = 5, saverStyle = 'clock';
 
-  function renderPageList() {
-    const list = document.getElementById('page-list');
-    list.innerHTML = '';
-    pageOrder.forEach(id => {
-      const enabled = enabledPages.has(id);
+  // ---------------------------------------------------------------------
+  // Layouts tab: carousel strip (order) + per-page cards (on/off, style)
+  // ---------------------------------------------------------------------
+
+  function renderLayouts() {
+    renderCarouselStrip();
+    renderPageCards();
+  }
+
+  function renderCarouselStrip() {
+    const strip = document.getElementById('carousel-strip');
+    strip.innerHTML = '';
+    const inCarousel = pageOrder.filter(id => enabledPages.has(id));
+    document.getElementById('carousel-empty').style.display = inCarousel.length ? 'none' : 'block';
+    inCarousel.forEach((id, idx) => {
       const item = document.createElement('div');
-      item.className = 'page-item' + (enabled ? '' : ' disabled-page');
+      item.className = 'strip-item';
       item.draggable = true;
       item.dataset.id = id;
-      item.innerHTML = `
-        <span class="handle">⠿</span>
-        <span class="label">${pageLabel(id)}</span>
-        <select class="style-select" disabled title="Coming soon">
-          <option>Default</option>
-        </select>
-        <div class="toggle ${enabled ? 'on' : ''}" data-id="${id}">
-          <div class="knob"></div>
-        </div>
-      `;
-      list.appendChild(item);
+      const thumb = document.createElement('div');
+      thumb.className = 'thumb';
+      thumb.innerHTML = previewSVG(id, 72);
+      item.appendChild(thumb);
+      const label = document.createElement('div');
+      label.className = 'strip-label';
+      label.textContent = pageLabel(id);
+      item.appendChild(label);
+      // ◀ ▶ nudges: drag-and-drop has no touch support, so these keep
+      // reordering possible on phones (and are quicker for one-step
+      // moves everywhere).
+      const nudge = document.createElement('div');
+      nudge.className = 'strip-nudge';
+      const mk = (sym, dir, disabled) => {
+        const b = document.createElement('button');
+        b.textContent = sym;
+        b.disabled = disabled;
+        b.setAttribute('aria-label', (dir < 0 ? 'Move ' : 'Move ') + pageLabel(id) + (dir < 0 ? ' earlier' : ' later'));
+        b.addEventListener('click', () => { nudgePage(id, dir); });
+        return b;
+      };
+      nudge.appendChild(mk('◀', -1, idx === 0));
+      nudge.appendChild(mk('▶', 1, idx === inCarousel.length - 1));
+      item.appendChild(nudge);
+      strip.appendChild(item);
     });
-    attachDragHandlers();
-    attachToggleHandlers();
+    attachStripDragHandlers();
   }
 
-  function attachToggleHandlers() {
-    document.querySelectorAll('.toggle[data-id]').forEach(t => {
-      t.addEventListener('click', () => {
-        const id = t.dataset.id;
-        if (enabledPages.has(id)) enabledPages.delete(id);
-        else enabledPages.add(id);
-        renderPageList();
-      });
-    });
+  // Move a page one slot earlier/later among the ENABLED pages, keeping
+  // its position in the master order consistent.
+  function nudgePage(id, dir) {
+    const enabledOrder = pageOrder.filter(p => enabledPages.has(p));
+    const i = enabledOrder.indexOf(id);
+    const j = i + dir;
+    if (j < 0 || j >= enabledOrder.length) return;
+    const swapWith = enabledOrder[j];
+    const a = pageOrder.indexOf(id), b = pageOrder.indexOf(swapWith);
+    pageOrder[a] = swapWith; pageOrder[b] = id;
+    markDirty();
+    renderCarouselStrip();
   }
 
-  // Native HTML5 drag-and-drop reordering -- no external library needed.
   let draggedId = null;
-  function attachDragHandlers() {
-    document.querySelectorAll('.page-item').forEach(item => {
+  function attachStripDragHandlers() {
+    document.querySelectorAll('.strip-item').forEach(item => {
       item.addEventListener('dragstart', () => {
         draggedId = item.dataset.id;
         item.classList.add('dragging');
@@ -495,29 +587,107 @@
       item.addEventListener('drop', (e) => {
         e.preventDefault();
         const targetId = item.dataset.id;
-        if (draggedId === targetId) return;
+        if (draggedId === targetId || !draggedId) return;
         const fromIdx = pageOrder.indexOf(draggedId);
-        const toIdx = pageOrder.indexOf(targetId);
         pageOrder.splice(fromIdx, 1);
-        pageOrder.splice(toIdx, 0, draggedId);
-        renderPageList();
+        pageOrder.splice(pageOrder.indexOf(targetId), 0, draggedId);
+        draggedId = null;
+        markDirty();
+        renderCarouselStrip();
       });
     });
   }
 
-  document.querySelectorAll('.radio-btn[data-mode]').forEach(btn => {
-    btn.addEventListener('click', () => {
-      document.querySelectorAll('.radio-btn[data-mode]').forEach(b => b.classList.remove('active'));
-      btn.classList.add('active');
-      cycleMode = btn.dataset.mode;
-      document.getElementById('interval-row').classList.toggle('visible', cycleMode === 'auto');
+  function renderPageCards() {
+    const wrap = document.getElementById('page-cards');
+    wrap.innerHTML = '';
+    // Cards keep the master order so the list feels stable regardless of
+    // what's toggled on.
+    pageOrder.forEach(id => {
+      const def = pageDef(id);
+      const enabled = enabledPages.has(id);
+      const card = document.createElement('div');
+      card.className = 'card page-card';
+      card.dataset.id = id;
+
+      const header = document.createElement('div');
+      header.className = 'card-header';
+      const left = document.createElement('div');
+      const title = document.createElement('div');
+      title.className = 'card-title';
+      title.textContent = def.label;
+      const desc = document.createElement('div');
+      desc.className = 'card-desc';
+      desc.textContent = def.desc;
+      left.appendChild(title); left.appendChild(desc);
+      const right = document.createElement('div');
+      const stateLabel = document.createElement('div');
+      stateLabel.className = 'enabled-label' + (enabled ? ' on' : '');
+      stateLabel.textContent = enabled ? 'Enabled' : 'Disabled';
+      const toggle = document.createElement('div');
+      toggle.className = 'toggle' + (enabled ? ' on' : '');
+      toggle.dataset.id = id;
+      toggle.innerHTML = '<div class="knob"></div>';
+      toggle.addEventListener('click', () => {
+        if (enabledPages.has(id)) enabledPages.delete(id);
+        else enabledPages.add(id);
+        markDirty();
+        renderLayouts();
+      });
+      right.appendChild(stateLabel); right.appendChild(toggle);
+      header.appendChild(left); header.appendChild(right);
+      card.appendChild(header);
+
+      // Body (preview + layout picker) only when the page is on -- a
+      // disabled page collapses to its compact header row, matching the
+      // wireframe's Network Usage card.
+      if (enabled) {
+        const body = document.createElement('div');
+        body.className = 'page-body';
+        const pv = document.createElement('div');
+        pv.className = 'preview-wrap';
+        const thumb = document.createElement('div');
+        thumb.className = 'thumb';
+        thumb.innerHTML = previewSVG(id, 118);
+        pv.appendChild(thumb);
+        const cap = document.createElement('div');
+        cap.className = 'preview-caption';
+        cap.textContent = 'Preview';
+        pv.appendChild(cap);
+        const side = document.createElement('div');
+        side.className = 'layout-side';
+        const sel = document.createElement('select');
+        sel.className = 'style-select';
+        sel.disabled = true;
+        const opt = document.createElement('option');
+        opt.textContent = 'Default layout';
+        sel.appendChild(opt);
+        const hint = document.createElement('div');
+        hint.className = 'layout-hint';
+        hint.textContent = 'More layout styles are on the way.';
+        side.appendChild(sel); side.appendChild(hint);
+        body.appendChild(pv); body.appendChild(side);
+        card.appendChild(body);
+      }
+      wrap.appendChild(card);
     });
+  }
+
+  // Automatic Carousel toggle (replaces the old Static / Auto-cycle pair)
+  document.getElementById('autocycle-toggle').addEventListener('click', function () {
+    const on = !this.classList.contains('on');
+    this.classList.toggle('on', on);
+    cycleMode = on ? 'auto' : 'static';
+    document.getElementById('interval-row').classList.toggle('visible', on);
+    markDirty();
   });
-  document.querySelectorAll('.interval-btn').forEach(btn => {
+
+  document.querySelectorAll('.interval-btn[data-interval]').forEach(btn => {
     btn.addEventListener('click', () => {
-      document.querySelectorAll('.interval-btn').forEach(b => b.classList.remove('active'));
+      document.querySelectorAll('.interval-btn[data-interval]').forEach(b => b.classList.remove('active'));
       btn.classList.add('active');
       cycleSeconds = parseInt(btn.dataset.interval, 10);
+      markDirty();
     });
   });
 
@@ -534,29 +704,35 @@
     nightEnabled = !nightEnabled;
     this.classList.toggle('on', nightEnabled);
     document.getElementById('night-controls').style.display = nightEnabled ? 'block' : 'none';
+    markDirty();
   });
   document.getElementById('night-start').addEventListener('change', function () {
     nightStartMin = timeToMin(this.value);
+    markDirty();
   });
   document.getElementById('night-end').addEventListener('change', function () {
     nightEndMin = timeToMin(this.value);
+    markDirty();
   });
   document.getElementById('night-brightness-slider').addEventListener('input', function () {
     nightBrightness = parseInt(this.value, 10);
     document.getElementById('night-brightness-value').textContent =
       nightBrightness === 0 ? 'Off' : nightBrightness + '%';
+    markDirty();
   });
   document.getElementById('saver-enabled').addEventListener('click', function () {
     if (this.classList.contains('disabled')) return;
     saverEnabled = !saverEnabled;
     this.classList.toggle('on', saverEnabled);
     document.getElementById('saver-controls').style.display = saverEnabled ? 'block' : 'none';
+    markDirty();
   });
   document.querySelectorAll('.radio-btn[data-saver-style]').forEach(btn => {
     btn.addEventListener('click', () => {
       saverStyle = btn.dataset.saverStyle;
       document.querySelectorAll('.radio-btn[data-saver-style]').forEach(b =>
         b.classList.toggle('active', b === btn));
+      markDirty();
     });
   });
   document.querySelectorAll('.interval-btn[data-saver-min]').forEach(btn => {
@@ -564,6 +740,7 @@
       saverMinutes = parseInt(btn.dataset.saverMin, 10);
       document.querySelectorAll('.interval-btn[data-saver-min]').forEach(b =>
         b.classList.toggle('active', b === btn));
+      markDirty();
     });
   });
 
@@ -571,6 +748,7 @@
   brightnessSlider.addEventListener('input', () => {
     currentBrightness = parseInt(brightnessSlider.value, 10);
     brightnessValue.textContent = currentBrightness + '%';
+    markDirty();
   });
 
   // ---------------------------------------------------------------------
@@ -746,15 +924,15 @@
       // to turn back on without hunting for it.
       pageOrder = [...cfg.pages, ...ALL_PAGES.map(p => p.id).filter(id => !cfg.pages.includes(id))];
 
-      document.querySelectorAll('.radio-btn[data-mode]').forEach(b => {
-        b.classList.toggle('active', b.dataset.mode === cycleMode);
-      });
+      document.getElementById('autocycle-toggle').classList.toggle('on', cycleMode === 'auto');
       document.getElementById('interval-row').classList.toggle('visible', cycleMode === 'auto');
-      document.querySelectorAll('.interval-btn').forEach(b => {
+      document.querySelectorAll('.interval-btn[data-interval]').forEach(b => {
         b.classList.toggle('active', parseInt(b.dataset.interval, 10) === cycleSeconds);
       });
 
-      renderPageList();
+      renderLayouts();
+      // A fresh load is the saved state by definition.
+      clearDirty();
       document.getElementById('layouts-loading').style.display = 'none';
       document.getElementById('layouts-content').style.display = 'block';
 
@@ -1100,16 +1278,42 @@
     }
   });
 
+  // ---------------------------------------------------------------------
+  // Unsaved-changes banner: drops from the top of the window on the
+  // first edit, follows the user across tabs, and goes away on save or
+  // discard. Discard simply reloads the device's current config -- the
+  // ground truth -- rather than trying to unpick edits one by one.
+  // ---------------------------------------------------------------------
+  let dirty = false;
+  function markDirty() {
+    if (dirty) return;
+    dirty = true;
+    const b = document.getElementById('banner-msg');
+    b.textContent = 'You have unsaved changes';
+    b.style.color = '';
+    document.getElementById('save-banner').classList.add('visible');
+  }
+  function clearDirty() {
+    dirty = false;
+    document.getElementById('save-banner').classList.remove('visible');
+  }
+  document.getElementById('banner-save').addEventListener('click', () =>
+    saveConfig(document.getElementById('banner-msg'), document.getElementById('banner-save')));
+  document.getElementById('banner-discard').addEventListener('click', () => {
+    clearDirty();
+    loadAllDeviceInfo();  // repopulate everything from the device
+  });
+
   async function saveConfig(statusEl, saveBtn) {
     const finalPages = pageOrder.filter(id => enabledPages.has(id));
     if (finalPages.length === 0) {
-      statusEl.textContent = 'Enable at least one page.';
-      statusEl.className = 'status-msg err';
+      statusEl.textContent = 'Enable at least one page first.';
+      statusEl.style.color = 'var(--err)';
       return;
     }
     saveBtn.disabled = true;
     statusEl.textContent = 'Saving…';
-    statusEl.className = 'status-msg';
+    statusEl.style.color = '';
     try {
       const res = await fetch('/api/configure', {
         method: 'POST',
@@ -1135,28 +1339,22 @@
         }),
       });
       const data = await res.json();
-      if (data.ok && data.acked) {
-        statusEl.textContent = '✓ Saved.';
-        statusEl.className = 'status-msg ok';
-      } else if (data.ok) {
-        statusEl.textContent = 'Sent — no confirmation seen, but it likely worked.';
-        statusEl.className = 'status-msg ok';
+      if (data.ok) {
+        statusEl.textContent = data.acked ? '✓ Saved' : '✓ Sent';
+        statusEl.style.color = 'var(--teal)';
+        setTimeout(clearDirty, 900);  // let "Saved" register, then slide away
       } else {
         statusEl.textContent = '✗ ' + (data.error || 'Could not save.');
-        statusEl.className = 'status-msg err';
+        statusEl.style.color = 'var(--err)';
       }
     } catch (e) {
       statusEl.textContent = '✗ Request failed: ' + e.message;
-      statusEl.className = 'status-msg err';
+      statusEl.style.color = 'var(--err)';
     } finally {
       saveBtn.disabled = false;
     }
   }
 
-  document.getElementById('save-btn').addEventListener('click', () =>
-    saveConfig(document.getElementById('save-status'), document.getElementById('save-btn')));
-  document.getElementById('save-btn-screen').addEventListener('click', () =>
-    saveConfig(document.getElementById('save-status-screen'), document.getElementById('save-btn-screen')));
 
   // ---------------------------------------------------------------------
   // Update Firmware -- reuses the existing /api/flash endpoint. No
