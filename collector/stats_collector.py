@@ -44,6 +44,48 @@ HWMON_TEMP_LABELS = ("Package id 0", "Tctl", "Tdie", "CPU")
 # Data model
 # --------------------------------------------------------------------------
 
+STATE_DIR = os.environ.get("TINYSCREEN_STATE_DIR", "/opt/tinyscreen/state")
+TZ_FILE = os.path.join(STATE_DIR, "timezone.txt")
+_tz_cache = {"mtime": None, "zone": None}
+
+
+def _load_zone():
+    """Cached ZoneInfo for the user's timezone (from timezone.txt,
+    written by the server on dashboard saves). Re-reads only when the
+    file changes; returns None when no zone is known or tzdata can't
+    resolve it."""
+    try:
+        mtime = os.stat(TZ_FILE).st_mtime
+    except OSError:
+        _tz_cache["zone"] = None
+        _tz_cache["mtime"] = None
+        return None
+    if mtime != _tz_cache["mtime"]:
+        _tz_cache["mtime"] = mtime
+        _tz_cache["zone"] = None
+        try:
+            from zoneinfo import ZoneInfo
+            name = open(TZ_FILE).read().strip()
+            if name:
+                _tz_cache["zone"] = ZoneInfo(name)
+        except Exception as e:  # bad zone name, missing tzdata, ...
+            print(f"[collector] timezone '{name if 'name' in dir() else '?'}' unusable: {e}",
+                  file=sys.stderr)
+    return _tz_cache["zone"]
+
+
+def local_minutes_now():
+    """Minutes since local midnight in the user's zone (DST-aware), or
+    -1 when no usable zone is configured -- the firmware falls back to
+    utc_min + its stored fixed offset in that case."""
+    zone = _load_zone()
+    if zone is None:
+        return -1
+    from datetime import datetime
+    now = datetime.now(zone)
+    return now.hour * 60 + now.minute
+
+
 @dataclass
 class Stats:
     cpu_name: str
@@ -66,6 +108,13 @@ class Stats:
     # user's location, so the user's timezone offset travels separately
     # (captured from the browser at save time, see dashboard.html).
     utc_min: int
+    # Minutes since LOCAL midnight in the user's timezone, computed with
+    # the real IANA zone database (zoneinfo) so DST transitions are
+    # handled automatically -- the fixed browser-captured offset behind
+    # utc_min drifts an hour across a clock change until re-saved. The
+    # zone name comes from timezone.txt in the state dir, written by the
+    # server whenever the dashboard saves settings. -1 = no zone known.
+    local_min: int
 
 
 # --------------------------------------------------------------------------
@@ -520,6 +569,7 @@ def main():
                 nas_total_gb=nas_total,
                 nas_pct=nas_pct,
                 utc_min=(lambda t: t.tm_hour * 60 + t.tm_min)(time.gmtime()),
+                local_min=local_minutes_now(),
             )
 
             payload = json.dumps(asdict(stats), separators=(",", ":")) + "\n"

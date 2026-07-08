@@ -87,6 +87,34 @@ int main() {
   CHECK(config.brightness == 100);
   CHECK(config.numPages == 1 && strcmp(config.pages[0], "temp") == 0);
 
+  // ---- computeLayoutBox: square fit on the 240x280 panel ----
+  int lx, ly, lw, lh;
+  computeLayoutBox(240, 280, true, &lx, &ly, &lw, &lh);
+  CHECK(lx == 0 && ly == 20 && lw == 240 && lh == 240);   // letterboxed
+  computeLayoutBox(280, 240, true, &lx, &ly, &lw, &lh);   // rotated 90
+  CHECK(lx == 20 && ly == 0 && lw == 240 && lh == 240);   // pillarboxed
+  computeLayoutBox(240, 280, false, &lx, &ly, &lw, &lh);  // native
+  CHECK(lx == 0 && ly == 0 && lw == 240 && lh == 280);
+  computeLayoutBox(240, 240, true, &lx, &ly, &lw, &lh);   // already square
+  CHECK(lx == 0 && ly == 0 && lw == 240 && lh == 240);
+
+  // ---- mapSwipeDeltaX per rotation ----
+  CHECK(mapSwipeDeltaX(50, 5, 0) == 50);     // native: raw X is display X
+  CHECK(mapSwipeDeltaX(50, 5, 180) == -50);  // upside down: flipped
+  CHECK(mapSwipeDeltaX(5, 50, 90) == 50);    // sideways: raw Y is display X
+  CHECK(mapSwipeDeltaX(5, 50, 270) == -50);
+
+  // ---- localNowMin prefers DST-aware local_min over utc+offset ----
+  g_fake_millis = 0;
+  lastLocalMin = -1;
+  lastUtcMin = 12 * 60; lastUtcAtMs = 0;
+  config.tzOffsetMin = -300;
+  CHECK(localNowMin() == 7 * 60);            // fallback: utc-5
+  lastLocalMin = 8 * 60; lastLocalAtMs = 0;  // host says 8:00 local (DST shifted)
+  CHECK(localNowMin() == 8 * 60);            // local_min wins, offset ignored
+  g_fake_millis = 5 * 60000UL;
+  CHECK(localNowMin() == 8 * 60 + 5);        // extrapolates too
+
   printf("ALL FIRMWARE LOGIC TESTS PASS\n");
   return 0;
 }

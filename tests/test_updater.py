@@ -737,6 +737,32 @@ class TestServerEndpoints(UpdaterTestBase):
         for page in ("/wizard.html", "/dashboard.html"):
             self.assertEqual(self.app.get(page).status_code, 200, page)
 
+    def test_configure_persists_timezone_and_new_payload_fields(self):
+        build = self.server.build_set_config_payload
+        full = build({"board": 1, "pages": ["cpu"], "cycle_mode": "static",
+                      "cycle_seconds": 10, "brightness": 100,
+                      "rotation": 90, "square_fit": True})
+        self.assertEqual(full["rotation"], 90)
+        self.assertIs(full["square_fit"], True)
+        self.assertNotIn("tz_name", full)  # server-side only, never serial
+
+        # tz_name persists even when no device is attached (400 response)
+        orig = self.server.detect_port
+        self.server.detect_port = lambda: None
+        try:
+            r = self.app.post("/api/configure", json={
+                "board": 1, "pages": ["cpu"], "tz_name": "America/Chicago"})
+            self.assertEqual(r.status_code, 400)  # no device...
+            tz = (Path(self.state_dir.name) / "timezone.txt").read_text().strip()
+            self.assertEqual(tz, "America/Chicago")  # ...but zone stored
+            # hostile names rejected
+            self.app.post("/api/configure", json={
+                "board": 1, "pages": ["cpu"], "tz_name": "../../etc/passwd\x00"})
+            tz = (Path(self.state_dir.name) / "timezone.txt").read_text().strip()
+            self.assertEqual(tz, "America/Chicago")  # unchanged
+        finally:
+            self.server.detect_port = orig
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

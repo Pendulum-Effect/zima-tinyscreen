@@ -24,6 +24,7 @@ CollectorManager and fight over the same collector subprocess.
 import glob
 import json
 import os
+import re
 import sys
 import subprocess
 import threading
@@ -272,15 +273,44 @@ def build_set_config_payload(cfg):
     for key, cast in [("night_enabled", bool), ("night_start_min", int),
                       ("night_end_min", int), ("night_brightness", int),
                       ("tz_offset_min", int), ("saver_enabled", bool),
-                      ("saver_minutes", int), ("saver_style", str)]:
+                      ("saver_minutes", int), ("saver_style", str),
+                      ("rotation", int), ("square_fit", bool)]:
         if key in cfg:
             payload[key] = cast(cfg[key])
     return payload
 
 
+_TZ_NAME_RE = re.compile(r"^[A-Za-z0-9_+\-/]{1,64}$")
+
+
+def store_timezone_name(tz_name):
+    """Persist the browser-reported IANA zone name (e.g.
+    'America/Chicago') to the state dir, where the collector picks it up
+    to compute DST-correct local time for the display. Server-side state,
+    deliberately NOT forwarded to the firmware -- the board has no zone
+    database; it just consumes the resulting local_min from the stats
+    stream. Returns True if written."""
+    if not isinstance(tz_name, str) or not _TZ_NAME_RE.match(tz_name):
+        return False
+    try:
+        STATE_DIR.mkdir(parents=True, exist_ok=True)
+        tmp = STATE_DIR / "timezone.txt.tmp"
+        tmp.write_text(tz_name + "\n")
+        os.replace(tmp, STATE_DIR / "timezone.txt")
+        return True
+    except OSError as e:
+        print(f"[server] could not persist timezone: {e}", file=sys.stderr)
+        return False
+
+
 @app.route("/api/configure", methods=["POST"])
 def api_configure():
     cfg = request.get_json(force=True, silent=True) or {}
+    # Timezone is server-side state (see store_timezone_name) -- persist
+    # it before any serial work so it lands even if the device is
+    # unplugged right now.
+    if "tz_name" in cfg:
+        store_timezone_name(cfg["tz_name"])
     port = detect_port()
     if not port:
         return jsonify({"ok": False, "error": "No ESP32 serial device found. Is it plugged in?"}), 400

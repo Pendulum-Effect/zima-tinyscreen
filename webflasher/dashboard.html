@@ -2,7 +2,8 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#0b1418">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Tiny Screen Settings</title>
 <style>
   :root {
@@ -18,6 +19,11 @@
     --err: #ff9a7a;
   }
   * { box-sizing: border-box; }
+  /* html gets the base color too: iOS rubber-band overscroll reveals the
+     area BEYOND body's painted background, which otherwise flashes
+     white. Locking html/body scrolling confines all scrolling to the
+     content panel (.main), so the toolbar can't be dragged off-screen. */
+  html { background: var(--bg); height: 100%; }
   body {
     margin: 0;
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
@@ -29,7 +35,9 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    min-height: 100vh;
+    height: 100%;
+    overflow: hidden;
+    overscroll-behavior: none;
     padding: 28px;
   }
 
@@ -76,6 +84,8 @@
     border-radius: 14px;
     padding: 28px 34px;
     overflow-y: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
     min-width: 0;
   }
   .main h2 { font-size: 22px; margin: 0 0 22px; }
@@ -93,6 +103,7 @@
     .app-window {
       flex-direction: column;
       height: 100vh;
+      height: 100dvh; /* accounts for iOS Safari's collapsing URL bar */
       max-width: none;
       border-radius: 0;
       border: none;
@@ -209,8 +220,40 @@
   .coming-soon .big { font-size: 16px; color: var(--text); margin-bottom: 6px; }
 
   .brightness-row { display: flex; align-items: center; gap: 16px; margin-top: 14px; }
-  .brightness-slider { flex: 1; accent-color: var(--teal); height: 6px; }
   .brightness-value { font-size: 14px; color: var(--subtext); min-width: 42px; text-align: right; }
+  /* Fully custom range styling: native rendering (especially iOS) draws
+     a white track remainder and an outlined groove that fight the theme.
+     --pct is kept in sync from JS so the filled portion tracks the
+     thumb. Empty track uses the disabled-toggle grey. */
+  .brightness-slider {
+    flex: 1; -webkit-appearance: none; appearance: none;
+    height: 6px; border-radius: 3px; outline: none; border: none;
+    background: linear-gradient(to right,
+      var(--teal) var(--pct, 100%), #2c3f3d var(--pct, 100%));
+  }
+  .brightness-slider::-webkit-slider-thumb {
+    -webkit-appearance: none; appearance: none;
+    width: 20px; height: 20px; border-radius: 50%;
+    background: #fff; border: none;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.4);
+  }
+  .brightness-slider::-moz-range-thumb {
+    width: 20px; height: 20px; border-radius: 50%;
+    background: #fff; border: none;
+  }
+  .brightness-slider::-moz-range-track {
+    height: 6px; border-radius: 3px; background: #2c3f3d;
+  }
+  .brightness-slider::-moz-range-progress {
+    height: 6px; border-radius: 3px; background: var(--teal);
+  }
+
+  /* Small informational footnote with an inline "i" icon */
+  .info-note {
+    display: flex; align-items: flex-start; gap: 7px;
+    margin-top: 14px; font-size: 12px; color: var(--subtext); line-height: 1.5;
+  }
+  .info-note svg { width: 13px; height: 13px; flex-shrink: 0; margin-top: 2px; }
 
   /* Contextual save banner: drops from the top of the window whenever
      there are unsaved changes, and stays put across tab switches. */
@@ -386,10 +429,12 @@
 
         <div class="card">
           <div class="card-title">Brightness</div>
+          <div class="card-desc">How bright the screen is during the day.</div>
           <div class="brightness-row">
-            <input type="range" id="brightness-slider" min="1" max="100" value="100" class="brightness-slider">
+            <input type="range" id="brightness-slider" min="0" max="100" value="100" class="brightness-slider">
             <span class="brightness-value" id="brightness-value">100%</span>
           </div>
+          <div class="info-note"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg><span>0% turns the screen off completely.</span></div>
         </div>
 
         <div class="card">
@@ -405,16 +450,35 @@
               <label class="card-desc">From <input type="time" id="night-start" value="22:00" class="time-input"></label>
               <label class="card-desc">to <input type="time" id="night-end" value="07:00" class="time-input"></label>
             </div>
-            <div class="brightness-row" style="margin-top:10px;">
-              <span class="card-desc" style="white-space:nowrap;">Night brightness</span>
+            <div class="card-desc" style="margin-top:12px;">Night brightness</div>
+            <div class="brightness-row" style="margin-top:6px;">
               <input type="range" id="night-brightness-slider" min="0" max="100" value="10" class="brightness-slider">
               <span class="brightness-value" id="night-brightness-value">10%</span>
             </div>
-            <div class="card-desc" style="margin-top:8px; font-size:0.85em;">
-              0% turns the screen off completely. Times are in your local timezone —
-              if your clocks change for daylight saving, just re-save.
-            </div>
+            <div class="info-note"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg><span>0% turns the screen off completely. Times are in your local timezone.</span></div>
           </div>
+        </div>
+
+        <div class="card">
+          <div class="card-title">Rotation</div>
+          <div class="card-desc">Mounting the screen sideways or upside down? Pick whichever way is right-side up for you.</div>
+          <div class="radio-row" style="margin-top:12px;">
+            <button class="radio-btn" data-rot="0">Standard</button>
+            <button class="radio-btn" data-rot="90">90&deg;</button>
+            <button class="radio-btn" data-rot="180">Upside down</button>
+            <button class="radio-btn" data-rot="270">270&deg;</button>
+          </div>
+          <div class="info-note"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg><span>The screen restarts for a moment when this changes.</span></div>
+        </div>
+
+        <div class="card" id="aspect-card">
+          <div class="card-title">Aspect Ratio</div>
+          <div class="card-desc">Prefer a perfectly square face? Fit everything into a centered 240&times;240 box instead of using the full screen.</div>
+          <div class="radio-row" style="margin-top:12px;">
+            <button class="radio-btn" data-aspect="native">Native (240&times;280)</button>
+            <button class="radio-btn" data-aspect="square">Square (1:1)</button>
+          </div>
+          <div class="info-note"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg><span>The screen restarts for a moment when this changes.</span></div>
         </div>
 
         <div class="card">
@@ -542,6 +606,14 @@
   // Night mode / screensaver (firmware 1.1.0)
   let nightEnabled = false, nightStartMin = 1320, nightEndMin = 420, nightBrightness = 10;
   let saverEnabled = false, saverMinutes = 5, saverStyle = 'clock';
+  let rotation = 0, squareFit = false;
+
+  // Keep the custom track's filled portion in sync with the value, and
+  // render 0 as "Off" (both sliders allow full-off now).
+  function syncSlider(slider, valueEl, v) {
+    slider.style.setProperty('--pct', v + '%');
+    valueEl.textContent = v === 0 ? 'Off' : v + '%';
+  }
 
   // ---------------------------------------------------------------------
   // Layouts tab: carousel strip (order) + per-page cards (on/off, style)
@@ -753,8 +825,7 @@
   });
   document.getElementById('night-brightness-slider').addEventListener('input', function () {
     nightBrightness = parseInt(this.value, 10);
-    document.getElementById('night-brightness-value').textContent =
-      nightBrightness === 0 ? 'Off' : nightBrightness + '%';
+    syncSlider(this, document.getElementById('night-brightness-value'), nightBrightness);
     markDirty();
   });
   document.getElementById('saver-enabled').addEventListener('click', function () {
@@ -763,6 +834,22 @@
     this.classList.toggle('on', saverEnabled);
     document.getElementById('saver-controls').style.display = saverEnabled ? 'block' : 'none';
     markDirty();
+  });
+  document.querySelectorAll('.radio-btn[data-rot]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      rotation = parseInt(btn.dataset.rot, 10);
+      document.querySelectorAll('.radio-btn[data-rot]').forEach(b =>
+        b.classList.toggle('active', b === btn));
+      markDirty();
+    });
+  });
+  document.querySelectorAll('.radio-btn[data-aspect]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      squareFit = btn.dataset.aspect === 'square';
+      document.querySelectorAll('.radio-btn[data-aspect]').forEach(b =>
+        b.classList.toggle('active', b === btn));
+      markDirty();
+    });
   });
   document.querySelectorAll('.radio-btn[data-saver-style]').forEach(btn => {
     btn.addEventListener('click', () => {
@@ -784,7 +871,7 @@
   const brightnessValue = document.getElementById('brightness-value');
   brightnessSlider.addEventListener('input', () => {
     currentBrightness = parseInt(brightnessSlider.value, 10);
-    brightnessValue.textContent = currentBrightness + '%';
+    syncSlider(brightnessSlider, brightnessValue, currentBrightness);
     markDirty();
   });
 
@@ -976,7 +1063,18 @@
 
       // -- Screen tab --
       brightnessSlider.value = currentBrightness;
-      brightnessValue.textContent = currentBrightness + '%';
+      syncSlider(brightnessSlider, brightnessValue, currentBrightness);
+
+      rotation = [0, 90, 180, 270].includes(cfg.rotation) ? cfg.rotation : 0;
+      squareFit = !!cfg.square_fit;
+      document.querySelectorAll('.radio-btn[data-rot]').forEach(b =>
+        b.classList.toggle('active', parseInt(b.dataset.rot, 10) === rotation));
+      document.querySelectorAll('.radio-btn[data-aspect]').forEach(b =>
+        b.classList.toggle('active', (b.dataset.aspect === 'square') === squareFit));
+      // Square-fit is meaningless on an already-square panel (board 0):
+      // hide the card rather than offer a no-op.
+      document.getElementById('aspect-card').style.display =
+        cfg.board === 0 ? 'none' : 'block';
 
       // Night mode + screensaver (firmware 1.1.0). Fall back to sane
       // defaults when talking to older firmware that doesn't report the
@@ -997,8 +1095,7 @@
       document.getElementById('night-end').value = minToTime(nightEndMin);
       const nbSlider = document.getElementById('night-brightness-slider');
       nbSlider.value = nightBrightness;
-      document.getElementById('night-brightness-value').textContent =
-        nightBrightness === 0 ? 'Off' : nightBrightness + '%';
+      syncSlider(nbSlider, document.getElementById('night-brightness-value'), nightBrightness);
 
       if (hasTouch) {
         document.getElementById('saver-enabled').classList.toggle('on', saverEnabled);
@@ -1371,6 +1468,12 @@
           // is minutes BEHIND UTC, hence the sign flip.) DST changes shift
           // it -- re-saving after a clock change picks up the new offset.
           tz_offset_min: -new Date().getTimezoneOffset(),
+          // IANA zone name -- stored server-side so the collector can
+          // compute DST-correct local time forever after; the fixed
+          // offset above stays as the fallback for older setups.
+          tz_name: Intl.DateTimeFormat().resolvedOptions().timeZone,
+          rotation: rotation,
+          square_fit: squareFit,
           saver_enabled: saverEnabled,
           saver_minutes: saverMinutes,
           saver_style: saverStyle,

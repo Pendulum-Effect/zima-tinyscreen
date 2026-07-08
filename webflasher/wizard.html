@@ -2,7 +2,8 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#0b1418">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Tiny Screen Setup</title>
 <script type="module" src="https://unpkg.com/esp-web-tools@10/dist/web/install-button.js?module"></script>
 <style>
@@ -19,6 +20,7 @@
     --err: #ff9a7a;
   }
   * { box-sizing: border-box; }
+  html { background: var(--bg); overscroll-behavior: none; }
   body {
     margin: 0;
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;

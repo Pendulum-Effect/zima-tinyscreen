@@ -2,6 +2,17 @@
   "_comment": "Human-readable changelog for the dashboard's About tab -- written for people, not commit archaeologists. The dashboard fetches this from GitHub at page load (baked copy as fallback), so add an entry here with each release and every install sees it. Newest first. Dates are YYYY-MM-DD.",
   "entries": [
     {
+      "version": "0.8.9.7",
+      "date": "2026-07-08",
+      "title": "Screen page upgrades",
+      "notes": [
+        "Two new screen options: Rotation (mount your screen sideways or upside down and keep everything right-side up) and, on the 1.69-inch display, a square 1:1 aspect ratio mode. Both need firmware v1.3.0, included in this release.",
+        "Night Mode now handles daylight saving time on its own -- no more re-saving your schedule when the clocks change.",
+        "Brightness can now go all the way to off, the sliders look at home in the dark theme, and the Night Mode controls fit properly on phones.",
+        "Fixed the white flashes at the screen edges on iPhones, and locked scrolling to the page content so the toolbar stays put."
+      ]
+    },
+    {
       "version": "0.8.9.6",
       "date": "2026-07-08",
       "title": "Carousel fine-tuning",

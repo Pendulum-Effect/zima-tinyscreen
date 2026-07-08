@@ -36,7 +36,7 @@
 // "Software Version" field via the get_config command below. No
 // auto-update-checking mechanism exists yet (that's a separate, not-yet
 // -built feature) -- this just answers "what's currently on my device."
-#define FIRMWARE_VERSION "1.2.0"
+#define FIRMWARE_VERSION "1.3.0"
 
 // Note: screen dimensions are NOT fixed -- board 1 (1.69") is 240x280,
 // taller than board 0's 240x240. See screenW/screenH globals, set from
@@ -118,6 +118,14 @@ struct Config {
   bool saverEnabled = false;
   int saverMinutes = 5;
   char saverStyle[8] = "clock"; // "clock" (drifting time) or "blank" (screen off)
+
+  // Display orientation in degrees (0/90/180/270) for sideways or
+  // upside-down mounting, and square-fit: render everything into a
+  // centered square (min dimension) on non-square panels, for people
+  // who want a 1:1 face on the 240x280 display. Both require a display
+  // re-init, so changes trigger the same restart path as a board change.
+  int rotation = 0;
+  bool squareFit = false;
 } config;
 
 Preferences prefs;
@@ -141,6 +149,8 @@ void loadConfig() {
   config.saverMinutes = prefs.getInt("saverMin", 5);
   String saverStyle = prefs.getString("saverStyle", "clock");
   saverStyle.toCharArray(config.saverStyle, 8);
+  config.rotation = prefs.getInt("rotation", 0);
+  config.squareFit = prefs.getBool("squareFit", false);
   String pagesCsv = prefs.getString("pages", "temp");
   prefs.end();
 
@@ -189,6 +199,8 @@ void saveConfig() {
   prefs.putBool("saverEn", config.saverEnabled);
   prefs.putInt("saverMin", config.saverMinutes);
   prefs.putString("saverStyle", config.saverStyle);
+  prefs.putInt("rotation", config.rotation);
+  prefs.putBool("squareFit", config.squareFit);
   String pagesCsv = "";
   for (int i = 0; i < config.numPages; i++) {
     if (i > 0) pagesCsv += ",";
@@ -214,6 +226,13 @@ void saveConfig() {
 
 int lastUtcMin = -1;              // -1 = no time received yet
 unsigned long lastUtcAtMs = 0;
+// Preferred time source (1.3.0+): the collector computes minutes since
+// LOCAL midnight using the real timezone database (DST included) and
+// sends it as "local_min". When present it wins over the older
+// utc_min + fixed-offset math, which can drift an hour across a DST
+// change until re-saved.
+int lastLocalMin = -1;
+unsigned long lastLocalAtMs = 0;
 
 unsigned long lastTouchMs = 0;    // any finger contact, not just swipes
 bool saverActive = false;
@@ -244,9 +263,18 @@ int extrapolateLocalMin(int lastUtc, unsigned long lastAtMs,
   return (int)((local + 1440L) % 1440L);
 }
 
+// Best-available local time: DST-aware host local_min when we have it,
+// otherwise UTC + the browser-captured fixed offset.
+int localNowMin() {
+  if (lastLocalMin >= 0) {
+    return extrapolateLocalMin(lastLocalMin, lastLocalAtMs, millis(), 0);
+  }
+  return extrapolateLocalMin(lastUtcMin, lastUtcAtMs, millis(),
+                             config.tzOffsetMin);
+}
+
 int effectiveBrightnessPct() {
-  int nowLocal = extrapolateLocalMin(lastUtcMin, lastUtcAtMs, millis(),
-                                     config.tzOffsetMin);
+  int nowLocal = localNowMin();
   if (config.nightEnabled &&
       minutesInWindow(nowLocal, config.nightStartMin, config.nightEndMin)) {
     return config.nightBrightness;
@@ -266,15 +294,48 @@ int effectiveBrightnessPct() {
 Arduino_DataBus *bus = nullptr;
 Arduino_GFX *gfx = nullptr;
 Arduino_Canvas *canvas = nullptr;
-int screenW = 240;
+int screenW = 240;   // physical panel size AFTER rotation
 int screenH = 240;
+// Layout box: where pages actually render. Same as the physical screen
+// normally; with square-fit on a non-square panel it's a centered
+// min-dimension square (e.g. 240x240 letterboxed inside 240x280). All
+// drawing goes through LX/LY/LW/LH so pages don't care which mode
+// they're in. computeLayoutBox is pure for host-side unit testing.
+int LX = 0, LY = 0, LW = 240, LH = 240;
+void computeLayoutBox(int physW, int physH, bool squareFit,
+                      int *lx, int *ly, int *lw, int *lh) {
+  if (squareFit && physW != physH) {
+    int side = physW < physH ? physW : physH;
+    *lx = (physW - side) / 2;
+    *ly = (physH - side) / 2;
+    *lw = side;
+    *lh = side;
+  } else {
+    *lx = 0; *ly = 0; *lw = physW; *lh = physH;
+  }
+}
+
+// Horizontal swipe delta in DISPLAY space from raw touch deltas -- the
+// touch controller reports panel-native coordinates, so a rotated
+// display swaps/flips which raw axis means "left/right". Pure for
+// host-side unit testing.
+int mapSwipeDeltaX(int rawDx, int rawDy, int rotationDeg) {
+  switch (rotationDeg) {
+    case 90:  return rawDy;
+    case 180: return -rawDx;
+    case 270: return -rawDy;
+    default:  return rawDx;
+  }
+}
 
 // Layout constants below were tuned against a 240x240 reference screen.
 // SY() scales a Y-coordinate proportionally for taller/shorter screens
 // (e.g. board 1's 240x280 panel) so the layout doesn't just run off the
 // bottom or leave a big gap -- X doesn't need this since all boards so
 // far share the same 240 width.
-int SY(int y) { return y * screenH / 240; }
+int SY(int y) { return LY + y * LH / 240; }
+int SYB(int fromBottom) { return LY + LH - fromBottom * LH / 240; }
+int CX() { return LX + LW / 2; }
 
 // ---------------------------------------------------------------------
 // LEDC (backlight PWM) -- arduino-esp32 core 3.x replaced the old
@@ -308,13 +369,19 @@ void pwmWriteBacklight(int pin, int duty) {
 
 void initDisplay() {
   const BoardProfile &p = BOARD_PROFILES[config.boardId];
-  screenW = p.width;
-  screenH = p.height;
+  // Arduino_GFX takes rotation as quarter-turns (0-3) and handles the
+  // panel offset bookkeeping per rotation itself; we pass the PANEL
+  // native dims and swap our own working dims for 90/270.
+  int rot = ((config.rotation % 360) + 360) % 360 / 90;
+  bool swapped = (rot == 1 || rot == 3);
+  screenW = swapped ? p.height : p.width;
+  screenH = swapped ? p.width : p.height;
+  computeLayoutBox(screenW, screenH, config.squareFit, &LX, &LY, &LW, &LH);
   bus = new Arduino_ESP32SPI(p.lcd_dc, p.lcd_cs, p.lcd_sck, p.lcd_mosi, -1 /* no MISO */);
   if (p.driverIsGC9A01) {
-    gfx = new Arduino_GC9A01(bus, p.lcd_rst, 0 /* rotation */, true /* IPS */);
+    gfx = new Arduino_GC9A01(bus, p.lcd_rst, rot, true /* IPS */);
   } else {
-    gfx = new Arduino_ST7789(bus, p.lcd_rst, 0 /* rotation */, true /* IPS */, screenW, screenH,
+    gfx = new Arduino_ST7789(bus, p.lcd_rst, rot, true /* IPS */, p.width, p.height,
                               p.colOffset1, p.rowOffset1, p.colOffset2, p.rowOffset2);
   }
   canvas = new Arduino_Canvas(screenW, screenH, gfx);
@@ -437,15 +504,15 @@ void drawStaleBanner() {
   const char *msg = haveData ? "no data..." : "waiting for host...";
   int16_t x1, y1; uint16_t w, h;
   canvas->getTextBounds(msg, 0, 0, &x1, &y1, &w, &h);
-  canvas->setCursor(screenW / 2 - w / 2, SY(24));
+  canvas->setCursor(CX() - w / 2, SY(24));
   canvas->print(msg);
 }
 
 void drawFooterDots() {
   if (config.numPages <= 1) return;
   int totalW = config.numPages * 12;
-  int startX = screenW / 2 - totalW / 2;
-  int y = screenH - SY(14);
+  int startX = CX() - totalW / 2;
+  int y = SYB(14);
   for (int i = 0; i < config.numPages; i++) {
     uint16_t c = (i == currentPageIdx) ? COL_TEAL : COL_RING_BG;
     canvas->fillCircle(startX + i * 12 + 6, y, 3, c);
@@ -455,42 +522,42 @@ void drawFooterDots() {
 void drawPageCPU() {
   char big[16];
   snprintf(big, sizeof(big), "%d%%", (int)round(stats.cpu_pct));
-  drawRingGauge(screenW / 2, SY(105), 88, 74, stats.cpu_pct, COL_TEAL, big, "CPU LOAD");
+  drawRingGauge(CX(), SY(105), 88, 74, stats.cpu_pct, COL_TEAL, big, "CPU LOAD");
   canvas->setTextColor(COL_TEXT);
   canvas->setTextSize(2);
   char watts[16];
   snprintf(watts, sizeof(watts), "%.1f W", stats.cpu_watts);
   int16_t x1, y1; uint16_t w, h;
   canvas->getTextBounds(watts, 0, 0, &x1, &y1, &w, &h);
-  canvas->setCursor(screenW / 2 - w / 2, SY(172));
+  canvas->setCursor(CX() - w / 2, SY(172));
   canvas->print(watts);
 }
 
 void drawPageRAM() {
   char big[16];
   snprintf(big, sizeof(big), "%d%%", (int)round(stats.ram_pct));
-  drawRingGauge(screenW / 2, SY(105), 88, 74, stats.ram_pct, COL_TEAL_2, big, "RAM USED");
+  drawRingGauge(CX(), SY(105), 88, 74, stats.ram_pct, COL_TEAL_2, big, "RAM USED");
   canvas->setTextColor(COL_TEXT);
   canvas->setTextSize(2);
   char total[24];
   snprintf(total, sizeof(total), "%.1f GB", stats.ram_total_gb);
   int16_t x1, y1; uint16_t w, h;
   canvas->getTextBounds(total, 0, 0, &x1, &y1, &w, &h);
-  canvas->setCursor(screenW / 2 - w / 2, SY(172));
+  canvas->setCursor(CX() - w / 2, SY(172));
   canvas->print(total);
 }
 
 void drawPageMMC() {
   char big[16];
   snprintf(big, sizeof(big), "%d%%", (int)round(stats.mmc_pct));
-  drawRingGauge(screenW / 2, SY(105), 88, 74, stats.mmc_pct, 0x7B9F, big, "MMC USED");
+  drawRingGauge(CX(), SY(105), 88, 74, stats.mmc_pct, 0x7B9F, big, "MMC USED");
   canvas->setTextColor(COL_TEXT);
   canvas->setTextSize(2);
   char total[24];
   snprintf(total, sizeof(total), "%.0f GB", stats.mmc_total_gb);
   int16_t x1, y1; uint16_t w, h;
   canvas->getTextBounds(total, 0, 0, &x1, &y1, &w, &h);
-  canvas->setCursor(screenW / 2 - w / 2, SY(172));
+  canvas->setCursor(CX() - w / 2, SY(172));
   canvas->print(total);
 }
 
@@ -501,27 +568,27 @@ void drawPageNAS() {
     const char *msg = "No NAS pool detected";
     int16_t x1, y1; uint16_t w, h;
     canvas->getTextBounds(msg, 0, 0, &x1, &y1, &w, &h);
-    canvas->setCursor(screenW / 2 - w / 2, SY(115));
+    canvas->setCursor(CX() - w / 2, SY(115));
     canvas->print(msg);
     return;
   }
   char big[16];
   snprintf(big, sizeof(big), "%d%%", (int)round(stats.nas_pct));
-  drawRingGauge(screenW / 2, SY(105), 88, 74, stats.nas_pct, 0x9F7BC0, big, "NAS USED");
+  drawRingGauge(CX(), SY(105), 88, 74, stats.nas_pct, 0x9F7BC0, big, "NAS USED");
   canvas->setTextColor(COL_TEXT);
   canvas->setTextSize(2);
   char total[24];
   snprintf(total, sizeof(total), "%.0f GB", stats.nas_total_gb);
   int16_t x1, y1; uint16_t w, h;
   canvas->getTextBounds(total, 0, 0, &x1, &y1, &w, &h);
-  canvas->setCursor(screenW / 2 - w / 2, SY(172));
+  canvas->setCursor(CX() - w / 2, SY(172));
   canvas->print(total);
 }
 
 void drawPageNet() {
   canvas->setTextColor(COL_SUBTEXT);
   canvas->setTextSize(1);
-  canvas->setCursor(screenW / 2 - 28, SY(50));
+  canvas->setCursor(CX() - 28, SY(50));
   canvas->print("NETWORK");
 
   auto fmtRate = [](float mbps, char *out, size_t n) {
@@ -536,22 +603,22 @@ void drawPageNet() {
 
   canvas->setTextColor(COL_TEAL);
   canvas->setTextSize(1);
-  canvas->setCursor(screenW / 2 - 20, SY(90));
+  canvas->setCursor(CX() - 20, SY(90));
   canvas->print("DOWN");
   canvas->setTextColor(COL_TEXT);
   canvas->setTextSize(2);
   canvas->getTextBounds(rx, 0, 0, &x1, &y1, &w, &h);
-  canvas->setCursor(screenW / 2 - w / 2, SY(105));
+  canvas->setCursor(CX() - w / 2, SY(105));
   canvas->print(rx);
 
   canvas->setTextColor(COL_TEAL_2);
   canvas->setTextSize(1);
-  canvas->setCursor(screenW / 2 - 12, SY(150));
+  canvas->setCursor(CX() - 12, SY(150));
   canvas->print("UP");
   canvas->setTextColor(COL_TEXT);
   canvas->setTextSize(2);
   canvas->getTextBounds(tx, 0, 0, &x1, &y1, &w, &h);
-  canvas->setCursor(screenW / 2 - w / 2, SY(165));
+  canvas->setCursor(CX() - w / 2, SY(165));
   canvas->print(tx);
 }
 
@@ -560,7 +627,7 @@ void drawPageTemp() {
   uint16_t color = stats.cpu_temp_c >= 75 ? COL_WARN : COL_TEAL;
   char big[16];
   snprintf(big, sizeof(big), "%.0fC", stats.cpu_temp_c);
-  drawRingGauge(screenW / 2, SY(105), 88, 74, pct, color, big, "CPU TEMP");
+  drawRingGauge(CX(), SY(105), 88, 74, pct, color, big, "CPU TEMP");
 }
 
 void drawPage(const char *pageId) {
@@ -597,6 +664,8 @@ void drawCurrentScreen() {
 bool touchIsDown = false;
 int touchStartX = 0;
 int touchLastX = 0;
+int touchStartY = 0;
+int touchLastY = 0;
 const int SWIPE_THRESHOLD_PX = 40;
 
 // Returns GESTURE_LEFT/GESTURE_RIGHT exactly once, at the moment a swipe
@@ -610,11 +679,15 @@ int pollTouchSwipe() {
   uint8_t fingerNum = Wire.read();
   uint8_t xh = Wire.read();
   uint8_t xl = Wire.read();
-  Wire.read(); // yh -- unused, we only care about horizontal swipes
-  Wire.read(); // yl -- unused
+  uint8_t yh = Wire.read();
+  uint8_t yl = Wire.read();
 
   bool isDown = fingerNum > 0;
+  // Both axes now: the touch chip reports PANEL-native coordinates, so
+  // when the display is mounted rotated, "left/right" on the visible
+  // screen may be the panel's Y axis. mapSwipeDeltaX() sorts that out.
   int x = ((xh & 0x0F) << 8) | xl;
+  int y = ((yh & 0x0F) << 8) | yl;
   if (isDown) lastTouchMs = millis();  // screensaver idle timer
 
   int result = GESTURE_NONE;
@@ -623,13 +696,17 @@ int pollTouchSwipe() {
     touchIsDown = true;
     touchStartX = x;
     touchLastX = x;
+    touchStartY = y;
+    touchLastY = y;
   } else if (isDown && touchIsDown) {
     // Still touching -- track the latest position
     touchLastX = x;
+    touchLastY = y;
   } else if (!isDown && touchIsDown) {
     // Finger just released -- decide if it was a swipe
     touchIsDown = false;
-    int deltaX = touchLastX - touchStartX;
+    int deltaX = mapSwipeDeltaX(touchLastX - touchStartX,
+                                touchLastY - touchStartY, config.rotation);
     if (deltaX <= -SWIPE_THRESHOLD_PX) result = GESTURE_LEFT;
     else if (deltaX >= SWIPE_THRESHOLD_PX) result = GESTURE_RIGHT;
   }
@@ -646,8 +723,7 @@ int pollTouchSwipe() {
 
 void drawScreensaver() {
   canvas->fillScreen(COL_BG);
-  int nowLocal = extrapolateLocalMin(lastUtcMin, lastUtcAtMs, millis(),
-                                     config.tzOffsetMin);
+  int nowLocal = localNowMin();
   if (nowLocal >= 0) {
     char timeStr[6];
     snprintf(timeStr, sizeof(timeStr), "%d:%02d", nowLocal / 60, nowLocal % 60);
@@ -657,10 +733,10 @@ void drawScreensaver() {
     canvas->getTextBounds(timeStr, 0, 0, &x1, &y1, &w, &h);
     // Drift: derive the position from the minute value itself, keeping
     // the text fully on screen. A simple hash walks it around.
-    int spanX = screenW - (int)w - 8;
-    int spanY = screenH - (int)h - 8;
-    int px = 4 + (nowLocal * 37) % (spanX > 0 ? spanX : 1);
-    int py = 4 + (nowLocal * 53) % (spanY > 0 ? spanY : 1);
+    int spanX = LW - (int)w - 8;
+    int spanY = LH - (int)h - 8;
+    int px = LX + 4 + (nowLocal * 37) % (spanX > 0 ? spanX : 1);
+    int py = LY + 4 + (nowLocal * 53) % (spanY > 0 ? spanY : 1);
     canvas->setCursor(px, py + h);
     canvas->print(timeStr);
   }
@@ -733,6 +809,21 @@ void handleSetConfig(JsonDocument &doc) {
     const char *s = doc["saver_style"];
     if (strcmp(s, "clock") == 0 || strcmp(s, "blank") == 0) strcpy(config.saverStyle, s);
   }
+  bool displayGeomChanged = false;
+  if (doc["rotation"].is<int>()) {
+    int r = doc["rotation"];
+    if ((r == 0 || r == 90 || r == 180 || r == 270) && r != config.rotation) {
+      config.rotation = r;
+      displayGeomChanged = true;
+    }
+  }
+  if (doc["square_fit"].is<bool>()) {
+    bool sq = doc["square_fit"];
+    if (sq != config.squareFit) {
+      config.squareFit = sq;
+      displayGeomChanged = true;
+    }
+  }
   // Settings may have changed what the backlight should be doing right
   // now (e.g. night mode just enabled mid-window, or saver turned off
   // while active) -- recompute immediately rather than waiting for the
@@ -748,9 +839,11 @@ void handleSetConfig(JsonDocument &doc) {
   // Ack so the settings page can confirm success
   Serial.println("{\"ack\":\"set_config\",\"ok\":true}");
 
-  if (boardChanged || !wasConfigured) {
-    // Pins/driver differ per board -- cleanest to just restart into setup()
-    // with the new profile rather than trying to hot-swap display objects.
+  if (boardChanged || displayGeomChanged || !wasConfigured) {
+    // Pins/driver differ per board, and rotation / square-fit need the
+    // display and canvas re-created with different dimensions -- cleanest
+    // to just restart into setup() with the new settings rather than
+    // trying to hot-swap display objects.
     // Also always restart on the very first-ever config, since an
     // unconfigured device never called initDisplay() at all (see setup()).
     Serial.println("{\"info\":\"restarting to apply configuration\"}");
@@ -785,6 +878,8 @@ void handleGetConfig() {
   doc["saver_enabled"] = config.saverEnabled;
   doc["saver_minutes"] = config.saverMinutes;
   doc["saver_style"] = config.saverStyle;
+  doc["rotation"] = config.rotation;
+  doc["square_fit"] = config.squareFit;
   doc["has_touch"] = BOARD_PROFILES[config.boardId].hasTouch;
   doc["firmware_version"] = FIRMWARE_VERSION;
 
@@ -850,6 +945,13 @@ void handleLine(const String &line) {
     if (m >= 0 && m < 1440) {
       lastUtcMin = m;
       lastUtcAtMs = millis();
+    }
+  }
+  if (doc["local_min"].is<int>()) {
+    int m = doc["local_min"];
+    if (m >= 0 && m < 1440) {
+      lastLocalMin = m;
+      lastLocalAtMs = millis();
     }
   }
   stats.last_update_ms = millis();
