@@ -157,6 +157,8 @@ class FakeDockerHandler(BaseHTTPRequestHandler):
             return self._json(404, {"message": "No such image"})
         if re.match(r"/v1\.\d+/containers/json", self.path):
             return self._json(200, list(st.containers.values()))
+        if re.match(r"/v1\.\d+/info", self.path):
+            return self._json(200, {"Name": "ZimaBlade"})
         self._json(404, {"message": f"fake daemon: unhandled GET {self.path}"})
 
     def do_POST(self):
@@ -762,6 +764,21 @@ class TestServerEndpoints(UpdaterTestBase):
             self.assertEqual(tz, "America/Chicago")  # unchanged
         finally:
             self.server.detect_port = orig
+
+    def test_status_includes_host_name(self):
+        self.server._host_name_cache["fetched"] = False  # bust cache
+        d = self.app.get("/api/status").get_json()
+        self.assertEqual(d["hostname"], "ZimaBlade")
+        # socket missing -> graceful None
+        self.server._host_name_cache["fetched"] = False
+        orig = self.server.DOCKER_SOCK
+        self.server.DOCKER_SOCK = "/nonexistent.sock"
+        try:
+            d = self.app.get("/api/status").get_json()
+            self.assertIsNone(d["hostname"])
+        finally:
+            self.server.DOCKER_SOCK = orig
+            self.server._host_name_cache["fetched"] = False
 
 
 if __name__ == "__main__":

@@ -308,12 +308,41 @@
   .modal-notes-body .card-desc { margin-top: 2px; }
   .modal-actions { display: flex; gap: 12px; justify-content: flex-end; align-items: center; margin-top: 22px; }
 
-  /* Device preview glyph (wizard-style frame around a live-ish mock) */
+  /* Device card: grid so the preview can sit beside the text on desktop
+     and slide between the name and the meta lines on phones. */
+  .device-card {
+    display: grid;
+    grid-template-areas: "name preview" "meta preview";
+    grid-template-columns: 1fr auto;
+    grid-template-rows: auto 1fr;
+    column-gap: 24px;
+  }
+  .device-card .device-meta { margin-top: 4px; }
+
+  /* Device preview glyph (wizard-style frame around a live-ish mock).
+     At least as wide as the uniform buttons -- front and center. */
   .device-preview {
     background: #08141a; border: 2px solid #4a6a6a;
     display: flex; align-items: center; justify-content: center;
     overflow: hidden; flex-shrink: 0;
+    width: 172px;
+    justify-self: end;
+    align-self: center;
   }
+  .device-preview.tall { height: 200px; border-radius: 16px; }
+  .device-preview.square { height: 172px; border-radius: 10px; }
+  .device-preview svg { width: 94%; height: auto; }
+
+  /* Health pill, ZimaOS-style */
+  .pill {
+    display: inline-block; padding: 2px 10px; border-radius: 999px;
+    border: 1.5px solid currentColor; font-size: 12px; font-weight: 600;
+    line-height: 1.6;
+  }
+  .pill.ok { color: #55d187; }
+  .pill.warn { color: var(--warn); }
+  .pill.err { color: var(--err); }
+  .health-line { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 
   /* General page: every action button the same footprint */
   .btn-uniform { min-width: 168px; }
@@ -336,6 +365,30 @@
   .loading, .error-banner { color: var(--subtext); font-size: 14px; padding: 20px 0; }
   .error-banner { color: var(--err); }
   .error-banner a { color: var(--teal); }
+
+  /* General tab on phones -- lives at the END of the stylesheet because
+     it overrides base rules (same specificity: source order decides).
+     Device card reorders to name -> preview -> meta with a modest
+     centered preview so Software Version stays above the fold; the other
+     cards stack full-width text over their button. */
+  @media (max-width: 860px) {
+    .device-card {
+      grid-template-areas: "name" "preview" "meta";
+      grid-template-columns: 1fr;
+      row-gap: 14px;
+    }
+    .device-preview { justify-self: center; width: 140px; }
+    .device-preview.tall { height: 163px; }
+    .device-preview.square { height: 140px; }
+    .tab-panel[data-panel="general"] .card-header {
+      flex-direction: column;
+      align-items: stretch;
+      gap: 14px;
+    }
+    .tab-panel[data-panel="general"] .card-header .btn {
+      align-self: flex-start;
+    }
+  }
 </style>
 </head>
 <body>
@@ -373,17 +426,15 @@
       <div id="general-error" class="error-banner" style="display:none;"></div>
       <div id="general-content" style="display:none;">
 
-        <div class="card">
-          <div class="card-header">
-            <div>
-              <div class="card-title" id="model-name">—</div>
-              <div class="card-desc" id="model-sku">—</div>
-              <div class="card-desc" id="health-status" style="margin-top:10px;">—</div>
-              <div class="card-desc" id="firmware-version" style="margin-top:10px;">—</div>
-              <div class="card-desc" id="update-status" style="margin-top:2px;"></div>
-              <button class="btn btn-uniform" id="update-btn" style="display:none; margin-top:14px;">Update Firmware</button>
-            </div>
-            <div class="device-preview" id="device-preview" title="A little preview of what's on the screen right now"></div>
+        <div class="card device-card">
+          <div class="card-title" id="model-name" style="grid-area: name;">—</div>
+          <div class="device-preview" id="device-preview" style="grid-area: preview;" title="A little preview of what's on the screen right now"></div>
+          <div class="device-meta" style="grid-area: meta;">
+            <div class="card-desc" id="model-sku">—</div>
+            <div class="card-desc" id="health-status" style="margin-top:10px;">—</div>
+            <div class="card-desc" id="firmware-version" style="margin-top:10px;">—</div>
+            <div class="card-desc" id="update-status" style="margin-top:2px;"></div>
+            <button class="btn btn-uniform" id="update-btn" style="display:none; margin-top:14px;">Update Firmware</button>
           </div>
         </div>
 
@@ -1030,11 +1081,10 @@
       // Wizard-style device glyph with a mock of the first enabled page
       // inside -- a little "what's on the screen" preview.
       const dp = document.getElementById('device-preview');
-      dp.style.width = '88px';
-      dp.style.height = dev.tall ? '102px' : '88px';
-      dp.style.borderRadius = dev.tall ? '16px' : '8px';
+      dp.classList.toggle('tall', dev.tall);
+      dp.classList.toggle('square', !dev.tall);
       const firstPage = (cfg.pages && cfg.pages[0]) || 'temp';
-      dp.innerHTML = previewSVG(firstPage, 84);
+      dp.innerHTML = previewSVG(firstPage, 160);
       document.getElementById('firmware-version').textContent =
         'Firmware: v' + (cfg.firmware_version || 'Unknown');
 
@@ -1057,17 +1107,29 @@
         updateStatus.style.color = 'var(--subtext)';
       }
 
+      // ZimaOS-style health pill: [Healthy] · Connected to ZimaBlade
       const healthEl = document.getElementById('health-status');
+      healthEl.classList.add('health-line');
+      healthEl.textContent = '';
+      const pill = document.createElement('span');
+      const detail = document.createElement('span');
+      const host = statusData.hostname;
       if (statusData.collector_running && statusData.age_seconds < 10) {
-        healthEl.textContent = 'Connected -- data updating normally';
-        healthEl.style.color = 'var(--teal)';
+        pill.className = 'pill ok';
+        pill.textContent = 'Healthy';
+        detail.textContent = '\u00b7 Connected' + (host ? ' to ' + host : '');
       } else if (statusData.collector_running) {
-        healthEl.textContent = 'Connected, but data is ' + Math.round(statusData.age_seconds) + 's old';
-        healthEl.style.color = 'var(--warn)';
+        pill.className = 'pill warn';
+        pill.textContent = 'Stale';
+        detail.textContent = '\u00b7 Data is ' + Math.round(statusData.age_seconds) + 's old';
       } else {
-        healthEl.textContent = 'Not connected';
-        healthEl.style.color = 'var(--err)';
+        pill.className = 'pill err';
+        pill.textContent = 'Offline';
+        detail.textContent = '\u00b7 Screen not connected';
       }
+      detail.style.color = 'var(--subtext)';
+      healthEl.appendChild(pill);
+      healthEl.appendChild(detail);
       document.getElementById('general-loading').style.display = 'none';
       document.getElementById('general-content').style.display = 'block';
 

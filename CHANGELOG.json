@@ -2,6 +2,15 @@
   "_comment": "Human-readable changelog for the dashboard's About tab -- written for people, not commit archaeologists. The dashboard fetches this from GitHub at page load (baked copy as fallback), so add an entry here with each release and every install sees it. Newest first. Dates are YYYY-MM-DD.",
   "entries": [
     {
+      "version": "0.8.9.9",
+      "date": "2026-07-08",
+      "title": "General tab, comfier",
+      "notes": [
+        "The screen preview on the General tab is now front and center at a proper size, and device health shows as a tidy status pill -- including which ZimaBoard it's connected to.",
+        "On phones, the General tab breathes: the preview slides in under the device name, and every card's button gets its own row."
+      ]
+    },
+    {
       "version": "0.8.9.8",
       "date": "2026-07-08",
       "title": "A friendlier front page",

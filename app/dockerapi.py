@@ -115,6 +115,11 @@ class DockerClient:
         finally:
             conn.close()
 
+    def info(self):
+        """Daemon/system info -- notably 'Name', the HOST's hostname
+        (e.g. 'ZimaBlade'), which a container can't otherwise learn."""
+        return self._request("GET", "/info")
+
     def inspect_container(self, id_or_name):
         return self._request("GET", f"/containers/{id_or_name}/json")
 

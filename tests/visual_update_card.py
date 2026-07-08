@@ -30,7 +30,7 @@ BASE_CONFIG = {"ok": True, "config": {
     "saver_enabled": True, "saver_minutes": 10, "saver_style": "clock"}}
 LAST_CONFIGURE_BODY = {}
 BASE_STATUS = {"ok": True, "collector_running": True, "age_seconds": 1.0,
-               "last_stats": {}}
+               "last_stats": {}, "hostname": "ZimaBlade"}
 FW_INFO = {"ok": True, "bundled_version": "1.1.0"}
 
 

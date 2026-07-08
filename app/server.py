@@ -234,10 +234,33 @@ def serve_firmware(filename):
 # Status
 # ---------------------------------------------------------------------
 
+# The ZimaBlade's hostname, learned via `docker info` over the socket
+# (the container's own hostname is just its container ID). Fetched once
+# and cached -- hostnames don't change mid-session, and the dashboard
+# polls /api/status frequently.
+_host_name_cache = {"fetched": False, "name": None}
+
+
+def get_host_name():
+    if not _host_name_cache["fetched"]:
+        _host_name_cache["fetched"] = True
+        _host_name_cache["name"] = None
+        try:
+            if os.path.exists(DOCKER_SOCK):
+                info = DockerClient(DOCKER_SOCK).info()
+                name = (info or {}).get("Name")
+                if isinstance(name, str) and name:
+                    _host_name_cache["name"] = name
+        except (DockerAPIError, OSError):
+            pass  # no socket / daemon hiccup -> UI just omits the name
+    return _host_name_cache["name"]
+
+
 @app.route("/api/status")
 def status():
     if not STATUS_FILE.exists():
-        return jsonify({"collector_running": False, "last_stats": None})
+        return jsonify({"collector_running": False, "last_stats": None,
+                        "hostname": get_host_name()})
     try:
         data = json.loads(STATUS_FILE.read_text())
     except Exception:
@@ -247,6 +270,7 @@ def status():
         "collector_running": age < 10,
         "last_stats": data,
         "age_seconds": age,
+        "hostname": get_host_name(),
     })
 
 
