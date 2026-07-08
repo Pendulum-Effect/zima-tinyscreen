@@ -303,6 +303,49 @@ def api_configure():
         collector.resume()
 
 
+@app.route("/api/reset_device", methods=["POST"])
+def api_reset_device():
+    """Factory-reset the display: send clear_config over serial, which
+    wipes the device's stored settings and reboots it into the same
+    hands-off unconfigured state as a fresh flash. The dashboard then
+    walks the user back into the first-time wizard. Same
+    pause-collector / exclusive-serial discipline as /api/configure --
+    these two must never run concurrently with the collector's writes.
+    """
+    port = detect_port()
+    if not port:
+        return jsonify({"ok": False, "error": "No ESP32 serial device found. Is it plugged in?"}), 400
+
+    collector.pause()
+    ser = None
+    try:
+        ser = RawSerialPort(port, baudrate=115200, timeout=2)
+        time.sleep(2)  # let the board's USB settle if it just reset
+
+        ser.write(b'{"cmd":"clear_config"}\n')
+
+        acked = False
+        buf = b""
+        deadline = time.time() + 4
+        while time.time() < deadline and not acked:
+            chunk = ser.read(256)
+            if chunk:
+                buf += chunk
+                if b'"ack":"clear_config"' in buf:
+                    acked = True
+
+        return jsonify({"ok": True, "acked": acked})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+    finally:
+        if ser:
+            try:
+                ser.close()
+            except Exception:
+                pass
+        collector.resume()
+
+
 @app.route("/api/app_version", methods=["GET"])
 def api_app_version():
     """Stage 1 of the app/container updater: detection only, no auto-apply

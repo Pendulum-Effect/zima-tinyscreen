@@ -26,6 +26,7 @@ class Preferences {
  public:
   bool begin(const char *, bool = false) { return true; }
   void end() {}
+  void clear() { str_.clear(); int_.clear(); bool_.clear(); }
   bool getBool(const char *k, bool d) { return bool_.count(k) ? bool_[k] : d; }
   int getInt(const char *k, int d) { return int_.count(k) ? int_[k] : d; }
   String getString(const char *k, const char *d) { return String(str_.count(k) ? str_[k].c_str() : d); }

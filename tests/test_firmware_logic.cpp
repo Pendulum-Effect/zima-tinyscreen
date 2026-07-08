@@ -67,6 +67,26 @@ int main() {
   lastUtcMin = 12 * 60; config.tzOffsetMin = 660;
   CHECK(effectiveBrightnessPct() == 5);
 
+  // ---- clear_config: full reset round-trip through the real code ----
+  // Configure -> save -> clear -> reload must land back at factory
+  // defaults with configured=false (the hands-off wizard-waiting state).
+  config.configured = true;
+  config.boardId = 1;
+  config.nightEnabled = true;
+  config.brightness = 42;
+  strcpy(config.pages[0], "cpu"); config.numPages = 1;
+  saveConfig();
+  pendingRestart = false;
+  handleClearConfig();
+  CHECK(pendingRestart);                       // restart scheduled
+  config = Config{};                           // simulate the reboot's fresh state
+  loadConfig();
+  CHECK(!config.configured);                   // back to unconfigured
+  CHECK(config.boardId == 0);
+  CHECK(!config.nightEnabled);
+  CHECK(config.brightness == 100);
+  CHECK(config.numPages == 1 && strcmp(config.pages[0], "temp") == 0);
+
   printf("ALL FIRMWARE LOGIC TESTS PASS\n");
   return 0;
 }

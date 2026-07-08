@@ -36,7 +36,7 @@
 // "Software Version" field via the get_config command below. No
 // auto-update-checking mechanism exists yet (that's a separate, not-yet
 // -built feature) -- this just answers "what's currently on my device."
-#define FIRMWARE_VERSION "1.1.0"
+#define FIRMWARE_VERSION "1.2.0"
 
 // Note: screen dimensions are NOT fixed -- board 1 (1.69") is 240x280,
 // taller than board 0's 240x240. See screenW/screenH globals, set from
@@ -792,6 +792,22 @@ void handleGetConfig() {
   Serial.println();
 }
 
+// Factory-reset the stored configuration: wipe the NVS namespace and
+// restart. loadConfig() after the reboot finds nothing and leaves the
+// device in the deliberate hands-off unconfigured state (no display
+// init, no GPIO touched -- see setup()), exactly like a fresh flash,
+// waiting for the first-time wizard's set_config. The dashboard's Reset
+// Device button drives this via POST /api/reset_device.
+void handleClearConfig() {
+  prefs.begin("tinyscreen", false);
+  prefs.clear();
+  prefs.end();
+  Serial.println("{\"ack\":\"clear_config\",\"ok\":true}");
+  Serial.println("{\"info\":\"configuration erased -- restarting into setup mode\"}");
+  pendingRestart = true;
+  restartAtMs = millis() + 300; // let the ack flush first, same as set_config
+}
+
 void handleLine(const String &line) {
   JsonDocument doc;
   DeserializationError err = deserializeJson(doc, line);
@@ -805,6 +821,10 @@ void handleLine(const String &line) {
   }
   if (doc["cmd"].is<const char *>() && strcmp(doc["cmd"], "get_config") == 0) {
     handleGetConfig();
+    return;
+  }
+  if (doc["cmd"].is<const char *>() && strcmp(doc["cmd"], "clear_config") == 0) {
+    handleClearConfig();
     return;
   }
 

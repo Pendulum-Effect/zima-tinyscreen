@@ -109,6 +109,9 @@ class Stub(BaseHTTPRequestHandler):
         self._send({"ok": False}, 404)
 
     def do_POST(self):
+        if self.path == "/api/reset_device":
+            SCENARIO["reset_called"] = True
+            return self._send({"ok": True, "acked": True})
         if self.path == "/api/configure":
             length = int(self.headers.get("Content-Length") or 0)
             body = json.loads(self.rfile.read(length)) if length else {}

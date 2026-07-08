@@ -188,8 +188,9 @@
             <div>
               <div class="card-title">Reset Device</div>
               <div class="card-desc">Having issues? Start the first-time setup process.</div>
+              <div class="card-desc" id="reset-status" style="margin-top:2px; display:none;"></div>
             </div>
-            <button class="btn" disabled title="Coming soon">Reset</button>
+            <button class="btn" id="reset-device-btn">Reset</button>
           </div>
         </div>
 
@@ -967,6 +968,54 @@
       });
     }
   }
+
+  // Reset Device: erases the display's saved settings (clear_config over
+  // serial) and reboots it into fresh-flash setup mode, then walks the
+  // user into the first-time wizard. Same two-click arm/confirm pattern
+  // as Update App -- an erase should never ride on a single misclick.
+  document.getElementById('reset-device-btn').addEventListener('click', async function () {
+    const btn = this;
+    const statusEl = document.getElementById('reset-status');
+    if (btn.dataset.armed !== '1') {
+      btn.dataset.armed = '1';
+      btn.textContent = 'Confirm — erases settings';
+      setTimeout(() => {
+        btn.dataset.armed = '';
+        btn.textContent = 'Reset';
+      }, 6000);
+      return;
+    }
+    btn.dataset.armed = '';
+    btn.disabled = true;
+    btn.textContent = 'Resetting…';
+    statusEl.style.display = 'block';
+    statusEl.style.color = 'var(--subtext)';
+    statusEl.textContent = 'Erasing device settings…';
+    let data;
+    try {
+      const res = await fetch('/api/reset_device', { method: 'POST' });
+      data = await res.json();
+    } catch (e) {
+      data = { ok: false, error: 'Request failed: ' + e.message };
+    }
+    if (data.ok && data.acked) {
+      statusEl.style.color = 'var(--teal)';
+      statusEl.textContent = 'Device reset — taking you to setup…';
+      setTimeout(() => { window.location = 'wizard.html'; }, 1500);
+    } else if (data.ok) {
+      // Command sent but no ack seen -- the device may still have reset
+      // (native-USB boards re-enumerate mid-reply sometimes). Let the
+      // user decide from the wizard rather than leaving them stranded.
+      statusEl.style.color = 'var(--teal)';
+      statusEl.textContent = 'Reset sent (no confirmation seen) — taking you to setup…';
+      setTimeout(() => { window.location = 'wizard.html'; }, 2500);
+    } else {
+      statusEl.style.color = '#e8a87c';
+      statusEl.textContent = 'Reset failed: ' + (data.error || 'unknown error');
+      btn.disabled = false;
+      btn.textContent = 'Reset';
+    }
+  });
 
   async function saveConfig(statusEl, saveBtn) {
     const finalPages = pageOrder.filter(id => enabledPages.has(id));

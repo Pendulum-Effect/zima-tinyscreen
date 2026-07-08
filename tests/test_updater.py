@@ -662,6 +662,66 @@ class TestServerEndpoints(UpdaterTestBase):
         self.assertEqual(full["tz_offset_min"], -300)
         self.assertEqual(full["saver_style"], "clock")
 
+    def test_reset_device_over_real_pty(self):
+        import pty
+        import threading
+
+        master, slave = pty.openpty()
+        slave_path = os.ttyname(slave)
+
+        def fake_device():
+            buf = b""
+            deadline = time.time() + 8
+            while time.time() < deadline:
+                try:
+                    chunk = os.read(master, 256)
+                except OSError:
+                    return
+                if not chunk:
+                    continue
+                buf += chunk
+                if b'"cmd":"clear_config"' in buf:
+                    os.write(master, b'{"ack":"clear_config","ok":true}\n')
+                    return
+
+        t = threading.Thread(target=fake_device, daemon=True)
+        t.start()
+
+        # Point the server at our pty "device", neutralize collector
+        # pause/resume and the USB settle delay to keep the test fast.
+        orig_detect = self.server.detect_port
+        orig_sleep = self.server.time.sleep
+        orig_pause = self.server.collector.pause
+        orig_resume = self.server.collector.resume
+        pauses = []
+        self.server.detect_port = lambda: slave_path
+        self.server.time.sleep = lambda s: None
+        self.server.collector.pause = lambda: pauses.append("pause")
+        self.server.collector.resume = lambda: pauses.append("resume")
+        try:
+            r = self.app.post("/api/reset_device")
+            d = r.get_json()
+            self.assertTrue(d["ok"], d)
+            self.assertTrue(d["acked"], "device ack never seen")
+            self.assertEqual(pauses, ["pause", "resume"])
+        finally:
+            self.server.detect_port = orig_detect
+            self.server.time.sleep = orig_sleep
+            self.server.collector.pause = orig_pause
+            self.server.collector.resume = orig_resume
+            os.close(master)
+            os.close(slave)
+
+    def test_reset_device_no_port(self):
+        orig = self.server.detect_port
+        self.server.detect_port = lambda: None
+        try:
+            r = self.app.post("/api/reset_device")
+            self.assertEqual(r.status_code, 400)
+            self.assertIn("No ESP32", r.get_json()["error"])
+        finally:
+            self.server.detect_port = orig
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
