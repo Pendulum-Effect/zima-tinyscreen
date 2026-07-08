@@ -17,6 +17,12 @@ if [ ! -f "$CERT_DIR/cert.pem" ] || [ ! -f "$CERT_DIR/key.pem" ]; then
     -addext "subjectAltName=DNS:localhost,IP:127.0.0.1"
 fi
 
+# --- Update-state directory ------------------------------------------------
+# Bind-mounted from AppData in a proper install (so update outcomes survive
+# the container swap); created locally as a fallback so a dev run without
+# the mount still works.
+mkdir -p "${TINYSCREEN_STATE_DIR:-/opt/tinyscreen/state}"
+
 # --- Web server + collector lifecycle -------------------------------------
 # server.py now owns the stats collector's lifecycle itself (spawning it,
 # restarting it if it dies, and pausing/resuming it around flash/configure

@@ -34,11 +34,16 @@ from pathlib import Path
 
 from flask import Flask, jsonify, request, send_from_directory
 
+from dockerapi import DockerClient, DockerAPIError
+
 APP_DIR = Path(__file__).resolve().parent
 WEBFLASHER_DIR = APP_DIR.parent / "webflasher"
 FIRMWARE_DIR = WEBFLASHER_DIR / "firmware"
 COLLECTOR_SCRIPT = APP_DIR.parent / "collector" / "stats_collector.py"
 STATUS_FILE = Path(os.environ.get("TINYSCREEN_STATUS_FILE", "/tmp/tinyscreen_status.json"))
+DOCKER_SOCK = os.environ.get("TINYSCREEN_DOCKER_SOCK", "/var/run/docker.sock")
+STATE_DIR = Path(os.environ.get("TINYSCREEN_STATE_DIR", "/opt/tinyscreen/state"))
+UPDATE_STATE_FILE = STATE_DIR / "update_state.json"
 
 app = Flask(__name__, static_folder=None)
 
@@ -302,6 +307,19 @@ def api_app_version():
     except (FileNotFoundError, OSError, json.JSONDecodeError, KeyError):
         return jsonify({"ok": False, "error": "No app_version.json baked into this image."})
 
+    # The human-facing version string (repo-root VERSION file, e.g.
+    # "0.8.6.2", stamped into app_version.json at CI time). Purely for
+    # display -- update DETECTION still keys off the commit SHA, which is
+    # unambiguous and can't be forgotten the way a manual version bump
+    # can. Older images predate this field, hence .get().
+    current_version = baked_in.get("version")
+
+    # update_ready: whether one-click self-update (Stage 2) can actually
+    # run on this deployment -- i.e. the Docker socket is mounted. If an
+    # update is available but this is False, the dashboard tells the user
+    # a remove+reinstall with the new compose config is needed (once).
+    update_ready = os.path.exists(DOCKER_SOCK)
+
     api_url = f"https://api.github.com/repos/{repo}/commits/{branch}"
     try:
         req = urllib.request.Request(api_url, headers={"Accept": "application/vnd.github+json"})
@@ -315,18 +333,211 @@ def api_app_version():
         # pattern as the firmware update check.
         return jsonify({
             "ok": True,
+            "version": current_version,
             "current_commit": current_commit,
             "latest_commit": None,
             "update_available": False,
+            "update_ready": update_ready,
             "note": f"Could not reach GitHub: {e}",
         })
 
+    # Best-effort lookup of the LATEST version string (raw VERSION file on
+    # GitHub), so "Update available" can name the version it would update
+    # TO. Isolated failure domain: commits API succeeding but raw.github
+    # failing just means we show the short SHA instead.
+    latest_version = None
+    try:
+        raw_url = f"https://raw.githubusercontent.com/{repo}/{branch}/VERSION"
+        with urllib.request.urlopen(raw_url, timeout=5) as resp:
+            latest_version = resp.read().decode("utf-8").strip() or None
+    except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError):
+        pass
+
     return jsonify({
         "ok": True,
+        "version": current_version,
+        "latest_version": latest_version,
         "current_commit": current_commit,
         "latest_commit": latest_commit,
         "update_available": current_commit != latest_commit,
+        "update_ready": update_ready,
     })
+
+
+# ---------------------------------------------------------------------
+# Stage 2 of the app updater: one-click self-update via the Docker socket
+# ---------------------------------------------------------------------
+#
+# A container cannot replace itself (stopping ourselves to free ports
+# 8989/8990 kills this very process before it could start the
+# replacement), so the actual swap is delegated to a short-lived helper
+# container -- spawned from the NEWLY PULLED image, auto-removed the
+# moment it finishes, alive for ~10-20 seconds total. NOT the Watchtower
+# model (a permanent second service polling in the background); the
+# helper only ever exists during a user-initiated update click. See
+# self_update_helper.py for the swap/validate/rollback logic itself.
+
+_update_lock = threading.Lock()
+_update_thread = None
+
+
+def _write_update_state(state):
+    state["updated_at"] = time.time()
+    try:
+        STATE_DIR.mkdir(parents=True, exist_ok=True)
+        tmp = UPDATE_STATE_FILE.with_suffix(".tmp")
+        tmp.write_text(json.dumps(state, indent=2))
+        os.replace(tmp, UPDATE_STATE_FILE)
+    except OSError as e:
+        print(f"[updater] WARNING: could not write update state: {e}", file=sys.stderr)
+
+
+def _detect_own_container_id(client):
+    """Figure out which container WE are, so the helper knows what to
+    replace. Several fallbacks, most-reliable first:
+      1. /proc/self/mountinfo -- the container's writable layer paths
+         embed the full 64-hex container ID.
+      2. $HOSTNAME -- Docker sets the hostname to the short container ID
+         unless the compose file overrides it (ours doesn't).
+      3. The compose-pinned container name 'tinyscreen-dashboard'.
+    Whatever we find is verified with an actual inspect before use.
+    """
+    import re
+    candidates = []
+    try:
+        mountinfo = Path("/proc/self/mountinfo").read_text()
+        m = re.search(r"/(?:docker|moby)/containers/([0-9a-f]{64})/", mountinfo)
+        if m:
+            candidates.append(m.group(1))
+    except OSError:
+        pass
+    hostname = os.environ.get("HOSTNAME", "")
+    if re.fullmatch(r"[0-9a-f]{12,64}", hostname):
+        candidates.append(hostname)
+    candidates.append("tinyscreen-dashboard")
+
+    for cand in candidates:
+        try:
+            info = client.inspect_container(cand)
+            return info["Id"], info
+        except (DockerAPIError, KeyError):
+            continue
+    return None, None
+
+
+def _run_update(image_ref, own_id, own_info):
+    """Background worker for /api/update_app: pull the new image, then
+    spawn the helper container that performs the actual swap (which will
+    kill this very process partway through -- that's the design)."""
+    client = DockerClient(DOCKER_SOCK)
+    state = {"status": "pulling", "target_image": image_ref,
+             "started_at": time.time(),
+             "log": [f"[{time.strftime('%H:%M:%S')}] pulling {image_ref}..."]}
+    _write_update_state(state)
+    try:
+        client.pull_image(image_ref)
+        state["log"].append(f"[{time.strftime('%H:%M:%S')}] pull complete")
+        state["status"] = "launching_helper"
+        _write_update_state(state)
+
+        # The helper needs the state dir too (to keep reporting progress
+        # after this container dies); reuse the same HOST path this
+        # container has it bind-mounted from rather than hardcoding a
+        # /DATA path that could differ between installs. The lookup and
+        # bind target use the CANONICAL in-container path (the helper
+        # always reads/writes its default TS_STATE_FILE there), NOT this
+        # server's STATE_DIR, which env can relocate independently.
+        canonical_state_dest = "/opt/tinyscreen/state"
+        state_host_path = None
+        for m in own_info.get("Mounts", []):
+            if m.get("Destination") == canonical_state_dest:
+                state_host_path = m.get("Source")
+                break
+        binds = [f"{DOCKER_SOCK}:/var/run/docker.sock"]
+        if state_host_path:
+            binds.append(f"{state_host_path}:{canonical_state_dest}")
+
+        helper_name = "tinyscreen-updater"
+        try:  # clear any leftover helper from an interrupted prior run
+            client.remove_container(helper_name, force=True)
+        except DockerAPIError:
+            pass
+        helper = client.create_container({
+            "Image": image_ref,
+            "Entrypoint": ["python3", "/opt/tinyscreen/app/self_update_helper.py"],
+            "Env": [
+                f"TS_TARGET_CONTAINER={own_id}",
+                f"TS_TARGET_IMAGE={image_ref}",
+            ],
+            "HostConfig": {"Binds": binds, "AutoRemove": True},
+        }, name=helper_name)
+        client.start_container(helper["Id"])
+        state["status"] = "swapping"
+        state["log"].append(f"[{time.strftime('%H:%M:%S')}] helper started -- "
+                            "this app will now restart")
+        _write_update_state(state)
+        # The helper takes it from here; it will stop this container
+        # within seconds. Nothing more for this thread to do.
+    except (DockerAPIError, OSError, KeyError) as e:
+        state["status"] = "failed"
+        state["reason"] = f"could not start the update: {e}"
+        _write_update_state(state)
+
+
+@app.route("/api/update_app", methods=["POST"])
+def api_update_app():
+    """Kick off a one-click self-update. Returns immediately; progress is
+    reported via /api/update_state (and, once the swap begins, via this
+    whole app briefly going away and coming back on the new version --
+    the dashboard polls through the gap)."""
+    global _update_thread
+    if not os.path.exists(DOCKER_SOCK):
+        return jsonify({
+            "ok": False,
+            "error": ("The Docker socket isn't mounted into this container, so "
+                      "one-click updates can't run on this install. Remove the "
+                      "app in ZimaOS and reinstall it with the updated Docker "
+                      "Compose configuration (which adds the "
+                      "/var/run/docker.sock volume) to enable them."),
+        }), 400
+
+    client = DockerClient(DOCKER_SOCK)
+    try:
+        if not client.ping():
+            return jsonify({"ok": False, "error": "Docker daemon did not answer on the socket."}), 502
+    except OSError as e:
+        return jsonify({"ok": False, "error": f"Could not reach the Docker daemon: {e}"}), 502
+
+    own_id, own_info = _detect_own_container_id(client)
+    if not own_id:
+        return jsonify({"ok": False,
+                        "error": "Couldn't identify this app's own container via the Docker API."}), 500
+
+    image_ref = (own_info.get("Config", {}) or {}).get("Image")
+    if not image_ref:
+        return jsonify({"ok": False, "error": "Couldn't determine this container's image reference."}), 500
+
+    with _update_lock:
+        if _update_thread and _update_thread.is_alive():
+            return jsonify({"ok": False, "error": "An update is already in progress."}), 409
+        _update_thread = threading.Thread(
+            target=_run_update, args=(image_ref, own_id, own_info), daemon=True)
+        _update_thread.start()
+
+    return jsonify({"ok": True, "status": "started", "image": image_ref})
+
+
+@app.route("/api/update_state", methods=["GET"])
+def api_update_state():
+    """Last/current self-update progress and outcome, persisted across
+    the container swap via the state-dir bind mount. The dashboard polls
+    this through the update gap and also checks it on page load to
+    surface a refused or rolled-back attempt."""
+    try:
+        state = json.loads(UPDATE_STATE_FILE.read_text())
+    except (FileNotFoundError, OSError, json.JSONDecodeError):
+        return jsonify({"ok": True, "state": None})
+    return jsonify({"ok": True, "state": state})
 
 
 @app.route("/api/firmware_info", methods=["GET"])

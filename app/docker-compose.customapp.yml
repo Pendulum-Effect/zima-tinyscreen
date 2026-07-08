@@ -81,6 +81,22 @@ services:
       - type: bind
         source: /DATA/AppData/tinyscreen-dashboard/certs
         target: /opt/tinyscreen/certs
+      # --- Added for the Stage 2 one-click self-updater ---
+      # The Docker daemon's control socket. This is what lets the app
+      # pull its own new image and hand off to a short-lived helper
+      # container that performs the swap (see app/self_update_helper.py).
+      # Note the container is already privileged (required for /dev
+      # access), so this doesn't grant meaningfully more power than the
+      # app already had -- it just makes the update path possible.
+      - type: bind
+        source: /var/run/docker.sock
+        target: /var/run/docker.sock
+      # Persists update progress/outcome across the container swap, so
+      # the dashboard can report what happened (including a rollback
+      # reason) after the new container comes up.
+      - type: bind
+        source: /DATA/AppData/tinyscreen-dashboard/state
+        target: /opt/tinyscreen/state
     privileged: true
 
     x-casaos:

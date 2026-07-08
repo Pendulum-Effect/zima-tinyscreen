@@ -11,6 +11,12 @@ RUN pip install --no-cache-dir -r collector/requirements.txt flask esptool
 COPY collector/ collector/
 COPY webflasher/ webflasher/
 COPY app/server.py app/server.py
+# Stage 2 self-updater: minimal Docker Engine API client, the swap
+# helper that runs in the short-lived updater container, and the
+# canonical deployment contract the helper validates against.
+COPY app/dockerapi.py app/dockerapi.py
+COPY app/self_update_helper.py app/self_update_helper.py
+COPY app/canonical_config.json app/canonical_config.json
 COPY app/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 

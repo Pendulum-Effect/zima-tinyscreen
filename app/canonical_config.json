@@ -1,0 +1,20 @@
+{
+  "_comment": "The deployment contract for THIS version of the image: every bind mount destination, env var, and published port the app requires to function. The self-update helper (self_update_helper.py, running from the NEWLY PULLED image, so this list is always the NEW version's requirements) compares this against the currently running container's actual config before swapping, and REFUSES the update if anything is missing -- because a self-update reuses the old container's config verbatim, so a new version that needs a mount the old deployment doesn't have would come up broken. In that case the user must do a normal remove + reinstall through ZimaOS with the updated compose text instead. Bump config_version whenever this contract changes.",
+  "config_version": 1,
+  "required_bind_destinations": [
+    "/dev",
+    "/host_net_dev",
+    "/host_data",
+    "/opt/tinyscreen/certs",
+    "/opt/tinyscreen/state",
+    "/var/run/docker.sock"
+  ],
+  "required_env": [
+    "TINYSCREEN_HOST_NET_DEV",
+    "TINYSCREEN_DATA_PATH"
+  ],
+  "required_ports": [
+    "8989/tcp",
+    "8990/tcp"
+  ]
+}

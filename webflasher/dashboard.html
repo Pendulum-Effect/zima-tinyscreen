@@ -134,7 +134,7 @@
 
   <div class="main">
     <!-- General -->
-    <section class="tab-panel" data-panel="general">
+    <section class="tab-panel active" data-panel="general">
       <h2>General</h2>
       <div id="general-loading" class="loading">Loading device info…</div>
       <div id="general-error" class="error-banner" style="display:none;"></div>
@@ -158,8 +158,9 @@
             <div>
               <div class="card-title">Software Version</div>
               <div class="card-desc" id="app-version-status">Checking…</div>
+              <div class="card-desc" id="app-update-note" style="margin-top:2px; display:none;"></div>
             </div>
-            <button class="btn" disabled title="Applying updates automatically is coming soon">Update App</button>
+            <button class="btn" id="update-app-btn" disabled>Update App</button>
           </div>
         </div>
 
@@ -187,7 +188,7 @@
     </section>
 
     <!-- Layouts: the real, working tab this round -->
-    <section class="tab-panel active" data-panel="layouts">
+    <section class="tab-panel" data-panel="layouts">
       <h2>Layouts</h2>
       <div id="layouts-loading" class="loading">Loading current settings…</div>
       <div id="layouts-error" class="error-banner" style="display:none;"></div>
@@ -451,19 +452,60 @@
       } catch (e) {
         // leave appVerData as the safe default
       }
+      // Human version string ("v0.8.6.2") when the image has one baked
+      // in, short commit SHA as the fallback for older images. Detection
+      // itself still keys off commits server-side; this is display only.
+      const verLabel = (d, which) => {
+        if (which === 'current') return d.version ? 'v' + d.version : 'v' + d.current_commit.slice(0, 7);
+        return d.latest_version ? 'v' + d.latest_version : 'v' + d.latest_commit.slice(0, 7);
+      };
       const appVerStatusEl = document.getElementById('app-version-status');
+      const updateAppBtn = document.getElementById('update-app-btn');
+      const updateNoteEl = document.getElementById('app-update-note');
       if (appVerData.ok && appVerData.latest_commit) {
         appVerStatusEl.textContent = appVerData.update_available
-          ? 'Update available (v' + appVerData.latest_commit.slice(0, 7) + ')'
-          : 'Up to date (v' + appVerData.current_commit.slice(0, 7) + ')';
+          ? 'Update available (' + verLabel(appVerData, 'latest') + ')'
+          : 'Up to date (' + verLabel(appVerData, 'current') + ')';
+        appVerStatusEl.title = 'commit ' + appVerData.current_commit.slice(0, 7);
         appVerStatusEl.style.color = appVerData.update_available ? 'var(--teal)' : 'var(--subtext)';
+        if (appVerData.update_available) {
+          if (appVerData.update_ready) {
+            updateAppBtn.disabled = false;
+            updateAppBtn.onclick = () => startAppUpdate(updateAppBtn, appVerStatusEl, appVerData);
+          } else {
+            updateAppBtn.title = 'One-click updates need the Docker socket mounted -- ' +
+              'remove and reinstall the app with the updated compose config to enable them.';
+            updateNoteEl.textContent = 'To apply it: remove + reinstall the app in ZimaOS ' +
+              'with the updated compose config (one time -- future updates will be one-click).';
+            updateNoteEl.style.display = 'block';
+          }
+        }
       } else if (appVerData.ok) {
-        appVerStatusEl.textContent = 'v' + appVerData.current_commit.slice(0, 7) +
+        appVerStatusEl.textContent = verLabel(appVerData, 'current') +
           " (couldn't reach GitHub to check for updates)";
         appVerStatusEl.style.color = 'var(--subtext)';
       } else {
         appVerStatusEl.textContent = "Couldn't determine.";
         appVerStatusEl.style.color = 'var(--subtext)';
+      }
+
+      // Surface a refused / rolled-back / failed previous update attempt
+      // (persisted in the state file across the swap) -- otherwise a
+      // failed click would just look like nothing ever happened.
+      // Isolated like the other secondary lookups.
+      try {
+        const stRes = await fetch('/api/update_state');
+        const stData = await stRes.json();
+        const st = stData.state;
+        if (st && ['refused', 'rolled_back', 'failed'].includes(st.status)) {
+          updateNoteEl.textContent = 'Last update attempt ' +
+            (st.status === 'refused' ? 'was refused: ' : 'failed: ') +
+            (st.reason || 'no reason recorded');
+          updateNoteEl.style.color = '#e8a87c';
+          updateNoteEl.style.display = 'block';
+        }
+      } catch (e) {
+        // non-essential; ignore
       }
 
       if (!cfgData.ok) {
@@ -555,6 +597,98 @@
   // known, so saving from either tab can't accidentally revert an
   // unsaved change made on the other one.
   // ---------------------------------------------------------------------
+  async function startAppUpdate(btn, statusEl, verData) {
+    // Two-click confirm on the button itself -- no modal machinery needed,
+    // and misclicks can't trigger a restart.
+    if (btn.dataset.armed !== '1') {
+      btn.dataset.armed = '1';
+      btn.textContent = 'Confirm — app restarts (~30s)';
+      setTimeout(() => {
+        btn.dataset.armed = '';
+        btn.textContent = 'Update App';
+      }, 6000);
+      return;
+    }
+    btn.dataset.armed = '';
+    btn.disabled = true;
+    btn.textContent = 'Updating…';
+
+    let res, data;
+    try {
+      res = await fetch('/api/update_app', { method: 'POST' });
+      data = await res.json();
+    } catch (e) {
+      data = { ok: false, error: 'Could not reach the app: ' + e };
+    }
+    if (!data.ok) {
+      statusEl.textContent = 'Update could not start: ' + (data.error || 'unknown error');
+      statusEl.style.color = '#e8a87c';
+      btn.disabled = false;
+      btn.textContent = 'Update App';
+      return;
+    }
+
+    statusEl.style.color = 'var(--teal)';
+    statusEl.textContent = 'Updating — pulling new image…';
+    const startedCommit = verData.current_commit;
+
+    // Poll through the gap: while the swap happens, this whole app goes
+    // away for ~10-20s and every fetch below throws -- that's expected,
+    // keep polling. Terminal outcomes: the app answers again on a NEW
+    // commit (success), or on the SAME commit with a rolled_back/refused/
+    // failed state (the helper put the old container back), or 3 minutes
+    // pass (something is wrong enough that hands-on help is needed).
+    const deadline = Date.now() + 3 * 60 * 1000;
+    while (Date.now() < deadline) {
+      await new Promise(r => setTimeout(r, 3000));
+      try {
+        const stRes = await fetch('/api/update_state');
+        const stData = await stRes.json();
+        const st = stData.state || {};
+        if (st.status === 'pulling') {
+          statusEl.textContent = 'Updating — pulling new image…';
+          continue;
+        }
+        if (['launching_helper', 'swapping'].includes(st.status)) {
+          statusEl.textContent = 'Updating — restarting the app…';
+          continue;
+        }
+        if (['refused', 'rolled_back', 'failed'].includes(st.status)) {
+          statusEl.textContent = 'Update ' + (st.status === 'refused' ? 'refused' : 'failed') +
+            ': ' + (st.reason || 'no reason recorded') +
+            (st.status === 'rolled_back' ? ' (the previous version was restored and is running)' : '');
+          statusEl.style.color = '#e8a87c';
+          btn.disabled = false;
+          btn.textContent = 'Update App';
+          return;
+        }
+        if (st.status === 'success') {
+          // Confirm we're really talking to the new build, then reload so
+          // every tab reflects it.
+          const verRes = await fetch('/api/app_version');
+          const ver = await verRes.json();
+          if (ver.ok && ver.current_commit !== startedCommit) {
+            statusEl.textContent = 'Updated to ' +
+              (ver.version ? 'v' + ver.version : 'v' + ver.current_commit.slice(0, 7)) +
+              ' — reloading…';
+            setTimeout(() => location.reload(), 1500);
+            return;
+          }
+          statusEl.textContent = 'Update finished — reloading…';
+          setTimeout(() => location.reload(), 1500);
+          return;
+        }
+      } catch (e) {
+        // App is down mid-swap; keep polling.
+        statusEl.textContent = 'Updating — waiting for the app to come back…';
+      }
+    }
+    statusEl.textContent = 'Update is taking longer than expected. If this page stays ' +
+      'unreachable, check the app in ZimaOS — a container named tinyscreen-dashboard-old ' +
+      'holds the previous version.';
+    statusEl.style.color = '#e8a87c';
+  }
+
   async function saveConfig(statusEl, saveBtn) {
     const finalPages = pageOrder.filter(id => enabledPages.has(id));
     if (finalPages.length === 0) {

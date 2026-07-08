@@ -5,22 +5,36 @@ name: tinyscreen-dashboard
 # ZimaOS's App Store -> Install a Custom App -> Docker Compose form and
 # ZimaOS will pull the image itself -- no SSH into the ZimaOS box needed.
 #
-# Before pasting: replace pendulumeffect below with your actual
-# Docker Hub username (see README "Publish to Docker Hub instead of SSH").
+# This is the filled-in copy (Docker Hub username: pendulumeffect),
+# regenerated from docker-compose.customapp.yml -- keep them in sync.
 
 services:
   tinyscreen-dashboard:
     image: pendulumeffect/tinyscreen-dashboard:latest
+    pull_policy: always  # always re-pull, even for the same :latest tag
     container_name: tinyscreen-dashboard
     restart: unless-stopped
+    # Standard bridge networking with explicit ports (not network_mode:
+    # host). host networking was tried briefly to fix network stats being
+    # stuck at 0, but isolation testing later showed the real connectivity
+    # issue (a much worse problem -- the ESP32 not receiving data at all)
+    # persisted even without it, so host networking wasn't actually the
+    # cause and wasn't worth the added complexity. Network stats are now
+    # fixed a different way -- see the /proc/1/net/dev bind mount below --
+    # without needing to share the container's whole network stack.
     ports:
       - target: 8989
         published: "8989"
+        protocol: tcp
+      - target: 8990
+        published: "8990"
         protocol: tcp
     environment:
       - TINYSCREEN_STATUS_FILE=/tmp/tinyscreen_status.json
       # Set this if auto-detect picks the wrong serial device, e.g. /dev/ttyACM0
       - TINYSCREEN_SERIAL_PORT=
+      - TINYSCREEN_HOST_NET_DEV=/host_net_dev
+      - TINYSCREEN_DATA_PATH=/host_data
 
     # The ESP32-S3 shows up as a serial device node, e.g. /dev/ttyACM0
     # (Linux CDC-ACM driver, matching the CH343P/native-USB-CDC bridge
@@ -30,7 +44,59 @@ services:
     # `privileged: true` is required alongside this for the container to
     # actually be allowed to open the device.
     volumes:
-      - /dev:/dev
+      - type: bind
+        source: /dev
+        target: /dev
+      # A single small pseudo-file, NOT the whole host filesystem or
+      # network stack -- PID 1 always lives in the host's real network
+      # namespace, so bind-mounting its /proc/1/net/dev view gives
+      # accurate host-level network throughput without needing
+      # network_mode: host (see NetworkMeter/parse_proc_net_dev in
+      # stats_collector.py, which reads and parses this directly).
+      - type: bind
+        source: /proc/1/net/dev
+        target: /host_net_dev
+        read_only: true
+      # A single, non-recursive top-level directory -- NOT the whole host
+      # filesystem like the earlier, since-reverted NAS attempt used.
+      # This is ALSO what MMC measures, confirmed via a real df -h check
+      # to be the actual onboard partition (mmcblk0p8 in testing) --
+      # NOT the container's own "/" (backed by Docker's storage driver,
+      # wherever that happens to live) and NOT literal host root (a
+      # separate, much smaller boot/OS partition). See get_mmc() and
+      # get_nas_pool() in stats_collector.py; NAS-pool detection still
+      # needs real data from an actual ZimaOS-created storage pool to
+      # know how to tell "just the onboard partition" apart from "a real
+      # pool exists" -- not yet tested against one.
+      - type: bind
+        source: /DATA
+        target: /host_data
+        read_only: true
+      # Persists the self-signed HTTPS cert across restarts, so you don't
+      # get a fresh "untrusted certificate" browser warning every reboot.
+      # Long-form bind syntax matches ZimaOS/CasaOS's own documented
+      # convention for AppData volumes (vs. the short "host:container"
+      # string form), for the best chance it shows up correctly in the
+      # ZimaOS Files app too.
+      - type: bind
+        source: /DATA/AppData/tinyscreen-dashboard/certs
+        target: /opt/tinyscreen/certs
+      # --- Added for the Stage 2 one-click self-updater ---
+      # The Docker daemon's control socket. This is what lets the app
+      # pull its own new image and hand off to a short-lived helper
+      # container that performs the swap (see app/self_update_helper.py).
+      # Note the container is already privileged (required for /dev
+      # access), so this doesn't grant meaningfully more power than the
+      # app already had -- it just makes the update path possible.
+      - type: bind
+        source: /var/run/docker.sock
+        target: /var/run/docker.sock
+      # Persists update progress/outcome across the container swap, so
+      # the dashboard can report what happened (including a rollback
+      # reason) after the new container comes up.
+      - type: bind
+        source: /DATA/AppData/tinyscreen-dashboard/state
+        target: /opt/tinyscreen/state
     privileged: true
 
     x-casaos:
@@ -40,7 +106,7 @@ services:
       author: you
       category: Utilities
       description:
-        en_us: "Streams live CPU/RAM/SSD/network/temperature stats from this ZimaOS device to a small ESP32-S3 round display, and hosts a one-click WebSerial flasher for the ESP32-S3 firmware."
+        en_us: "Streams live CPU/RAM/MMC/network/temperature stats from this ZimaOS device to a small ESP32-S3 round display, and hosts a one-click WebSerial flasher for the ESP32-S3 firmware."
       developer: you
       icon: https://raw.githubusercontent.com/your-repo/tinyscreen/main/icon.png
       screenshot_link: []
