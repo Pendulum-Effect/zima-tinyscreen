@@ -29,6 +29,10 @@
 #include <Wire.h>
 #include <Preferences.h>
 #include <Arduino_GFX_Library.h>
+// Smooth proportional fonts (generated from DejaVu Sans by
+// tools/genfont.py) -- must come after Arduino_GFX_Library.h, which
+// provides the GFXfont/GFXglyph structs.
+#include "tiny_fonts.h"
 #include <ArduinoJson.h>
 
 // Bump this string whenever a firmware change is meaningful enough for a
@@ -36,7 +40,7 @@
 // "Software Version" field via the get_config command below. No
 // auto-update-checking mechanism exists yet (that's a separate, not-yet
 // -built feature) -- this just answers "what's currently on my device."
-#define FIRMWARE_VERSION "1.4.0"
+#define FIRMWARE_VERSION "1.5.0"
 
 // Note: screen dimensions are NOT fixed -- board 1 (1.69") is 240x280,
 // taller than board 0's 240x240. See screenW/screenH globals, set from
@@ -547,28 +551,85 @@ void advancePage(int dir) {
 // Drawing helpers
 // ---------------------------------------------------------------------
 
-void drawRingGauge(int cx, int cy, int rOuter, int rInner, float pct,
-                    uint16_t color, const char *bigText, const char *label) {
+// ---------------------------------------------------------------------
+// Text helpers for the smooth GFX fonts. With a custom font the cursor
+// is the BASELINE, not the top-left like the classic 5x7 -- these
+// anchor via getTextBounds so callers never juggle baselines. Callers
+// pick a font with canvas->setFont(&tiny_...) first; drawCurrentScreen
+// resets to the classic font after each page so the footer dots and
+// stale banner are unaffected.
+// ---------------------------------------------------------------------
+void drawTextCentered(const char *s, int cx, int cyCenter) {
+  int16_t x1, y1; uint16_t w, h;
+  canvas->getTextBounds(s, 0, 0, &x1, &y1, &w, &h);
+  canvas->setCursor(cx - (int)w / 2 - x1, cyCenter - (int)h / 2 - y1);
+  canvas->print(s);
+}
+
+void drawTextTopLeft(const char *s, int x, int topY) {
+  int16_t x1, y1; uint16_t w, h;
+  canvas->getTextBounds(s, 0, 0, &x1, &y1, &w, &h);
+  canvas->setCursor(x - x1, topY - y1);
+  canvas->print(s);
+}
+
+void drawTextTopRight(const char *s, int rightX, int topY) {
+  int16_t x1, y1; uint16_t w, h;
+  canvas->getTextBounds(s, 0, 0, &x1, &y1, &w, &h);
+  canvas->setCursor(rightX - (int)w - x1, topY - y1);
+  canvas->print(s);
+}
+
+void drawTextBottomRight(const char *s, int rightX, int bottomY) {
+  int16_t x1, y1; uint16_t w, h;
+  canvas->getTextBounds(s, 0, 0, &x1, &y1, &w, &h);
+  canvas->setCursor(rightX - (int)w - x1, bottomY - (int)h - y1);
+  canvas->print(s);
+}
+
+// The gauge pages, restyled (1.5.0) to match the dashboard previews:
+// small-caps title up top, a dark full-circle track, the accent arc with
+// ROUNDED CAPS sweeping from 12 o'clock, the percentage centered in a
+// big smooth font, and the page's secondary line beneath the ring.
+void drawRingGauge(const char *title, float pct, uint16_t color,
+                   const char *bigText, const char *sub) {
   pct = constrain(pct, 0.0f, 100.0f);
+  int cx = CX();
+  int cy = SY(122);
+  int rOuter = SY(76), rInner = SY(62);
   int sweep = (int)(pct * 3.6f);
 
+  // Title, preview-style: uppercase, subtext, spaced from the top edge
+  canvas->setFont(&tiny_sans_18);
+  canvas->setTextColor(COL_SUBTEXT);
+  drawTextCentered(title, cx, SY(26));
+
+  // Track + progress arc with rounded caps
   canvas->fillArc(cx, cy, rOuter, rInner, 0, 360, COL_RING_BG);
   if (sweep > 0) {
     canvas->fillArc(cx, cy, rOuter, rInner, -90, -90 + sweep, color);
+    if (sweep < 360) {
+      int rMid = (rOuter + rInner) / 2;
+      int capR = (rOuter - rInner) / 2;
+      float a0 = -90.0f * DEG_TO_RAD;
+      float a1 = (-90.0f + sweep) * DEG_TO_RAD;
+      canvas->fillCircle(cx + (int)(cosf(a0) * rMid), cy + (int)(sinf(a0) * rMid), capR, color);
+      canvas->fillCircle(cx + (int)(cosf(a1) * rMid), cy + (int)(sinf(a1) * rMid), capR, color);
+    }
   }
 
+  // Percentage, centered in the ring
+  canvas->setFont(&tiny_sans_bold_32);
   canvas->setTextColor(COL_TEXT);
-  canvas->setTextSize(3);
-  int16_t x1, y1; uint16_t w, h;
-  canvas->getTextBounds(bigText, 0, 0, &x1, &y1, &w, &h);
-  canvas->setCursor(cx - w / 2, cy - h / 2 - 6);
-  canvas->print(bigText);
+  drawTextCentered(bigText, cx, cy);
 
-  canvas->setTextColor(COL_SUBTEXT);
-  canvas->setTextSize(1);
-  canvas->getTextBounds(label, 0, 0, &x1, &y1, &w, &h);
-  canvas->setCursor(cx - w / 2, cy + 22);
-  canvas->print(label);
+  // Secondary line under the ring (watts, GB, ...)
+  if (sub && sub[0]) {
+    canvas->setFont(&tiny_sans_18);
+    canvas->setTextColor(COL_TEXT);
+    drawTextCentered(sub, cx, SY(216));
+  }
+  canvas->setFont();  // back to classic for whatever draws next
 }
 
 void drawStaleBanner() {
@@ -594,45 +655,24 @@ void drawFooterDots() {
 }
 
 void drawPageCPU() {
-  char big[16];
+  char big[16], watts[16];
   snprintf(big, sizeof(big), "%d%%", (int)round(stats.cpu_pct));
-  drawRingGauge(CX(), SY(105), 88, 74, stats.cpu_pct, COL_TEAL, big, "CPU LOAD");
-  canvas->setTextColor(COL_TEXT);
-  canvas->setTextSize(2);
-  char watts[16];
   snprintf(watts, sizeof(watts), "%.1f W", stats.cpu_watts);
-  int16_t x1, y1; uint16_t w, h;
-  canvas->getTextBounds(watts, 0, 0, &x1, &y1, &w, &h);
-  canvas->setCursor(CX() - w / 2, SY(172));
-  canvas->print(watts);
+  drawRingGauge("CPU UTIL.", stats.cpu_pct, COL_TEAL, big, watts);
 }
 
 void drawPageRAM() {
-  char big[16];
+  char big[16], total[24];
   snprintf(big, sizeof(big), "%d%%", (int)round(stats.ram_pct));
-  drawRingGauge(CX(), SY(105), 88, 74, stats.ram_pct, COL_TEAL_2, big, "RAM USED");
-  canvas->setTextColor(COL_TEXT);
-  canvas->setTextSize(2);
-  char total[24];
   snprintf(total, sizeof(total), "%.1f GB", stats.ram_total_gb);
-  int16_t x1, y1; uint16_t w, h;
-  canvas->getTextBounds(total, 0, 0, &x1, &y1, &w, &h);
-  canvas->setCursor(CX() - w / 2, SY(172));
-  canvas->print(total);
+  drawRingGauge("RAM UTIL.", stats.ram_pct, COL_TEAL_2, big, total);
 }
 
 void drawPageMMC() {
-  char big[16];
+  char big[16], total[24];
   snprintf(big, sizeof(big), "%d%%", (int)round(stats.mmc_pct));
-  drawRingGauge(CX(), SY(105), 88, 74, stats.mmc_pct, 0x7B9F, big, "MMC USED");
-  canvas->setTextColor(COL_TEXT);
-  canvas->setTextSize(2);
-  char total[24];
   snprintf(total, sizeof(total), "%.0f GB", stats.mmc_total_gb);
-  int16_t x1, y1; uint16_t w, h;
-  canvas->getTextBounds(total, 0, 0, &x1, &y1, &w, &h);
-  canvas->setCursor(CX() - w / 2, SY(172));
-  canvas->print(total);
+  drawRingGauge("MMC USAGE", stats.mmc_pct, 0x7B9F, big, total);
 }
 
 void drawPageNAS() {
@@ -646,62 +686,55 @@ void drawPageNAS() {
     canvas->print(msg);
     return;
   }
-  char big[16];
+  char big[16], total[24];
   snprintf(big, sizeof(big), "%d%%", (int)round(stats.nas_pct));
-  drawRingGauge(CX(), SY(105), 88, 74, stats.nas_pct, 0x9F7BC0, big, "NAS USED");
-  canvas->setTextColor(COL_TEXT);
-  canvas->setTextSize(2);
-  char total[24];
   snprintf(total, sizeof(total), "%.0f GB", stats.nas_total_gb);
-  int16_t x1, y1; uint16_t w, h;
-  canvas->getTextBounds(total, 0, 0, &x1, &y1, &w, &h);
-  canvas->setCursor(CX() - w / 2, SY(172));
-  canvas->print(total);
+  drawRingGauge("NAS USAGE", stats.nas_pct, 0x9F7BC0, big, total);
 }
 
 void drawPageNet() {
+  // Matches the dashboard preview: NET UTIL. title, then down/up rates
+  // with little arrowheads, in the smooth fonts.
+  canvas->setFont(&tiny_sans_18);
   canvas->setTextColor(COL_SUBTEXT);
-  canvas->setTextSize(1);
-  canvas->setCursor(CX() - 28, SY(50));
-  canvas->print("NETWORK");
+  drawTextCentered("NET UTIL.", CX(), SY(26));
 
   auto fmtRate = [](float mbps, char *out, size_t n) {
-    if (mbps >= 1000.0f) snprintf(out, n, "%.2f Gbps", mbps / 1000.0f);
-    else if (mbps < 1.0f) snprintf(out, n, "%.0f kbps", mbps * 1000.0f);
-    else snprintf(out, n, "%.1f Mbps", mbps);
+    if (mbps >= 1000.0f) snprintf(out, n, "%.2f GB/s", mbps / 8000.0f);
+    else snprintf(out, n, "%.1f MB/s", mbps / 8.0f);
   };
   char rx[20], tx[20];
   fmtRate(stats.net_rx_mbps, rx, sizeof(rx));
   fmtRate(stats.net_tx_mbps, tx, sizeof(tx));
-  int16_t x1, y1; uint16_t w, h;
 
+  // Down arrow + rate
+  int rowY = SY(96);
+  int ax = LX + SY(34) - LY;
+  canvas->fillTriangle(ax, rowY + 10, ax + 12, rowY + 10, ax + 6, rowY + 20, COL_TEAL);
+  canvas->fillRect(ax + 4, rowY, 5, 10, COL_TEAL);
+  canvas->setFont(&tiny_sans_bold_32);
   canvas->setTextColor(COL_TEAL);
-  canvas->setTextSize(1);
-  canvas->setCursor(CX() - 20, SY(90));
-  canvas->print("DOWN");
-  canvas->setTextColor(COL_TEXT);
-  canvas->setTextSize(2);
-  canvas->getTextBounds(rx, 0, 0, &x1, &y1, &w, &h);
-  canvas->setCursor(CX() - w / 2, SY(105));
-  canvas->print(rx);
+  drawTextTopLeft(rx, ax + SY(24), rowY - SY(6));
 
+  // Up arrow + rate
+  rowY = SY(150);
+  canvas->fillTriangle(ax, rowY + 10, ax + 12, rowY + 10, ax + 6, rowY, COL_TEAL_2);
+  canvas->fillRect(ax + 4, rowY + 10, 5, 10, COL_TEAL_2);
+  canvas->setFont(&tiny_sans_bold_32);
   canvas->setTextColor(COL_TEAL_2);
-  canvas->setTextSize(1);
-  canvas->setCursor(CX() - 12, SY(150));
-  canvas->print("UP");
-  canvas->setTextColor(COL_TEXT);
-  canvas->setTextSize(2);
-  canvas->getTextBounds(tx, 0, 0, &x1, &y1, &w, &h);
-  canvas->setCursor(CX() - w / 2, SY(165));
-  canvas->print(tx);
+  drawTextTopLeft(tx, ax + SY(24), rowY - SY(6));
+
+  canvas->setFont();
 }
 
 void drawPageTemp() {
   float pct = constrain(stats.cpu_temp_c, 0.0f, 100.0f);
-  uint16_t color = stats.cpu_temp_c >= 75 ? COL_WARN : COL_TEAL;
+  // The ring stays teal in the healthy range (matching the previews) and
+  // adopts the shared temperature ramp once things get warm.
+  uint16_t color = stats.cpu_temp_c > 65.0f ? tempColorFor(stats.cpu_temp_c) : COL_TEAL;
   char big[16];
-  snprintf(big, sizeof(big), "%.0fC", stats.cpu_temp_c);
-  drawRingGauge(CX(), SY(105), 88, 74, pct, color, big, "CPU TEMP");
+  snprintf(big, sizeof(big), "%.0f\xB0", stats.cpu_temp_c);  // real degree sign
+  drawRingGauge("CPU TEMP", pct, color, big, "");
 }
 
 // Defined below drawCurrentScreen (with the rest of the mist machinery);
@@ -742,7 +775,7 @@ struct MistParticle {
   uint8_t life;      // frames remaining
   uint8_t maxLife;
 };
-const int MIST_PARTICLES = 22;
+const int MIST_PARTICLES = 46;
 MistParticle mistP[MIST_PARTICLES];
 bool mistInited = false;
 uint32_t mistRng = 0xC0FFEE;  // reused each frame for the STATIC field
@@ -769,9 +802,19 @@ void drawTempMist(bool animated) {
   int cornerX = LX + LW, cornerY = LY + LH;
   int diag = (LW + LH) / 2;
 
+  // Soft glow body rising out of the corner: concentric quarter-rings,
+  // brightening toward the corner -- the continuous "mist" the speckle
+  // sits on (the previews' radial gradient, in 565).
+  int glowR = diag * 11 / 20;
+  for (int r = glowR; r > 6; r -= 5) {
+    int b = 4 + 26 * (glowR - r) / glowR;     // 4..30 of 100
+    canvas->fillArc(cornerX, cornerY, r, r - 5, 180, 270,
+                    dimColor565(tcol, b, 100));
+  }
+
   // Static speckle field: same seed every frame, so the mist holds still.
   uint32_t rng = 0xC0FFEE;
-  for (int i = 0; i < 900; i++) {
+  for (int i = 0; i < 2600; i++) {
     int px = LX + (int)(mistRand(&rng) % LW);
     int py = LY + (int)(mistRand(&rng) % LH);
     int dx = cornerX - px, dy = cornerY - py;
@@ -780,7 +823,7 @@ void drawTempMist(bool animated) {
     if (d > diag) continue;
     int fall = diag - d;                      // 0 at edge .. diag at corner
     if ((int)(mistRand(&rng) % (unsigned)diag) > fall) continue;  // density falloff
-    int bright = 8 + fall * 30 / diag;        // 8..38 out of 100
+    int bright = 12 + fall * 36 / diag;       // 12..48 out of 100
     canvas->drawPixel(px, py, dimColor565(tcol, bright, 100));
   }
 
@@ -804,41 +847,35 @@ void drawTempMist(bool animated) {
         mistRespawn(p, &liveRng, cornerX, cornerY);
       }
       // Fade with remaining life; brighter than the static field so the
-      // motion reads.
-      int bright = 12 + (int)p->life * 55 / p->maxLife;
-      uint16_t c = dimColor565(tcol, bright, 100);
-      canvas->fillRect(p->x, p->y, 2, 2, c);
+      // motion reads, and young particles are a pixel bigger.
+      int bright = 16 + (int)p->life * 68 / p->maxLife;
+      uint16_t c = dimColor565(tcol, bright > 84 ? 84 : bright, 100);
+      int sz = (p->life * 10 > p->maxLife * 6) ? 3 : 2;
+      canvas->fillRect(p->x, p->y, sz, sz, c);
     }
   }
 
-  // Labels, widget-style
-  canvas->setTextSize(2);
+  // Labels, widget-style, in the smooth fonts
+  int padX = LX + SY(14) - LY;
+  canvas->setFont(&tiny_sans_18);
   canvas->setTextColor(COL_SUBTEXT);
-  canvas->setCursor(LX + SY(14) - LY, LY + SY(16) - LY);
-  canvas->print("CPU");
+  drawTextTopLeft("CPU", padX, LY + SY(14) - LY);
+  canvas->setFont(&tiny_sans_bold_20);
   canvas->setTextColor(COL_TEXT);
-  canvas->setCursor(LX + SY(14) - LY, LY + SY(38) - LY);
-  canvas->print("Temperature");
+  drawTextTopLeft("Temperature", padX, LY + SY(34) - LY);
 
-  // Degree unit, top-right ("o" ring + C, since the classic font has no
-  // degree glyph)
-  int16_t bx, by; uint16_t bw, bh;
-  canvas->getTextBounds("C", 0, 0, &bx, &by, &bw, &bh);
-  int unitX = cornerX - SY(16) + LY - (int)bw;
-  int unitY = LY + SY(16) - LY;
+  // Degree unit, top-right -- DejaVu has a real degree glyph (0xB0)
+  canvas->setFont(&tiny_sans_18);
   canvas->setTextColor(COL_TEXT);
-  canvas->setCursor(unitX, unitY);
-  canvas->print("C");
-  canvas->drawCircle(unitX - 6, unitY + 1, 2, COL_TEXT);
+  drawTextTopRight("\xB0""C", cornerX - SY(14) + LY, LY + SY(14) - LY);
 
   // The big number, bottom-right, in the temperature color
   char big[8];
   snprintf(big, sizeof(big), "%.0f", stats.cpu_temp_c);
-  canvas->setTextSize(7);
-  canvas->getTextBounds(big, 0, 0, &bx, &by, &bw, &bh);
+  canvas->setFont(&tiny_sans_bold_64);
   canvas->setTextColor(tcol);
-  canvas->setCursor(cornerX - (int)bw - SY(14) + LY, cornerY - (int)bh - SY(12) + LY);
-  canvas->print(big);
+  drawTextBottomRight(big, cornerX - SY(12) + LY, cornerY - SY(10) + LY);
+  canvas->setFont();
 }
 
 // Layout chosen for a page id ("default" when unset/unknown).

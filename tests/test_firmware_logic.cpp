@@ -175,6 +175,17 @@ int main() {
     CHECK(strcmp(config.layouts[0], "mist_anim") == 0);
   }
 
+  // ---- generated fonts: sane ranges, degree glyph present, digits real ----
+  CHECK(tiny_sans_18.first == 32 && tiny_sans_18.last == 176);
+  CHECK(tiny_sans_bold_64.first == 32 && tiny_sans_bold_64.last == 176);
+  CHECK(tiny_sans_18.yAdvance > 18 && tiny_sans_bold_64.yAdvance > 64);
+  const GFXglyph *g5 = &tiny_sans_bold_64_Glyphs['5' - 32];
+  CHECK(g5->width > 20 && g5->height > 30 && g5->xAdvance >= g5->width);
+  const GFXglyph *gdeg = &tiny_sans_18_Glyphs[176 - 32];
+  CHECK(gdeg->width > 0 && gdeg->yOffset < -8);   // degree sign: small, high
+  const GFXglyph *gspace = &tiny_sans_18_Glyphs[' ' - 32];
+  CHECK(gspace->width == 0 && gspace->xAdvance > 0);
+
   printf("ALL FIRMWARE LOGIC TESTS PASS\n");
   return 0;
 }

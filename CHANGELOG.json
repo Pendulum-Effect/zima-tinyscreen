@@ -2,6 +2,17 @@
   "_comment": "Human-readable changelog for the dashboard's About tab -- written for people, not commit archaeologists. The dashboard fetches this from GitHub at page load (baked copy as fallback), so add an entry here with each release and every install sees it. Newest first. Dates are YYYY-MM-DD.",
   "entries": [
     {
+      "version": "0.8.9.12",
+      "date": "2026-07-09",
+      "title": "Smooth fonts and a thicker mist",
+      "notes": [
+        "The screen finally types like the previews: blocky pixel text is gone, replaced by smooth proportional fonts (DejaVu Sans, rendered right on the device). Every page benefits.",
+        "The default gauges now genuinely match the dashboard previews -- title up top, rounded-cap progress arc, big clean percentage in the middle.",
+        "The Mist layout got a lot mistier: a proper glow rising from the corner, about three times the speckle, and twice the drifting particles in the animated variant.",
+        "Needs firmware v1.5.0 (included) -- update the app, then flash from the General tab."
+      ]
+    },
+    {
       "version": "0.8.9.11",
       "date": "2026-07-08",
       "title": "Layout styles arrive",

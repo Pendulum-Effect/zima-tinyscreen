@@ -39,6 +39,25 @@ class Preferences {
 // The real library #defines bare color-name macros; mirroring them here
 // means any firmware code that tries to use these words as identifiers
 // breaks the host build the same way it breaks the ESP32 build.
+#ifndef DEG_TO_RAD
+#define DEG_TO_RAD 0.017453292519943295f
+#endif
+#ifndef PROGMEM
+#define PROGMEM
+#endif
+typedef struct {
+  uint16_t bitmapOffset;
+  uint8_t width, height;
+  uint8_t xAdvance;
+  int8_t xOffset, yOffset;
+} GFXglyph;
+typedef struct {
+  uint8_t *bitmap;
+  GFXglyph *glyph;
+  uint16_t first, last;
+  uint8_t yAdvance;
+} GFXfont;
+
 #define BLACK 0x0000
 #define WHITE 0xFFFF
 #define RED 0xF800
@@ -73,6 +92,9 @@ class Arduino_GFX {
   void drawRect(int, int, int, int, uint16_t) {}
   void drawLine(int, int, int, int, uint16_t) {}
   void drawPixel(int, int, uint16_t) {}
+  void setFont(const GFXfont *) {}
+  void fillTriangle(int, int, int, int, int, int, uint16_t) {}
+  void setFont() {}
   void drawFastHLine(int, int, int, uint16_t) {}
   void drawFastVLine(int, int, int, uint16_t) {}
   void flush() {}
