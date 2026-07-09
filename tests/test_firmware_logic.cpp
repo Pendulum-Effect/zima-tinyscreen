@@ -115,6 +115,66 @@ int main() {
   g_fake_millis = 5 * 60000UL;
   CHECK(localNowMin() == 8 * 60 + 5);        // extrapolates too
 
+  // ---- color math: 565 packing, lerp endpoints, temp ramp ----
+  CHECK(rgb565(255, 255, 255) == 0xFFFF);
+  CHECK(rgb565(0, 0, 0) == 0x0000);
+  CHECK(lerpColor565(0x0000, 0xFFFF, 0) == 0x0000);
+  CHECK(lerpColor565(0x0000, 0xFFFF, 255) == 0xFFFF);
+  uint16_t GREEN = rgb565(96, 205, 120), RED = rgb565(255, 92, 74);
+  CHECK(tempColorFor(30.0f) == GREEN);        // cool -> green
+  CHECK(tempColorFor(45.0f) == GREEN);        // ramp starts above 45
+  CHECK(tempColorFor(90.0f) == RED);          // hot -> red
+  CHECK(tempColorFor(55.0f) != GREEN);        // mid-ramp is neither
+  CHECK(tempColorFor(55.0f) != RED);
+  // red channel rises monotonically through the ramp
+  int r50 = (tempColorFor(50) >> 11), r60 = (tempColorFor(60) >> 11),
+      r75 = (tempColorFor(75) >> 11);
+  CHECK(r50 <= r60 && r60 <= r75);
+  CHECK(dimColor565(0xFFFF, 50, 100) < 0xFFFF);
+  CHECK(dimColor565(0xFFFF, 0, 100) == 0x0000);
+
+  // ---- mist particles: respawn near the corner, drifting up/left ----
+  uint32_t seed = 42;
+  MistParticle mp;
+  for (int i = 0; i < 50; i++) {
+    mistRespawn(&mp, &seed, 240, 240);
+    CHECK(mp.x > 240 - 35 && mp.x <= 240);
+    CHECK(mp.y > 240 - 35 && mp.y <= 240);
+    CHECK(mp.vx < 0 && mp.vx >= -3 && mp.vy < 0 && mp.vy >= -3);
+    CHECK(mp.life == mp.maxLife && mp.maxLife >= 14);
+  }
+
+  // ---- layouts protocol: set_config -> NVS roundtrip -> whitelist ----
+  {
+    JsonDocument doc;
+    doc["cmd"] = "set_config";
+    JsonArray pages = doc["pages"].to<JsonArray>();
+    pages.add("temp"); pages.add("cpu");
+    doc["layouts"]["temp"] = "mist";
+    doc["layouts"]["cpu"] = "mist";   // not valid for cpu -> default
+    handleSetConfig(doc);
+    CHECK(strcmp(config.pages[0], "temp") == 0);
+    CHECK(strcmp(config.layouts[0], "mist") == 0);
+    CHECK(strcmp(config.layouts[1], "default") == 0);  // whitelist held
+    CHECK(strcmp(layoutForPage("temp"), "mist") == 0);
+    CHECK(strcmp(layoutForPage("net"), "default") == 0);
+    saveConfig();
+    config = Config{};
+    loadConfig();
+    CHECK(strcmp(config.layouts[0], "mist") == 0);     // survived NVS
+    CHECK(strcmp(config.layouts[1], "default") == 0);
+
+    JsonDocument doc2;                                  // bogus id
+    doc2["layouts"]["temp"] = "sparkles";
+    handleSetConfig(doc2);
+    CHECK(strcmp(config.layouts[0], "default") == 0);
+
+    JsonDocument doc3;                                  // mist_anim valid
+    doc3["layouts"]["temp"] = "mist_anim";
+    handleSetConfig(doc3);
+    CHECK(strcmp(config.layouts[0], "mist_anim") == 0);
+  }
+
   printf("ALL FIRMWARE LOGIC TESTS PASS\n");
   return 0;
 }

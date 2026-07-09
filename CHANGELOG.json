@@ -2,6 +2,17 @@
   "_comment": "Human-readable changelog for the dashboard's About tab -- written for people, not commit archaeologists. The dashboard fetches this from GitHub at page load (baked copy as fallback), so add an entry here with each release and every install sees it. Newest first. Dates are YYYY-MM-DD.",
   "entries": [
     {
+      "version": "0.8.9.11",
+      "date": "2026-07-08",
+      "title": "Layout styles arrive",
+      "notes": [
+        "The layout dropdowns on the Layouts page are real now! Every page has the classic look, named 'TinyScreen (default)'.",
+        "CPU Temperature gets the first alternates: 'Mist' -- a widget-style card with a big temperature number and a colored glow rising from the corner -- and 'Mist (animated)', where little pixels drift out of the mist and fade away.",
+        "The number and the mist both shift from green through amber to red as your CPU warms up, and the dashboard previews show exactly the style you've picked.",
+        "Needs firmware v1.4.0 (included) -- update the app, then flash from the General tab."
+      ]
+    },
+    {
       "version": "0.8.9.10",
       "date": "2026-07-08",
       "title": "Sub-pages and small comforts",

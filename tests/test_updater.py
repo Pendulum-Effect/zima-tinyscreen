@@ -802,6 +802,13 @@ class TestServerEndpoints(UpdaterTestBase):
         finally:
             self.server.detect_port = orig
 
+    def test_layouts_passthrough(self):
+        build = self.server.build_set_config_payload
+        p = build({"board": 1, "pages": ["temp", "cpu"],
+                   "layouts": {"temp": "mist_anim", "cpu": "default"}})
+        self.assertEqual(p["layouts"], {"temp": "mist_anim", "cpu": "default"})
+        self.assertNotIn("layouts", build({"board": 1, "pages": ["temp"]}))
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

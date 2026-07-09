@@ -301,6 +301,11 @@ def build_set_config_payload(cfg):
                       ("rotation", int), ("square_fit", bool)]:
         if key in cfg:
             payload[key] = cast(cfg[key])
+    # Per-page layout styles: pass the whole mapping through untouched --
+    # the firmware whitelists per page, so unknown ids degrade to default
+    # on-device rather than being policed twice.
+    if isinstance(cfg.get("layouts"), dict):
+        payload["layouts"] = {str(k): str(v) for k, v in cfg["layouts"].items()}
     return payload
 
 

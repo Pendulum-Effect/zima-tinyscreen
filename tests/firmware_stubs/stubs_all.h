@@ -60,6 +60,7 @@ class Arduino_GFX {
   void fillRect(int, int, int, int, uint16_t) {}
   void drawRect(int, int, int, int, uint16_t) {}
   void drawLine(int, int, int, int, uint16_t) {}
+  void drawPixel(int, int, uint16_t) {}
   void drawFastHLine(int, int, int, uint16_t) {}
   void drawFastVLine(int, int, int, uint16_t) {}
   void flush() {}
@@ -90,7 +91,15 @@ class JsonValue {
   enum Kind { NUL, BOOL, INT, FLOAT, STR, ARR } kind = NUL;
   bool b = false; long i = 0; double f = 0; std::string s;
   std::vector<std::shared_ptr<JsonValue>> arr;
-  std::map<std::string, std::shared_ptr<JsonValue>> obj;
+  mutable std::map<std::string, std::shared_ptr<JsonValue>> obj;
+};
+
+class JsonObjectStub {
+ public:
+  JsonValue *v = nullptr;
+  JsonObjectStub() {}
+  explicit JsonObjectStub(JsonValue *val) : v(val) {}
+  JsonVariantStub operator[](const char *k);  // defined after JsonVariantStub
 };
 
 class JsonArrayStub {
@@ -118,7 +127,12 @@ class JsonVariantStub {
 
   template <typename T> bool is() const;
   template <typename T> T as() const;
-  template <typename T> JsonArrayStub to();
+  template <typename T> T to();
+  JsonObjectStub toObject();
+  JsonVariantStub operator[](const char *k) const {
+    if (!v->obj.count(k)) v->obj[k] = std::make_shared<JsonValue>();
+    return JsonVariantStub(v->obj.at(k));
+  }
 
   // assignment (serializer direction)
   void operator=(bool x) { v->kind = JsonValue::BOOL; v->b = x; }
@@ -152,10 +166,24 @@ template <> inline bool JsonVariantStub::is<bool>() const { return v->kind == Js
 template <> inline bool JsonVariantStub::is<int>() const { return v->kind == JsonValue::INT; }
 template <> inline bool JsonVariantStub::is<const char *>() const { return v->kind == JsonValue::STR; }
 template <> inline bool JsonVariantStub::is<JsonArrayStub>() const { return v->kind == JsonValue::ARR; }
+template <> inline bool JsonVariantStub::is<JsonObjectStub>() const {
+  // An object is "present" if any key was actually ASSIGNED a value --
+  // reads create placeholder NUL children, which shouldn't count.
+  if (v->kind == JsonValue::ARR || v->kind == JsonValue::STR ||
+      v->kind == JsonValue::INT || v->kind == JsonValue::BOOL) return false;
+  for (auto &kv : v->obj) if (kv.second->kind != JsonValue::NUL) return true;
+  return false;
+}
 template <> inline const char *JsonVariantStub::as<const char *>() const {
   return v->kind == JsonValue::STR ? v->s.c_str() : nullptr;
 }
 template <> inline JsonArrayStub JsonVariantStub::to<JsonArrayStub>() { return JsonArrayStub(v.get()); }
+inline JsonObjectStub JsonVariantStub::toObject() { return JsonObjectStub(v.get()); }
+inline JsonVariantStub JsonObjectStub::operator[](const char *k) {
+  if (!v->obj.count(k)) v->obj[k] = std::make_shared<JsonValue>();
+  return JsonVariantStub(v->obj[k]);
+}
+template <> inline JsonObjectStub JsonVariantStub::to<JsonObjectStub>() { return JsonObjectStub(v.get()); }
 
 template <typename T> void JsonArrayStub::add(T x) {
   auto nv = std::make_shared<JsonValue>();
@@ -169,6 +197,7 @@ inline JsonVariantStub JsonArrayStub::iterator::operator*() const { return JsonV
 
 using JsonArray = JsonArrayStub;
 using JsonVariant = JsonVariantStub;
+using JsonObject = JsonObjectStub;
 
 class JsonDocument {
  public:

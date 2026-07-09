@@ -27,7 +27,9 @@ BASE_CONFIG = {"ok": True, "config": {
     "cycle_mode": "static", "cycle_seconds": 10, "brightness": 100,
     "night_enabled": True, "night_start_min": 1320, "night_end_min": 420,
     "night_brightness": 15, "tz_offset_min": -300,
-    "saver_enabled": True, "saver_minutes": 10, "saver_style": "clock"}}
+    "saver_enabled": True, "saver_minutes": 10, "saver_style": "clock",
+    "rotation": 0, "square_fit": False,
+    "layouts": {"temp": "default", "cpu": "default"}}}
 LAST_CONFIGURE_BODY = {}
 BASE_STATUS = {"ok": True, "collector_running": True, "age_seconds": 1.0,
                "last_stats": {}, "hostname": "ZimaBlade"}

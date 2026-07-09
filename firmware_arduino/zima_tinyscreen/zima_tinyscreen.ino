@@ -36,7 +36,7 @@
 // "Software Version" field via the get_config command below. No
 // auto-update-checking mechanism exists yet (that's a separate, not-yet
 // -built feature) -- this just answers "what's currently on my device."
-#define FIRMWARE_VERSION "1.3.0"
+#define FIRMWARE_VERSION "1.4.0"
 
 // Note: screen dimensions are NOT fixed -- board 1 (1.69") is 240x280,
 // taller than board 0's 240x240. See screenW/screenH globals, set from
@@ -126,6 +126,13 @@ struct Config {
   // re-init, so changes trigger the same restart path as a board change.
   int rotation = 0;
   bool squareFit = false;
+
+  // Per-page layout style, parallel to pages[] slot-for-slot. "default"
+  // is the classic TinyScreen ring look; pages may offer alternates
+  // (currently CPU Temperature's "mist" / "mist_anim"). Unknown ids
+  // render as default, so a newer dashboard can never brick an older
+  // firmware's drawing.
+  char layouts[6][12] = {"default"};
 } config;
 
 Preferences prefs;
@@ -152,6 +159,7 @@ void loadConfig() {
   config.rotation = prefs.getInt("rotation", 0);
   config.squareFit = prefs.getBool("squareFit", false);
   String pagesCsv = prefs.getString("pages", "temp");
+  String layoutsCsv = prefs.getString("layouts", "");
   prefs.end();
 
   config.numPages = 0;
@@ -169,6 +177,23 @@ void loadConfig() {
   if (config.numPages == 0) {
     strcpy(config.pages[0], "temp");
     config.numPages = 1;
+  }
+  // Layouts CSV mirrors the pages CSV slot-for-slot; anything missing or
+  // oversized falls back to "default" (e.g. configs saved before 1.4.0,
+  // where layoutsCsv is simply absent).
+  for (int i = 0; i < 6; i++) strcpy(config.layouts[i], "default");
+  {
+    int li = 0, lstart = 0;
+    for (int i = 0; i <= (int)layoutsCsv.length() && li < 6; i++) {
+      if (i == (int)layoutsCsv.length() || layoutsCsv[i] == ',') {
+        String token = layoutsCsv.substring(lstart, i);
+        if (token.length() > 0 && token.length() < 12) {
+          token.toCharArray(config.layouts[li], 12);
+        }
+        li++;
+        lstart = i + 1;
+      }
+    }
   }
   if (config.boardId < 0 || config.boardId >= NUM_BOARD_PROFILES) {
     // A saved boardId that no longer exists (e.g. the board list changed
@@ -201,6 +226,12 @@ void saveConfig() {
   prefs.putString("saverStyle", config.saverStyle);
   prefs.putInt("rotation", config.rotation);
   prefs.putBool("squareFit", config.squareFit);
+  String layoutsCsv = "";
+  for (int i = 0; i < config.numPages; i++) {
+    if (i > 0) layoutsCsv += ",";
+    layoutsCsv += config.layouts[i];
+  }
+  prefs.putString("layouts", layoutsCsv);
   String pagesCsv = "";
   for (int i = 0; i < config.numPages; i++) {
     if (i > 0) pagesCsv += ",";
@@ -429,6 +460,45 @@ void applyBrightness() {
 #define COL_SUBTEXT  0x9CD3
 
 // ---------------------------------------------------------------------
+// Color math for the temperature-reactive layouts. Pure functions so
+// the host tests can pin the ramp down exactly.
+// ---------------------------------------------------------------------
+uint16_t rgb565(uint8_t r, uint8_t g, uint8_t b) {
+  return (uint16_t)(((r & 0xF8) << 8) | ((g & 0xFC) << 3) | (b >> 3));
+}
+
+// Linear blend between two 565 colors, t in 0..255.
+uint16_t lerpColor565(uint16_t a, uint16_t b, uint8_t t) {
+  int ar = (a >> 11) & 0x1F, ag = (a >> 5) & 0x3F, ab = a & 0x1F;
+  int br = (b >> 11) & 0x1F, bg = (b >> 5) & 0x3F, bb = b & 0x1F;
+  int r = ar + ((br - ar) * t) / 255;
+  int g = ag + ((bg - ag) * t) / 255;
+  int bl = ab + ((bb - ab) * t) / 255;
+  return (uint16_t)((r << 11) | (g << 5) | bl);
+}
+
+// Scale a 565 color toward black: num/den brightness.
+uint16_t dimColor565(uint16_t c, int num, int den) {
+  int r = ((c >> 11) & 0x1F) * num / den;
+  int g = ((c >> 5) & 0x3F) * num / den;
+  int b = (c & 0x1F) * num / den;
+  return (uint16_t)((r << 11) | (g << 5) | b);
+}
+
+// Temperature -> color: comfortable green through amber into red.
+// Continuous, not banded, so the number visibly shifts as things warm
+// up: green at/below 45C, amber around 65C, full red by 85C.
+uint16_t tempColorFor(float c) {
+  const uint16_t GREEN = rgb565(96, 205, 120);
+  const uint16_t AMBER = rgb565(255, 184, 84);
+  const uint16_t RED   = rgb565(255, 92, 74);
+  if (c <= 45.0f) return GREEN;
+  if (c >= 85.0f) return RED;
+  if (c <= 65.0f) return lerpColor565(GREEN, AMBER, (uint8_t)((c - 45.0f) * 255.0f / 20.0f));
+  return lerpColor565(AMBER, RED, (uint8_t)((c - 65.0f) * 255.0f / 20.0f));
+}
+
+// ---------------------------------------------------------------------
 // System stats model (latest values received over serial)
 // ---------------------------------------------------------------------
 
@@ -630,13 +700,149 @@ void drawPageTemp() {
   drawRingGauge(CX(), SY(105), 88, 74, pct, color, big, "CPU TEMP");
 }
 
+// Defined below drawCurrentScreen (with the rest of the mist machinery);
+// declared here because drawPage dispatches into them.
+void drawTempMist(bool animated);
+const char *layoutForPage(const char *pageId);
+
 void drawPage(const char *pageId) {
   if (strcmp(pageId, "cpu") == 0) drawPageCPU();
   else if (strcmp(pageId, "ram") == 0) drawPageRAM();
   else if (strcmp(pageId, "mmc") == 0) drawPageMMC();
   else if (strcmp(pageId, "net") == 0) drawPageNet();
   else if (strcmp(pageId, "nas") == 0) drawPageNAS();
-  else drawPageTemp();
+  else {
+    // CPU Temperature is the first page with alternate layouts. Unknown
+    // layout ids intentionally land on the default renderer.
+    const char *layout = layoutForPage("temp");
+    if (strcmp(layout, "mist") == 0) drawTempMist(false);
+    else if (strcmp(layout, "mist_anim") == 0) drawTempMist(true);
+    else drawPageTemp();
+  }
+}
+
+// ---------------------------------------------------------------------
+// "Mist" layouts for CPU Temperature (firmware 1.4.0): a card-style
+// widget look -- CPU / Temperature label top-left, degree unit
+// top-right, a big temperature number bottom-right, and a speckled mist
+// glowing out of the bottom-right corner. The mist and the number share
+// the temperature-reactive color ramp, so the whole page cools and
+// warms with the CPU. The static variant draws a fixed speckle field
+// (deterministic PRNG, so it doesn't shimmer frame to frame); the
+// animated one adds drifting pixels that fade as they leave the corner.
+// ---------------------------------------------------------------------
+
+struct MistParticle {
+  int16_t x, y;      // position (screen px)
+  int8_t vx, vy;     // velocity per frame (negative = up/left)
+  uint8_t life;      // frames remaining
+  uint8_t maxLife;
+};
+const int MIST_PARTICLES = 22;
+MistParticle mistP[MIST_PARTICLES];
+bool mistInited = false;
+uint32_t mistRng = 0xC0FFEE;  // reused each frame for the STATIC field
+
+uint32_t mistRand(uint32_t *s) {  // small LCG; deterministic + cheap
+  *s = *s * 1664525u + 1013904223u;
+  return *s >> 8;
+}
+
+// Respawn a particle near the bottom-right corner with an up/left drift.
+// Pure-ish (PRNG state passed in) for host testing.
+void mistRespawn(MistParticle *p, uint32_t *rng, int cornerX, int cornerY) {
+  p->x = cornerX - (int16_t)(mistRand(rng) % 34);
+  p->y = cornerY - (int16_t)(mistRand(rng) % 34);
+  p->vx = -1 - (int8_t)(mistRand(rng) % 3);   // -1..-3 px/frame
+  p->vy = -1 - (int8_t)(mistRand(rng) % 3);
+  p->maxLife = 14 + (uint8_t)(mistRand(rng) % 12);
+  p->life = p->maxLife;
+}
+
+void drawTempMist(bool animated) {
+  canvas->fillScreen(COL_BG);
+  uint16_t tcol = tempColorFor(stats.cpu_temp_c);
+  int cornerX = LX + LW, cornerY = LY + LH;
+  int diag = (LW + LH) / 2;
+
+  // Static speckle field: same seed every frame, so the mist holds still.
+  uint32_t rng = 0xC0FFEE;
+  for (int i = 0; i < 900; i++) {
+    int px = LX + (int)(mistRand(&rng) % LW);
+    int py = LY + (int)(mistRand(&rng) % LH);
+    int dx = cornerX - px, dy = cornerY - py;
+    // Manhattan-ish distance is plenty here and avoids sqrt
+    int d = (dx + dy) / 2;
+    if (d > diag) continue;
+    int fall = diag - d;                      // 0 at edge .. diag at corner
+    if ((int)(mistRand(&rng) % (unsigned)diag) > fall) continue;  // density falloff
+    int bright = 8 + fall * 30 / diag;        // 8..38 out of 100
+    canvas->drawPixel(px, py, dimColor565(tcol, bright, 100));
+  }
+
+  if (animated) {
+    if (!mistInited) {
+      uint32_t seed = 0xBEEF;
+      for (int i = 0; i < MIST_PARTICLES; i++) {
+        mistRespawn(&mistP[i], &seed, cornerX, cornerY);
+        // Stagger initial lifetimes so they don't all pulse together
+        mistP[i].life = (uint8_t)(1 + (mistRand(&seed) % mistP[i].maxLife));
+      }
+      mistInited = true;
+    }
+    static uint32_t liveRng = 0xFACADE;
+    for (int i = 0; i < MIST_PARTICLES; i++) {
+      MistParticle *p = &mistP[i];
+      p->x += p->vx;
+      p->y += p->vy;
+      if (p->life > 0) p->life--;
+      if (p->life == 0 || p->x < LX || p->y < LY) {
+        mistRespawn(p, &liveRng, cornerX, cornerY);
+      }
+      // Fade with remaining life; brighter than the static field so the
+      // motion reads.
+      int bright = 12 + (int)p->life * 55 / p->maxLife;
+      uint16_t c = dimColor565(tcol, bright, 100);
+      canvas->fillRect(p->x, p->y, 2, 2, c);
+    }
+  }
+
+  // Labels, widget-style
+  canvas->setTextSize(2);
+  canvas->setTextColor(COL_SUBTEXT);
+  canvas->setCursor(LX + SY(14) - LY, LY + SY(16) - LY);
+  canvas->print("CPU");
+  canvas->setTextColor(COL_TEXT);
+  canvas->setCursor(LX + SY(14) - LY, LY + SY(38) - LY);
+  canvas->print("Temperature");
+
+  // Degree unit, top-right ("o" ring + C, since the classic font has no
+  // degree glyph)
+  int16_t bx, by; uint16_t bw, bh;
+  canvas->getTextBounds("C", 0, 0, &bx, &by, &bw, &bh);
+  int unitX = cornerX - SY(16) + LY - (int)bw;
+  int unitY = LY + SY(16) - LY;
+  canvas->setTextColor(COL_TEXT);
+  canvas->setCursor(unitX, unitY);
+  canvas->print("C");
+  canvas->drawCircle(unitX - 6, unitY + 1, 2, COL_TEXT);
+
+  // The big number, bottom-right, in the temperature color
+  char big[8];
+  snprintf(big, sizeof(big), "%.0f", stats.cpu_temp_c);
+  canvas->setTextSize(7);
+  canvas->getTextBounds(big, 0, 0, &bx, &by, &bw, &bh);
+  canvas->setTextColor(tcol);
+  canvas->setCursor(cornerX - (int)bw - SY(14) + LY, cornerY - (int)bh - SY(12) + LY);
+  canvas->print(big);
+}
+
+// Layout chosen for a page id ("default" when unset/unknown).
+const char *layoutForPage(const char *pageId) {
+  for (int i = 0; i < config.numPages; i++) {
+    if (strcmp(config.pages[i], pageId) == 0) return config.layouts[i];
+  }
+  return "default";
 }
 
 void drawCurrentScreen() {
@@ -809,6 +1015,22 @@ void handleSetConfig(JsonDocument &doc) {
     const char *s = doc["saver_style"];
     if (strcmp(s, "clock") == 0 || strcmp(s, "blank") == 0) strcpy(config.saverStyle, s);
   }
+  // Per-page layout selections: {"temp": "mist", ...}. Applied against
+  // the page list as it now stands (the pages field, if present, was
+  // handled above). Unknown ids are stored as "default" -- see the
+  // whitelist -- so a future dashboard can't persist garbage.
+  if (doc["layouts"].is<JsonObject>()) {
+    for (int i = 0; i < config.numPages; i++) {
+      const char *want = doc["layouts"][config.pages[i]];
+      if (want == nullptr) continue;
+      bool known = strcmp(want, "default") == 0 ||
+                   (strcmp(config.pages[i], "temp") == 0 &&
+                    (strcmp(want, "mist") == 0 || strcmp(want, "mist_anim") == 0));
+      strncpy(config.layouts[i], known ? want : "default", 11);
+      config.layouts[i][11] = 0;
+    }
+  }
+
   bool displayGeomChanged = false;
   if (doc["rotation"].is<int>()) {
     int r = doc["rotation"];
@@ -880,6 +1102,10 @@ void handleGetConfig() {
   doc["saver_style"] = config.saverStyle;
   doc["rotation"] = config.rotation;
   doc["square_fit"] = config.squareFit;
+  JsonObject layoutsOut = doc["layouts"].to<JsonObject>();
+  for (int i = 0; i < config.numPages; i++) {
+    layoutsOut[config.pages[i]] = config.layouts[i];
+  }
   doc["has_touch"] = BOARD_PROFILES[config.boardId].hasTouch;
   doc["firmware_version"] = FIRMWARE_VERSION;
 

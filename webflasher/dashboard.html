@@ -742,7 +742,80 @@
     { id: 'nas',  label: 'NAS Usage',           short: 'NAS USAGE',   desc: 'Space used across your storage pool.',          kind: 'ring', unit: '%' },
   ];
   const pageDef = id => ALL_PAGES.find(p => p.id === id) || { id, label: id, desc: '', kind: 'ring', unit: '%' };
+
+  // Layout styles offered per page. Every page has the classic look;
+  // CPU Temperature is the first with alternates (firmware 1.4.0).
+  const PAGE_LAYOUTS = {
+    temp: [
+      { id: 'default',   label: 'TinyScreen (default)' },
+      { id: 'mist',      label: 'Mist' },
+      { id: 'mist_anim', label: 'Mist (animated)' },
+    ],
+  };
+  const DEFAULT_LAYOUTS = [{ id: 'default', label: 'TinyScreen (default)' }];
+  const layoutsFor = id => PAGE_LAYOUTS[id] || DEFAULT_LAYOUTS;
+  let pageLayouts = {};  // pageId -> selected layout id
+
+  // Same green->amber->red ramp the firmware uses (anchors at 45/65/85C)
+  function tempColorJS(c) {
+    const lerp = (a, b, t) => a.map((v, i) => Math.round(v + (b[i] - v) * t));
+    const G = [96, 205, 120], A = [255, 184, 84], R = [255, 92, 74];
+    let rgb;
+    if (c <= 45) rgb = G;
+    else if (c >= 85) rgb = R;
+    else if (c <= 65) rgb = lerp(G, A, (c - 45) / 20);
+    else rgb = lerp(A, R, (c - 65) / 20);
+    return 'rgb(' + rgb.join(',') + ')';
+  }
   const pageLabel = id => pageDef(id).label;
+
+  // The Mist layout, in SVG, for the dashboard previews: corner glow,
+  // deterministic speckle, widget-style labels, and the big number in
+  // the shared temperature ramp. Animated variant shows a few brighter
+  // drifting pixels frozen mid-flight.
+  function mistPreviewSVG(size, animated) {
+    if (!('temp_mist' in PREVIEW_VALUES)) {
+      PREVIEW_VALUES.temp_mist = 33 + Math.floor(Math.random() * 12);
+    }
+    const val = PREVIEW_VALUES.temp_mist;
+    const col = tempColorJS(val);
+    // deterministic speckle via a little LCG, denser near bottom-right
+    let s = 0xC0FFEE;
+    const rnd = () => (s = (s * 1664525 + 1013904223) >>> 0) / 4294967296;
+    let speckle = '';
+    for (let i = 0; i < 130; i++) {
+      const x = rnd() * 100, y = rnd() * 100;
+      const d = ((100 - x) + (100 - y)) / 2;   // 0 at corner .. 100 far
+      if (rnd() * 100 < d) continue;            // density falloff
+      const o = (0.10 + (1 - d / 100) * 0.30).toFixed(2);
+      speckle += '<rect x="' + x.toFixed(1) + '" y="' + y.toFixed(1) +
+        '" width="1" height="1" fill="' + col + '" opacity="' + o + '"/>';
+    }
+    let particles = '';
+    if (animated) {
+      for (let i = 0; i < 7; i++) {
+        const t = rnd();
+        const x = 96 - t * 46 - rnd() * 8, y = 96 - t * 46 - rnd() * 8;
+        particles += '<rect x="' + x.toFixed(1) + '" y="' + y.toFixed(1) +
+          '" width="1.8" height="1.8" fill="' + col + '" opacity="' + (0.75 - t * 0.6).toFixed(2) + '"/>';
+      }
+    }
+    return '<svg width="' + size + '" height="' + size + '" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">' +
+      '<defs><radialGradient id="mistg" cx="100%" cy="100%" r="95%">' +
+      '<stop offset="0%" stop-color="' + col + '" stop-opacity="0.38"/>' +
+      '<stop offset="60%" stop-color="' + col + '" stop-opacity="0.10"/>' +
+      '<stop offset="100%" stop-color="' + col + '" stop-opacity="0"/>' +
+      '</radialGradient></defs>' +
+      '<rect width="100" height="100" fill="#08141a"/>' +
+      '<rect width="100" height="100" fill="url(#mistg)"/>' +
+      speckle + particles +
+      '<text x="10" y="16" fill="#8fb0ac" font-size="8" font-family="sans-serif">CPU</text>' +
+      '<text x="10" y="27" fill="#eaf6f4" font-size="8.5" font-weight="700" font-family="sans-serif">Temperature</text>' +
+      '<text x="90" y="16" text-anchor="end" fill="#eaf6f4" font-size="8" font-family="sans-serif">\u00b0C</text>' +
+      '<text x="90" y="88" text-anchor="end" fill="' + col + '" font-size="30" font-weight="700" ' +
+      'font-family="sans-serif">' + val + '</text>' +
+      '</svg>';
+  }
 
   // Mock "screenshots" of what each page looks like on the device --
   // same visual language as the firmware's renderer (dark screen, ring
@@ -751,6 +824,9 @@
   const PREVIEW_VALUES = {};  // stable per page per load
   function previewSVG(id, size) {
     const def = pageDef(id);
+    if (id === 'temp' && (pageLayouts[id] === 'mist' || pageLayouts[id] === 'mist_anim')) {
+      return mistPreviewSVG(size, pageLayouts[id] === 'mist_anim');
+    }
     if (!(id in PREVIEW_VALUES)) {
       PREVIEW_VALUES[id] = def.unit === '°C'
         ? 35 + Math.floor(Math.random() * 30)
@@ -946,14 +1022,27 @@
         side.className = 'layout-side';
         const sel = document.createElement('select');
         sel.className = 'style-select';
-        sel.disabled = true;
-        const opt = document.createElement('option');
-        opt.textContent = 'Default layout';
-        sel.appendChild(opt);
-        const hint = document.createElement('div');
-        hint.className = 'layout-hint';
-        hint.textContent = 'More layout styles are on the way.';
-        side.appendChild(sel); side.appendChild(hint);
+        const options = layoutsFor(id);
+        options.forEach(o => {
+          const opt = document.createElement('option');
+          opt.value = o.id;
+          opt.textContent = o.label;
+          sel.appendChild(opt);
+        });
+        sel.value = pageLayouts[id] || 'default';
+        sel.disabled = options.length === 1;
+        sel.addEventListener('change', () => {
+          pageLayouts[id] = sel.value;
+          markDirty();
+          renderLayouts();  // previews (card + carousel) follow the choice
+        });
+        side.appendChild(sel);
+        if (options.length === 1) {
+          const hint = document.createElement('div');
+          hint.className = 'layout-hint';
+          hint.textContent = 'More layout styles are on the way.';
+          side.appendChild(hint);
+        }
         body.appendChild(pv); body.appendChild(side);
         card.appendChild(body);
       }
@@ -1156,6 +1245,14 @@
         }
       }
       const cfg = cfgData.config;
+
+      // Per-page layout selections (firmware 1.4.0) -- set before ANY
+      // preview renders (the General tab's device preview uses them too;
+      // older firmware simply doesn't report the field).
+      pageLayouts = {};
+      if (cfg.layouts && typeof cfg.layouts === 'object') {
+        Object.keys(cfg.layouts).forEach(k => { pageLayouts[k] = cfg.layouts[k]; });
+      }
 
       // -- General tab --
       // Same naming/description scheme as the wizard's board cards.
@@ -1918,6 +2015,7 @@
           tz_name: Intl.DateTimeFormat().resolvedOptions().timeZone,
           rotation: rotation,
           square_fit: squareFit,
+          layouts: pageLayouts,
           saver_enabled: saverEnabled,
           saver_minutes: saverMinutes,
           saver_style: saverStyle,
