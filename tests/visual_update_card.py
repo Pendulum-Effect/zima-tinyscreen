@@ -95,6 +95,14 @@ class Stub(BaseHTTPRequestHandler):
                 return self._send({"ok": True, "about": about,
                                    "changelog": changelog,
                                    "source": {"about": "github", "changelog": "github"}})
+            if route == "/api/last_flash":
+                return self._send({"ok": True, "flash": {
+                    "at": 1783550000, "ok": True, "board": 1,
+                    "log": "esptool v4.7\nHash of data verified.\nLeaving..."}})
+            if route == "/api/current_config" and SCENARIO.get("no_device"):
+                return self._send({"ok": False, "no_device": True,
+                    "error": "No ESP32 serial device found. Is it plugged in?",
+                    "cached_config": BASE_CONFIG["config"]}, 400)
             mapping = {"/api/current_config": BASE_CONFIG,
                        "/api/status": BASE_STATUS,
                        "/api/firmware_info": FW_INFO,

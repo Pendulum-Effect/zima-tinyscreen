@@ -312,12 +312,14 @@
      and slide between the name and the meta lines on phones. */
   .device-card {
     display: grid;
-    grid-template-areas: "name preview" "meta preview";
+    grid-template-areas: "name preview" "health preview" "meta preview";
     grid-template-columns: 1fr auto;
-    grid-template-rows: auto 1fr;
+    grid-template-rows: auto 1fr auto;
     column-gap: 24px;
+    min-height: 232px;
   }
-  .device-card .device-meta { margin-top: 4px; }
+  .device-card #health-status { align-self: center; padding: 14px 0; }
+  .device-card .device-meta { align-self: end; }
 
   /* Device preview glyph (wizard-style frame around a live-ish mock).
      At least as wide as the uniform buttons -- front and center. */
@@ -335,17 +337,70 @@
 
   /* Health pill, ZimaOS-style */
   .pill {
-    display: inline-block; padding: 2px 10px; border-radius: 999px;
-    border: 1.5px solid currentColor; font-size: 12px; font-weight: 600;
-    line-height: 1.6;
+    display: inline-flex; align-items: baseline; gap: 6px;
+    padding: 3px 13px; border-radius: 999px;
+    border: 1.5px solid currentColor; font-size: 12px;
+    line-height: 1.7; max-width: 100%;
   }
+  .pill .pill-state { font-weight: 600; }
+  .pill .pill-detail { color: var(--subtext); font-weight: 400; }
   .pill.ok { color: #55d187; }
   .pill.warn { color: var(--warn); }
   .pill.err { color: var(--err); }
-  .health-line { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 
   /* General page: every action button the same footprint */
   .btn-uniform { min-width: 168px; }
+
+  /* Sub-views: a panel's main content swaps out for a focused full-page
+     view (full changelog, full acknowledgements, debug logs) with a
+     little slide-in; Back or the side nav returns. */
+  .subview { display: none; }
+  .subview.open { display: block; animation: viewIn 0.3s ease; }
+  .view-swap-out { display: none !important; }
+  @keyframes viewIn {
+    from { opacity: 0; transform: translateY(12px); }
+    to   { opacity: 1; transform: none; }
+  }
+  .sub-back {
+    display: inline-flex; align-items: center; gap: 7px;
+    background: none; border: none; color: var(--teal);
+    font: inherit; font-size: 14px; cursor: pointer; padding: 0;
+    margin-bottom: 16px;
+  }
+  .sub-back:hover { text-decoration: underline; }
+  .debug-block {
+    background: #0a161b; border: 1px solid var(--border); border-radius: 10px;
+    padding: 12px 14px; margin-top: 8px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 11.5px; line-height: 1.55; color: var(--subtext);
+    white-space: pre-wrap; word-break: break-word;
+    max-height: 260px; overflow-y: auto;
+  }
+
+  /* Compact acknowledgement strip on the About main view */
+  /* About main view runs dense so it fits one screen (per design goal) */
+  .tab-panel[data-panel="about"] #about-content .card {
+    padding: 15px 20px;
+    margin-bottom: 12px;
+  }
+  .tab-panel[data-panel="about"] h2 { margin-bottom: 14px; }
+
+  .ack-strip {
+    display: flex; flex-wrap: wrap; justify-content: center;
+    align-items: center; gap: 6px 10px; margin-top: 14px;
+  }
+  .ack-strip a { display: inline-flex; align-items: center; gap: 6px; color: var(--teal); text-decoration: none; font-size: 13px; }
+  .ack-strip a:hover { text-decoration: underline; }
+  .ack-strip img, .about-avatar { width: 20px; height: 20px; border-radius: 50%; }
+  .ack-sep { color: var(--border); }
+  .logo-slot {
+    width: 54px; height: 54px; border-radius: 12px; flex-shrink: 0;
+    border: 1.5px dashed var(--border); color: var(--subtext);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 9px; letter-spacing: 0.06em; text-transform: uppercase;
+  }
+  .logo-slot img { width: 100%; height: 100%; border-radius: 12px; object-fit: cover; }
+  .ai-spark { width: 20px; height: 20px; color: var(--teal); flex-shrink: 0; }
   .save-banner .banner-msg { font-size: 13.5px; }
   .banner-discard {
     background: none; border: none; color: var(--subtext);
@@ -386,8 +441,14 @@
       gap: 14px;
     }
     .tab-panel[data-panel="general"] .card-header .btn {
-      align-self: flex-start;
+      align-self: center;
     }
+    /* Everything in the device card centers over/under the picture */
+    .device-card [style*="grid-area: name"] { text-align: center; }
+    .device-card #health-status { text-align: center; padding: 4px 0; }
+    .device-card .device-meta { text-align: center; }
+    .device-card .device-meta .btn { margin-left: auto; margin-right: auto; }
+    .device-card { min-height: 0; }
   }
 </style>
 </head>
@@ -421,18 +482,21 @@
   <div class="main">
     <!-- General -->
     <section class="tab-panel active" data-panel="general">
+      <div id="general-main">
       <h2>General</h2>
       <div id="general-loading" class="loading">Loading device info…</div>
       <div id="general-error" class="error-banner" style="display:none;"></div>
       <div id="general-content" style="display:none;">
 
         <div class="card device-card">
-          <div class="card-title" id="model-name" style="grid-area: name;">—</div>
-          <div class="device-preview" id="device-preview" style="grid-area: preview;" title="A little preview of what's on the screen right now"></div>
-          <div class="device-meta" style="grid-area: meta;">
+          <div style="grid-area: name;">
+            <div class="card-title" id="model-name">—</div>
             <div class="card-desc" id="model-sku">—</div>
-            <div class="card-desc" id="health-status" style="margin-top:10px;">—</div>
-            <div class="card-desc" id="firmware-version" style="margin-top:10px;">—</div>
+          </div>
+          <div class="device-preview" id="device-preview" style="grid-area: preview;" title="A little preview of what's on the screen right now"></div>
+          <div id="health-status" style="grid-area: health;">—</div>
+          <div class="device-meta" style="grid-area: meta;">
+            <div class="card-desc" id="firmware-version">—</div>
             <div class="card-desc" id="update-status" style="margin-top:2px;"></div>
             <button class="btn btn-uniform" id="update-btn" style="display:none; margin-top:14px;">Update Firmware</button>
           </div>
@@ -455,7 +519,7 @@
               <div class="card-title">Debugging</div>
               <div class="card-desc">Check API status and view the firmware update outcomes.</div>
             </div>
-            <button class="btn btn-uniform" disabled title="Coming soon">View Logs</button>
+            <button class="btn btn-uniform" id="view-logs-btn">View Logs</button>
           </div>
         </div>
 
@@ -470,6 +534,12 @@
           </div>
         </div>
 
+      </div>
+      </div>
+      <div id="general-sub" class="subview">
+        <button class="sub-back" id="general-sub-back">&larr; Back to General</button>
+        <h2>Debugging</h2>
+        <div id="general-sub-body"></div>
       </div>
     </section>
 
@@ -606,9 +676,16 @@
 
     <!-- About -->
     <section class="tab-panel" data-panel="about">
-      <h2>About</h2>
-      <div id="about-loading" class="loading">Loading…</div>
-      <div id="about-content" style="display:none;"></div>
+      <div id="about-main">
+        <h2>About</h2>
+        <div id="about-loading" class="loading">Loading…</div>
+        <div id="about-content" style="display:none;"></div>
+      </div>
+      <div id="about-sub" class="subview">
+        <button class="sub-back" id="about-sub-back">&larr; Back to About</button>
+        <h2 id="about-sub-title">—</h2>
+        <div id="about-sub-body"></div>
+      </div>
     </section>
   </div>
   </div>
@@ -638,6 +715,7 @@
       document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
       item.classList.add('active');
       document.querySelector(`.tab-panel[data-panel="${item.dataset.tab}"]`).classList.add('active');
+      resetSubViews();  // side nav always returns to a panel's main view
     });
   });
 
@@ -1063,9 +1141,19 @@
         // non-essential; ignore
       }
 
+      let deviceMissing = false;
       if (!cfgData.ok) {
-        showError((cfgData.error || 'Could not reach the device.') + ' <a href="wizard.html">Run setup →</a>');
-        return;
+        if (cfgData.no_device && cfgData.cached_config) {
+          // Device unplugged but we know its last state: render the whole
+          // dashboard from the cache with a Warning pill instead of an
+          // error page -- settings stay browsable (saves will just fail
+          // until it's plugged back in).
+          deviceMissing = true;
+          cfgData = { ok: true, config: cfgData.cached_config };
+        } else {
+          showError((cfgData.error || 'Could not reach the device.') + ' <a href="wizard.html">Run setup →</a>');
+          return;
+        }
       }
       const cfg = cfgData.config;
 
@@ -1107,29 +1195,36 @@
         updateStatus.style.color = 'var(--subtext)';
       }
 
-      // ZimaOS-style health pill: [Healthy] · Connected to ZimaBlade
+      // ZimaOS-style health pill -- ONE bordered pill wrapping both the
+      // state word and the detail: (Healthy · Connected to ZimaBlade)
       const healthEl = document.getElementById('health-status');
-      healthEl.classList.add('health-line');
       healthEl.textContent = '';
       const pill = document.createElement('span');
+      const state = document.createElement('span');
+      state.className = 'pill-state';
       const detail = document.createElement('span');
+      detail.className = 'pill-detail';
       const host = statusData.hostname;
-      if (statusData.collector_running && statusData.age_seconds < 10) {
+      if (deviceMissing) {
+        pill.className = 'pill warn';
+        state.textContent = 'Warning';
+        detail.textContent = '\u00b7 No device detected';
+      } else if (statusData.collector_running && statusData.age_seconds < 10) {
         pill.className = 'pill ok';
-        pill.textContent = 'Healthy';
+        state.textContent = 'Healthy';
         detail.textContent = '\u00b7 Connected' + (host ? ' to ' + host : '');
       } else if (statusData.collector_running) {
         pill.className = 'pill warn';
-        pill.textContent = 'Stale';
+        state.textContent = 'Stale';
         detail.textContent = '\u00b7 Data is ' + Math.round(statusData.age_seconds) + 's old';
       } else {
         pill.className = 'pill err';
-        pill.textContent = 'Offline';
+        state.textContent = 'Offline';
         detail.textContent = '\u00b7 Screen not connected';
       }
-      detail.style.color = 'var(--subtext)';
+      pill.appendChild(state);
+      pill.appendChild(detail);
       healthEl.appendChild(pill);
-      healthEl.appendChild(detail);
       document.getElementById('general-loading').style.display = 'none';
       document.getElementById('general-content').style.display = 'block';
 
@@ -1315,6 +1410,8 @@
     if (!aboutLoaded) { aboutLoaded = true; loadAboutTab(); }
   });
 
+  let aboutData = null;  // {about, changelog} kept for the sub-views
+
   async function loadAboutTab() {
     const loadingEl = document.getElementById('about-loading');
     const contentEl = document.getElementById('about-content');
@@ -1334,6 +1431,7 @@
       contentEl.appendChild(err);
       return;
     }
+    aboutData = data;
 
     const el = (tag, cls, text) => {
       const n = document.createElement(tag);
@@ -1348,161 +1446,295 @@
       a.style.color = 'var(--teal)';
       return a;
     };
+    const avatar = (handle, size) => {
+      const img = document.createElement('img');
+      img.src = 'https://github.com/' + handle + '.png?size=' + (size || 48);
+      img.alt = '';
+      img.loading = 'lazy';
+      img.onerror = () => img.remove();  // offline / renamed account: just text
+      return img;
+    };
     const card = (titleText) => {
       const c = el('div', 'card');
       if (titleText) c.appendChild(el('div', 'card-title', titleText));
       contentEl.appendChild(c);
       return c;
     };
+    contentEl.textContent = '';
 
     const about = data.about || {};
 
-    // -- project / author / repo --
+    // -- project header: logo slot + name/tagline + author (with avatar) --
     if (about.project) {
       const p = about.project;
-      const c = card(p.name || 'TinyScreen');
-      if (p.tagline) c.appendChild(el('div', 'card-desc', p.tagline));
+      const c = el('div', 'card');
+      contentEl.appendChild(c);
+      const head = el('div');
+      head.style.display = 'flex';
+      head.style.gap = '16px';
+      head.style.alignItems = 'center';
+      // Reserved logo spot: shows the real logo the moment
+      // project.logo_url appears in about.json, dashed placeholder until.
+      const slot = el('div', 'logo-slot');
+      if (p.logo_url) {
+        const img = document.createElement('img');
+        img.src = p.logo_url; img.alt = (p.name || 'TinyScreen') + ' logo';
+        slot.style.border = 'none';
+        slot.appendChild(img);
+      } else {
+        slot.textContent = 'logo';
+        slot.title = 'Reserved for the TinyScreen logo';
+      }
+      head.appendChild(slot);
+      const titleWrap = el('div');
+      titleWrap.appendChild(el('div', 'card-title', p.name || 'TinyScreen'));
+      if (p.tagline) titleWrap.appendChild(el('div', 'card-desc', p.tagline));
+      head.appendChild(titleWrap);
+      c.appendChild(head);
       if (p.description) {
         const d = el('div', 'card-desc', p.description);
-        d.style.marginTop = '10px';
+        d.style.marginTop = '12px';
         c.appendChild(d);
       }
       const meta = el('div', 'card-desc');
       meta.style.marginTop = '10px';
+      meta.style.display = 'flex';
+      meta.style.alignItems = 'center';
+      meta.style.gap = '7px';
+      meta.style.flexWrap = 'wrap';
       if (p.author && p.author.name) {
-        meta.appendChild(document.createTextNode('Made by '));
+        meta.appendChild(document.createTextNode('Made by'));
+        if (p.author.github) {
+          const av = avatar(p.author.github, 40);
+          av.className = 'about-avatar';
+          meta.appendChild(av);
+        }
         meta.appendChild(p.author.url ? link(p.author.url, p.author.name)
                                       : document.createTextNode(p.author.name));
       }
       if (p.repo_url) {
-        meta.appendChild(document.createTextNode('  ·  '));
+        meta.appendChild(document.createTextNode('\u00b7'));
         meta.appendChild(link(p.repo_url, 'Source on GitHub'));
       }
-      c.appendChild(meta);
-    }
-
-    // -- AI acknowledgement --
-    if (about.ai && about.ai.text) {
-      const c = card(about.ai.heading || 'Built with AI');
-      c.appendChild(el('div', 'card-desc', about.ai.text));
-    }
-
-    // -- third-party acknowledgements --
-    if (about.acknowledgements && Array.isArray(about.acknowledgements.items)) {
-      const ack = about.acknowledgements;
-      const c = card(ack.heading || 'Acknowledgements');
-      if (ack.intro) c.appendChild(el('div', 'card-desc', ack.intro));
-      ack.items.forEach(item => {
-        const row = el('div');
-        row.style.marginTop = '12px';
-        const title = el('div');
-        title.appendChild(item.url ? link(item.url, item.name) : el('span', null, item.name));
-        if (item.by) title.appendChild(document.createTextNode(' — ' + item.by));
-        row.appendChild(title);
-        if (item.note) row.appendChild(el('div', 'card-desc', item.note));
-        c.appendChild(row);
-      });
-    }
-
-    // -- license --
-    if (about.license) {
       const lic = about.license;
-      const c = card('License');
-      const line = el('div', 'card-desc');
-      if (lic.url && lic.name) line.appendChild(link(lic.url, lic.name));
-      else if (lic.name) line.textContent = lic.name;
-      c.appendChild(line);
-      if (lic.summary) {
+      if (lic && lic.name) {
+        meta.appendChild(document.createTextNode('\u00b7'));
+        meta.appendChild(lic.url ? link(lic.url, lic.name) : document.createTextNode(lic.name));
+      }
+      c.appendChild(meta);
+      if (lic && lic.summary) {
         const s = el('div', 'card-desc', lic.summary);
         s.style.marginTop = '6px';
+        s.style.fontSize = '12px';
         c.appendChild(s);
       }
     }
 
-    // -- changelog --
+    // -- Built with AI (sparkle mark -- an original icon standing in for
+    //    the assistant; swap for an official asset if one lands in the
+    //    repo later) --
+    if (about.ai && about.ai.text) {
+      const c = el('div', 'card');
+      contentEl.appendChild(c);
+      const head = el('div');
+      head.style.display = 'flex';
+      head.style.alignItems = 'center';
+      head.style.gap = '10px';
+      head.innerHTML = '<svg class="ai-spark" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">' +
+        '<path d="M12 2l1.8 6.2L20 10l-6.2 1.8L12 18l-1.8-6.2L4 10l6.2-1.8L12 2z"/>' +
+        '<circle cx="19" cy="4.5" r="1.6"/><circle cx="5" cy="19" r="1.3"/></svg>';
+      head.appendChild(el('div', 'card-title', about.ai.heading || 'Built with AI'));
+      c.appendChild(head);
+      const d = el('div', 'card-desc', about.ai.text);
+      d.style.marginTop = '8px';
+      c.appendChild(d);
+    }
+
+    // -- acknowledgements: compact centered strip + Learn more sub-page --
+    if (about.acknowledgements && Array.isArray(about.acknowledgements.items)) {
+      const ack = about.acknowledgements;
+      const c = card(ack.heading || 'Acknowledgements');
+      const strip = el('div', 'ack-strip');
+      ack.items.forEach((item, i) => {
+        if (i > 0) strip.appendChild(el('span', 'ack-sep', '\u00b7'));
+        const a = document.createElement('a');
+        a.href = item.url; a.target = '_blank'; a.rel = 'noopener';
+        if (item.github) a.appendChild(avatar(item.github, 40));
+        a.appendChild(document.createTextNode(item.name));
+        strip.appendChild(a);
+      });
+      c.appendChild(strip);
+      const more = el('button', 'sub-back', 'Learn more \u2192');
+      more.style.margin = '14px 0 0';
+      more.addEventListener('click', () => openAboutSub('ack'));
+      c.appendChild(more);
+    }
+
+    // -- changelog: latest entry only + View more sub-page --
     const entries = (data.changelog && Array.isArray(data.changelog.entries))
       ? data.changelog.entries : [];
     if (entries.length) {
       const c = card("What's changed");
-      entries.forEach(entry => {
-        const row = el('div');
-        row.style.marginTop = '14px';
-        const head = el('div');
-        const v = el('span', null, 'v' + entry.version);
-        v.style.color = 'var(--teal)';
-        v.style.fontWeight = '600';
-        head.appendChild(v);
-        if (entry.title) head.appendChild(document.createTextNode('  ' + entry.title));
-        if (entry.date) {
-          const d = el('span', null, '  ·  ' + entry.date);
-          d.style.color = 'var(--subtext)';
-          d.style.fontSize = '0.85em';
-          head.appendChild(d);
-        }
-        row.appendChild(head);
-        (entry.notes || []).forEach(note => {
-          const n = el('div', 'card-desc', '• ' + note);
-          n.style.marginTop = '3px';
-          row.appendChild(n);
-        });
-        c.appendChild(row);
-      });
+      renderChangelogEntry(c, entries[0], el);
+      const more = el('button', 'sub-back', 'View more \u2192');
+      more.style.margin = '14px 0 0';
+      more.addEventListener('click', () => openAboutSub('changelog'));
+      c.appendChild(more);
     }
   }
 
-  // Reset Device: erases the display's saved settings (clear_config over
-  // serial) and reboots it into fresh-flash setup mode, then walks the
-  // user into the first-time wizard. Same two-click arm/confirm pattern
-  // as Update App -- an erase should never ride on a single misclick.
-  document.getElementById('reset-device-btn').addEventListener('click', async function () {
-    const btn = this;
-    const statusEl = document.getElementById('reset-status');
-    if (btn.dataset.armed !== '1') {
-      btn.dataset.armed = '1';
-      btn.textContent = 'Confirm — erases settings';
-      setTimeout(() => {
-        btn.dataset.armed = '';
-        btn.textContent = 'Reset';
-      }, 6000);
-      return;
+  function renderChangelogEntry(container, entry, el) {
+    const row = el('div');
+    row.style.marginTop = '12px';
+    const head = el('div');
+    const v = el('span', null, 'v' + entry.version);
+    v.style.color = 'var(--teal)';
+    v.style.fontWeight = '600';
+    head.appendChild(v);
+    if (entry.title) head.appendChild(document.createTextNode('  ' + entry.title));
+    if (entry.date) {
+      const d = el('span', null, '  \u00b7  ' + entry.date);
+      d.style.color = 'var(--subtext)';
+      d.style.fontSize = '0.85em';
+      head.appendChild(d);
     }
-    btn.dataset.armed = '';
-    btn.disabled = true;
-    btn.textContent = 'Resetting…';
-    statusEl.style.display = 'block';
-    statusEl.style.color = 'var(--subtext)';
-    statusEl.textContent = 'Erasing device settings…';
-    let data;
-    try {
-      const res = await fetch('/api/reset_device', { method: 'POST' });
-      data = await res.json();
-    } catch (e) {
-      data = { ok: false, error: 'Request failed: ' + e.message };
-    }
-    if (data.ok && data.acked) {
-      statusEl.style.color = 'var(--teal)';
-      statusEl.textContent = 'Device reset — taking you to setup…';
-      setTimeout(() => { window.location = 'wizard.html'; }, 1500);
-    } else if (data.ok) {
-      // Command sent but no ack seen -- the device may still have reset
-      // (native-USB boards re-enumerate mid-reply sometimes). Let the
-      // user decide from the wizard rather than leaving them stranded.
-      statusEl.style.color = 'var(--teal)';
-      statusEl.textContent = 'Reset sent (no confirmation seen) — taking you to setup…';
-      setTimeout(() => { window.location = 'wizard.html'; }, 2500);
-    } else {
-      statusEl.style.color = '#e8a87c';
-      statusEl.textContent = 'Reset failed: ' + (data.error || 'unknown error');
-      btn.disabled = false;
-      btn.textContent = 'Reset';
-    }
-  });
+    row.appendChild(head);
+    (entry.notes || []).forEach(note => {
+      const n = el('div', 'card-desc', '\u2022 ' + note);
+      n.style.marginTop = '3px';
+      row.appendChild(n);
+    });
+    container.appendChild(row);
+  }
 
   // ---------------------------------------------------------------------
+  // Sub-views: swap a panel's main content for a focused page (full
+  // changelog, full acknowledgements, debug logs). Back or any nav click
+  // returns to the mains.
+  // ---------------------------------------------------------------------
+  function resetSubViews() {
+    document.querySelectorAll('.subview').forEach(s => s.classList.remove('open'));
+    ['about-main', 'general-main'].forEach(id => {
+      const m = document.getElementById(id);
+      if (m) m.classList.remove('view-swap-out');
+    });
+  }
+
+  function openAboutSub(kind) {
+    const el = (tag, cls, text) => {
+      const n = document.createElement(tag);
+      if (cls) n.className = cls;
+      if (text !== undefined) n.textContent = text;
+      return n;
+    };
+    const body = document.getElementById('about-sub-body');
+    body.textContent = '';
+    if (kind === 'changelog') {
+      document.getElementById('about-sub-title').textContent = 'Version history';
+      const c = el('div', 'card');
+      ((aboutData.changelog || {}).entries || []).forEach(e => renderChangelogEntry(c, e, el));
+      body.appendChild(c);
+    } else {
+      document.getElementById('about-sub-title').textContent = 'Standing on shoulders';
+      const ack = (aboutData.about || {}).acknowledgements || {};
+      const c = el('div', 'card');
+      if (ack.intro) c.appendChild(el('div', 'card-desc', ack.intro));
+      (ack.items || []).forEach(item => {
+        const row = el('div');
+        row.style.marginTop = '14px';
+        const title = el('div');
+        title.style.display = 'flex';
+        title.style.alignItems = 'center';
+        title.style.gap = '8px';
+        if (item.github) {
+          const img = document.createElement('img');
+          img.className = 'about-avatar';
+          img.src = 'https://github.com/' + item.github + '.png?size=40';
+          img.alt = ''; img.loading = 'lazy';
+          img.onerror = () => img.remove();
+          title.appendChild(img);
+        }
+        const a = document.createElement('a');
+        a.href = item.url; a.target = '_blank'; a.rel = 'noopener';
+        a.style.color = 'var(--teal)';
+        a.textContent = item.name;
+        title.appendChild(a);
+        if (item.by) title.appendChild(document.createTextNode('\u2014 ' + item.by));
+        row.appendChild(title);
+        if (item.note) row.appendChild(el('div', 'card-desc', item.note));
+        c.appendChild(row);
+      });
+      body.appendChild(c);
+    }
+    document.getElementById('about-main').classList.add('view-swap-out');
+    const sub = document.getElementById('about-sub');
+    sub.classList.remove('open');
+    void sub.offsetWidth;  // restart the animation
+    sub.classList.add('open');
+    document.querySelector('.main').scrollTop = 0;
+  }
+  document.getElementById('about-sub-back').addEventListener('click', resetSubViews);
+
+  // -- Debugging view (View Logs): last flash output + raw API state --
+  async function openDebugView() {
+    const body = document.getElementById('general-sub-body');
+    body.textContent = '';
+    const el = (tag, cls, text) => {
+      const n = document.createElement(tag);
+      if (cls) n.className = cls;
+      if (text !== undefined) n.textContent = text;
+      return n;
+    };
+    const section = (title) => {
+      const c = el('div', 'card');
+      c.appendChild(el('div', 'card-title', title));
+      body.appendChild(c);
+      return c;
+    };
+    document.getElementById('general-main').classList.add('view-swap-out');
+    const sub = document.getElementById('general-sub');
+    sub.classList.remove('open');
+    void sub.offsetWidth;
+    sub.classList.add('open');
+    document.querySelector('.main').scrollTop = 0;
+
+    const fetchJson = async (url) => {
+      try { return await (await fetch(url)).json(); }
+      catch (e) { return { error: 'unreachable: ' + e.message }; }
+    };
+    const [flash, status, appVer, updState] = await Promise.all([
+      fetchJson('/api/last_flash'), fetchJson('/api/status'),
+      fetchJson('/api/app_version'), fetchJson('/api/update_state'),
+    ]);
+
+    const fc = section('Last firmware update');
+    if (flash && flash.flash) {
+      const meta = el('div', 'card-desc',
+        (flash.flash.ok ? 'Succeeded' : 'Failed') + ' \u00b7 ' +
+        new Date(flash.flash.at * 1000).toLocaleString() +
+        ' \u00b7 board ' + flash.flash.board);
+      fc.appendChild(meta);
+      fc.appendChild(el('div', 'debug-block', flash.flash.log || '(no output captured)'));
+    } else {
+      fc.appendChild(el('div', 'card-desc', 'No firmware update has run from this app yet.'));
+    }
+
+    const pairs = [['Live status (/api/status)', status],
+                   ['App version (/api/app_version)', appVer],
+                   ['Last app update (/api/update_state)', updState]];
+    pairs.forEach(([title, obj]) => {
+      const c = section(title);
+      c.appendChild(el('div', 'debug-block', JSON.stringify(obj, null, 2)));
+    });
+  }
+  document.getElementById('view-logs-btn').addEventListener('click', openDebugView);
+  document.getElementById('general-sub-back').addEventListener('click', resetSubViews);
+
+  // ---------------------------------------------------------------------
+  // Unsaved-changes banner:  // ---------------------------------------------------------------------
   // Software Version card: live "Check for Update" plus the update
   // confirmation modal (the window shrinks back, a dialog confirms the
-  // target version with expandable patch notes -- replaces the old
-  // click-twice-to-confirm button).
+  // target version with expandable patch notes).
   // ---------------------------------------------------------------------
   const verLabel = (d, which) => {
     if (which === 'current') return d.version ? 'v' + d.version : 'v' + d.current_commit.slice(0, 7);
@@ -1555,7 +1787,6 @@
       openUpdateModal();
       return;
     }
-    // mode: check -- re-ask the server (which asks GitHub) right now.
     const statusEl = document.getElementById('app-version-status');
     this.disabled = true;
     statusEl.textContent = 'Checking\u2026';
@@ -1570,15 +1801,13 @@
     renderAppVersion(data);
   });
 
-  // -- the modal itself --
   function openUpdateModal() {
     const d = lastAppVer;
     document.getElementById('modal-text').textContent =
       "You're about to update to " + verLabel(d, 'latest') +
       '. This takes a minute or two, and the app restarts partway through.';
     document.getElementById('modal-notes').open = false;
-    const notesBody = document.getElementById('modal-notes-body');
-    notesBody.textContent = 'Loading\u2026';
+    document.getElementById('modal-notes-body').textContent = 'Loading\u2026';
     document.getElementById('update-modal').classList.add('open');
     document.querySelector('.app-window').classList.add('shrunk');
     loadPatchNotes(d);
@@ -1596,9 +1825,7 @@
       const res = await fetch('/api/about');
       const about = await res.json();
       entries = (about.changelog && about.changelog.entries) || [];
-    } catch (e) { /* fall through to the empty-state text */ }
-    // Everything newer than what's installed; if the installed version
-    // isn't in the list (dev builds), show the most recent few.
+    } catch (e) { /* fall through */ }
     const idx = entries.findIndex(e => e.version === d.version);
     const relevant = idx > 0 ? entries.slice(0, idx) : entries.slice(0, 3);
     body.textContent = '';
@@ -1622,7 +1849,7 @@
 
   document.getElementById('modal-cancel').addEventListener('click', closeUpdateModal);
   document.getElementById('update-modal').addEventListener('click', function (e) {
-    if (e.target === this) closeUpdateModal();  // click outside = cancel
+    if (e.target === this) closeUpdateModal();
   });
   document.getElementById('modal-continue').addEventListener('click', () => {
     closeUpdateModal();

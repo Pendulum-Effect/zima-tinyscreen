@@ -714,6 +714,18 @@ def api_about():
     })
 
 
+@app.route("/api/last_flash", methods=["GET"])
+def api_last_flash():
+    """The most recent firmware-flash outcome (esptool output included),
+    persisted across app updates via the state dir -- surfaced in the
+    General tab's Debugging view."""
+    try:
+        return jsonify({"ok": True,
+                        "flash": json.loads((STATE_DIR / "last_flash.json").read_text())})
+    except (FileNotFoundError, OSError, json.JSONDecodeError):
+        return jsonify({"ok": True, "flash": None})
+
+
 @app.route("/api/firmware_info", methods=["GET"])
 def api_firmware_info():
     """Reports the firmware version bundled in THIS running image, stamped
@@ -742,10 +754,22 @@ def api_current_config():
     whatever was last sent. Needed for the settings dashboard to show
     real current state (pages, cycle mode, brightness, board, firmware
     version) instead of just being another blind form.
+
+    When the device is unplugged, the last successfully read config
+    (cached in the state dir on every good read) is returned alongside
+    no_device=true -- the dashboard renders in a degraded "no device
+    detected" mode with real data instead of a full-page error.
     """
     port = detect_port()
     if not port:
-        return jsonify({"ok": False, "error": "No ESP32 serial device found. Is it plugged in?"}), 400
+        cached = None
+        try:
+            cached = json.loads((STATE_DIR / "last_config.json").read_text())
+        except (FileNotFoundError, OSError, json.JSONDecodeError):
+            pass
+        return jsonify({"ok": False, "no_device": True,
+                        "error": "No ESP32 serial device found. Is it plugged in?",
+                        "cached_config": cached}), 400
 
     collector.pause()
     ser = None
@@ -776,6 +800,15 @@ def api_current_config():
         if result is None:
             return jsonify({"ok": False, "error": "No response from device -- is it configured yet?"}), 504
 
+        # Remember the last good read so an unplugged device still gets a
+        # populated (read-only-ish) dashboard instead of an error page.
+        try:
+            STATE_DIR.mkdir(parents=True, exist_ok=True)
+            tmp = STATE_DIR / "last_config.json.tmp"
+            tmp.write_text(json.dumps(result))
+            os.replace(tmp, STATE_DIR / "last_config.json")
+        except OSError:
+            pass
         return jsonify({"ok": True, "config": result})
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
@@ -840,6 +873,16 @@ def api_flash():
             hint = ("Couldn't reach the bootloader. Some boards (ones without a separate "
                     "USB-UART bridge chip) need you to hold the BOOT button while this "
                     "starts, then release it once flashing begins.")
+        # Keep the outcome around for the Debugging view (View Logs).
+        try:
+            STATE_DIR.mkdir(parents=True, exist_ok=True)
+            tmp = STATE_DIR / "last_flash.json.tmp"
+            tmp.write_text(json.dumps({"at": time.time(), "ok": ok,
+                                       "board": board_id, "log": log[-8000:],
+                                       "hint": hint}))
+            os.replace(tmp, STATE_DIR / "last_flash.json")
+        except OSError:
+            pass
         return jsonify({"ok": ok, "log": log, "hint": hint})
     except subprocess.TimeoutExpired:
         return jsonify({"ok": False, "error": "Flash timed out after 180s"}), 500

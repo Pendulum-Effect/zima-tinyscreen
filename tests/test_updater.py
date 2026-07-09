@@ -780,6 +780,28 @@ class TestServerEndpoints(UpdaterTestBase):
             self.server.DOCKER_SOCK = orig
             self.server._host_name_cache["fetched"] = False
 
+    def test_current_config_cache_and_last_flash(self):
+        # last_flash empty then populated
+        d = self.app.get("/api/last_flash").get_json()
+        self.assertIsNone(d["flash"])
+        (Path(self.state_dir.name) / "last_flash.json").write_text(
+            json.dumps({"at": 1, "ok": True, "board": 1, "log": "x"}))
+        d = self.app.get("/api/last_flash").get_json()
+        self.assertEqual(d["flash"]["log"], "x")
+        # no device + cached config -> degraded-mode payload
+        (Path(self.state_dir.name) / "last_config.json").write_text(
+            json.dumps({"board": 1, "pages": ["cpu"]}))
+        orig = self.server.detect_port
+        self.server.detect_port = lambda: None
+        try:
+            r = self.app.get("/api/current_config")
+            self.assertEqual(r.status_code, 400)
+            d = r.get_json()
+            self.assertTrue(d["no_device"])
+            self.assertEqual(d["cached_config"]["pages"], ["cpu"])
+        finally:
+            self.server.detect_port = orig
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
