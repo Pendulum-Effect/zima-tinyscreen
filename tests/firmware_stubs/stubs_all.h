@@ -36,6 +36,18 @@ class Preferences {
 };
 
 // ===== Arduino_GFX_Library.h ============================================
+// The real library #defines bare color-name macros; mirroring them here
+// means any firmware code that tries to use these words as identifiers
+// breaks the host build the same way it breaks the ESP32 build.
+#define BLACK 0x0000
+#define WHITE 0xFFFF
+#define RED 0xF800
+#define GREEN 0x07E0
+#define BLUE 0x001F
+#define YELLOW 0xFFE0
+#define CYAN 0x07FF
+#define MAGENTA 0xF81F
+#define ORANGE 0xFD20
 class Arduino_DataBus {};
 class Arduino_ESP32SPI : public Arduino_DataBus {
  public: Arduino_ESP32SPI(int, int, int, int, int) {}

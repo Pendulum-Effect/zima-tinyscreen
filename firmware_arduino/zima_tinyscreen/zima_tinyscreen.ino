@@ -489,13 +489,17 @@ uint16_t dimColor565(uint16_t c, int num, int den) {
 // Continuous, not banded, so the number visibly shifts as things warm
 // up: green at/below 45C, amber around 65C, full red by 85C.
 uint16_t tempColorFor(float c) {
-  const uint16_t GREEN = rgb565(96, 205, 120);
-  const uint16_t AMBER = rgb565(255, 184, 84);
-  const uint16_t RED   = rgb565(255, 92, 74);
-  if (c <= 45.0f) return GREEN;
-  if (c >= 85.0f) return RED;
-  if (c <= 65.0f) return lerpColor565(GREEN, AMBER, (uint8_t)((c - 45.0f) * 255.0f / 20.0f));
-  return lerpColor565(AMBER, RED, (uint8_t)((c - 65.0f) * 255.0f / 20.0f));
+  // NB: not named GREEN/RED -- Arduino_GFX #defines those as bare color
+  // literals, which turns `const uint16_t GREEN = ...` into a syntax
+  // error on the real toolchain (the host stubs now define them too, so
+  // a collision like this fails the host build as well).
+  const uint16_t kMistGreen = rgb565(96, 205, 120);
+  const uint16_t kMistAmber = rgb565(255, 184, 84);
+  const uint16_t kMistRed   = rgb565(255, 92, 74);
+  if (c <= 45.0f) return kMistGreen;
+  if (c >= 85.0f) return kMistRed;
+  if (c <= 65.0f) return lerpColor565(kMistGreen, kMistAmber, (uint8_t)((c - 45.0f) * 255.0f / 20.0f));
+  return lerpColor565(kMistAmber, kMistRed, (uint8_t)((c - 65.0f) * 255.0f / 20.0f));
 }
 
 // ---------------------------------------------------------------------

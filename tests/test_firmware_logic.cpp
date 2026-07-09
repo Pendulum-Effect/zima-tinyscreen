@@ -120,12 +120,12 @@ int main() {
   CHECK(rgb565(0, 0, 0) == 0x0000);
   CHECK(lerpColor565(0x0000, 0xFFFF, 0) == 0x0000);
   CHECK(lerpColor565(0x0000, 0xFFFF, 255) == 0xFFFF);
-  uint16_t GREEN = rgb565(96, 205, 120), RED = rgb565(255, 92, 74);
-  CHECK(tempColorFor(30.0f) == GREEN);        // cool -> green
-  CHECK(tempColorFor(45.0f) == GREEN);        // ramp starts above 45
-  CHECK(tempColorFor(90.0f) == RED);          // hot -> red
-  CHECK(tempColorFor(55.0f) != GREEN);        // mid-ramp is neither
-  CHECK(tempColorFor(55.0f) != RED);
+  uint16_t mistGreen = rgb565(96, 205, 120), mistRed = rgb565(255, 92, 74);
+  CHECK(tempColorFor(30.0f) == mistGreen);    // cool -> green
+  CHECK(tempColorFor(45.0f) == mistGreen);    // ramp starts above 45
+  CHECK(tempColorFor(90.0f) == mistRed);      // hot -> red
+  CHECK(tempColorFor(55.0f) != mistGreen);    // mid-ramp is neither
+  CHECK(tempColorFor(55.0f) != mistRed);
   // red channel rises monotonically through the ramp
   int r50 = (tempColorFor(50) >> 11), r60 = (tempColorFor(60) >> 11),
       r75 = (tempColorFor(75) >> 11);
