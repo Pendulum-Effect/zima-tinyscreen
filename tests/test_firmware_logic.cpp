@@ -216,6 +216,17 @@ int main() {
     CHECK(strcmp(config.layouts[0], "dots") == 0);
     CHECK(strcmp(config.layouts[1], "dots") == 0);
     CHECK(strcmp(config.layouts[2], "default") == 0);
+
+    // ring: valid for cpu and ram, not storage
+    JsonDocument doc8;
+    JsonArray pages8 = doc8["pages"].to<JsonArray>();
+    pages8.add("ram"); pages8.add("mmc");
+    doc8["layouts"]["ram"] = "ring";
+    doc8["layouts"]["mmc"] = "ring";                    // not for mmc
+    handleSetConfig(doc8);
+    CHECK(strcmp(config.layouts[0], "ring") == 0);
+    CHECK(strcmp(config.layouts[1], "default") == 0);
+    CHECK(strcmp(layoutForPage("ram"), "ring") == 0);
   }
 
   // ---- Bars layout helpers: megabit formatting + bar fill ----
@@ -258,6 +269,13 @@ int main() {
     CHECK(netGraphScale() == 1.0f);            // 5.0 spike aged out
     netHistLen = 0; netHistHead = 0;           // leave state clean
   }
+
+  // ---- Zima App Ring: ceiling fill so any usage shows ----
+  CHECK(ringDotsLit(0) == 0);
+  CHECK(ringDotsLit(6) == 2);                  // the mock's CPU card
+  CHECK(ringDotsLit(11) == 3);                 // the mock's RAM card
+  CHECK(ringDotsLit(0.5f) == 1);               // a whisper still lights one
+  CHECK(ringDotsLit(100) == 20 && ringDotsLit(150) == 20);
 
   // ---- Dots storage layout: fill count + threshold colors ----
   CHECK(dotsLit(0) == 0 && dotsLit(100) == 48);

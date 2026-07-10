@@ -748,16 +748,18 @@
   const PAGE_LAYOUTS = {
     temp: [
       { id: 'default',   label: 'TinyScreen (default)' },
-      { id: 'mist',      label: 'ZimaOS Mist' },
-      { id: 'mist_anim', label: 'ZimaOS Mist (animated)' },
+      { id: 'mist',      label: 'Zima App Mist' },
+      { id: 'mist_anim', label: 'Zima App Mist (animated)' },
     ],
     cpu: [
       { id: 'default',   label: 'TinyScreen (default)' },
       { id: 'dial',      label: 'ZimaOS Dial' },
+      { id: 'ring',      label: 'Zima App Ring' },
     ],
     ram: [
       { id: 'default',   label: 'TinyScreen (default)' },
       { id: 'dial',      label: 'ZimaOS Dial' },
+      { id: 'ring',      label: 'Zima App Ring' },
     ],
     net: [
       { id: 'default',   label: 'TinyScreen (default)' },
@@ -766,11 +768,11 @@
     ],
     mmc: [
       { id: 'default',   label: 'TinyScreen (default)' },
-      { id: 'dots',      label: 'ZimaOS Dots' },
+      { id: 'dots',      label: 'Zima App Dots' },
     ],
     nas: [
       { id: 'default',   label: 'TinyScreen (default)' },
-      { id: 'dots',      label: 'ZimaOS Dots' },
+      { id: 'dots',      label: 'Zima App Dots' },
     ],
   };
   const DEFAULT_LAYOUTS = [{ id: 'default', label: 'TinyScreen (default)' }];
@@ -983,6 +985,36 @@
       '</svg>';
   }
 
+  // The Zima App Ring layout in SVG: widget card with a 20-dot ring
+  // filling clockwise from 12 o'clock (ceiling rounding, like the
+  // firmware), CPU model / RAM size headline, and the big percentage.
+  function appRingPreviewSVG(size, id) {
+    if (!(id in PREVIEW_VALUES)) {
+      PREVIEW_VALUES[id] = 15 + Math.floor(Math.random() * 70);
+    }
+    const pct = PREVIEW_VALUES[id];
+    const lit = pct <= 0 ? 0 : Math.min(20, Math.ceil(pct * 20 / 100));
+    const title = id === 'cpu' ? 'CPU' : 'RAM';
+    let headline = id === 'cpu' ? 'Intel(R) Atom(TM) Processor' : '16 GB';
+    if (headline.length > 14) headline = headline.slice(0, 12) + '..';
+    const sec = id === 'cpu' ? ((1.4 + (pct % 30) / 10).toFixed(1) + 'W') : '';
+    let dots = '';
+    for (let i = 0; i < 20; i++) {
+      const a = (-90 + i * 18) * Math.PI / 180;
+      dots += '<circle cx="' + (68 + Math.cos(a) * 19).toFixed(1) + '" cy="' +
+        (62 + Math.sin(a) * 19).toFixed(1) + '" r="1.9" fill="' +
+        (i < lit ? '#2356f6' : '#a0a0a0') + '"/>';
+    }
+    return '<svg width="' + size + '" height="' + size + '" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">' +
+      '<rect width="100" height="100" fill="#08141a"/>' +
+      '<text x="10" y="17" fill="#8fb0ac" font-size="8" font-family="sans-serif">' + title + '</text>' +
+      '<text x="10" y="31" fill="#eaf6f4" font-size="11" font-weight="700" font-family="sans-serif">' + headline + '</text>' +
+      dots +
+      (sec ? '<text x="10" y="56" fill="#8fb0ac" font-size="9" font-weight="700" font-family="sans-serif">' + sec + '</text>' : '') +
+      '<text x="10" y="92" fill="#eaf6f4" font-size="15" font-weight="700" font-family="sans-serif">' + pct + '%</text>' +
+      '</svg>';
+  }
+
   // Mock "screenshots" of what each page looks like on the device --
   // same visual language as the firmware's renderer (dark screen, ring
   // gauge), with plausible random values. SVG so they stay crisp at
@@ -995,6 +1027,9 @@
     }
     if ((id === 'cpu' || id === 'ram') && pageLayouts[id] === 'dial') {
       return dialPreviewSVG(size, id);
+    }
+    if ((id === 'cpu' || id === 'ram') && pageLayouts[id] === 'ring') {
+      return appRingPreviewSVG(size, id);
     }
     if (id === 'net' && pageLayouts[id] === 'bars') {
       return netBarsPreviewSVG(size);

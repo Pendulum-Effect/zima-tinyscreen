@@ -40,7 +40,7 @@
 // "Software Version" field via the get_config command below. No
 // auto-update-checking mechanism exists yet (that's a separate, not-yet
 // -built feature) -- this just answers "what's currently on my device."
-#define FIRMWARE_VERSION "1.14.0"
+#define FIRMWARE_VERSION "1.15.0"
 
 // Note: screen dimensions are NOT fixed -- board 1 (1.69") is 240x280,
 // taller than board 0's 240x240. See screenW/screenH globals, set from
@@ -725,7 +725,86 @@ void drawStaleBanner() {
 // declared here because the CPU/RAM pages dispatch on it too.
 const char *layoutForPage(const char *pageId);
 
+// The "Zima App Ring" layout (firmware 1.15.0): the Zima app's widget
+// card -- grey category, bold headline (CPU model / RAM size), a ring
+// of 20 dots that fills clockwise from 12 o'clock with usage, and the
+// big percentage bottom-left. Ceiling rounding so any real usage lights
+// at least one dot (the mock's 6% shows 2 of 20). Pure for host tests.
+int ringDotsLit(float pct) {
+  if (pct <= 0) return 0;
+  int lit = (int)ceilf(pct * 20.0f / 100.0f);
+  if (lit > 20) lit = 20;
+  return lit;
+}
+
+void drawAppRing(const char *title, const char *headline,
+                 const char *secondary, float pct) {
+  int left = LX + 16 * LW / 240;
+
+  canvas->setFont(&tiny_sans_18);
+  canvas->setTextColor(COL_SUBTEXT);
+  drawTextTopLeft(title, left, LY + SY(16) - LY);
+
+  // Headline, truncated with ".." if it outgrows the card (CPU model
+  // strings are novels: "Intel(R) Atom(TM) Pr..")
+  char head[40];
+  snprintf(head, sizeof(head), "%s", headline);
+  canvas->setFont(&tiny_sans_bold_24);
+  int maxW = LW - 32 * LW / 240;
+  int16_t x1, y1; uint16_t w, h;
+  canvas->getTextBounds(head, 0, 0, &x1, &y1, &w, &h);
+  if ((int)w > maxW) {
+    int len = strlen(head);
+    while (len > 3) {
+      len--;
+      head[len] = '\0';
+      char probe[44];
+      snprintf(probe, sizeof(probe), "%s..", head);
+      canvas->getTextBounds(probe, 0, 0, &x1, &y1, &w, &h);
+      if ((int)w <= maxW) { strcat(head, ".."); break; }
+    }
+  }
+  canvas->setTextColor(COL_TEXT);
+  drawTextTopLeft(head, left, LY + SY(42) - LY);
+
+  // Dot ring, right of center, filling clockwise from the top
+  const uint16_t kRingBlue = rgb565(35, 86, 246);   // sampled from the mock
+  const uint16_t kRingGrey = rgb565(160, 160, 160);
+  int rcx = LX + 168 * LW / 240;
+  int rcy = SY(150);
+  int rr = 44 * LW / 240, dotR = 4 * LW / 240;
+  int lit = ringDotsLit(pct);
+  for (int i = 0; i < 20; i++) {
+    float a = (-90.0f + i * 18.0f) * DEG_TO_RAD;
+    int dx = rcx + (int)roundf(cosf(a) * rr);
+    int dy = rcy + (int)roundf(sinf(a) * rr);
+    canvas->fillCircle(dx, dy, dotR, i < lit ? kRingBlue : kRingGrey);
+  }
+
+  // Secondary stat (grey, e.g. watts), then the big percentage
+  if (secondary && secondary[0]) {
+    canvas->setFont(&tiny_sans_bold_20);
+    canvas->setTextColor(COL_SUBTEXT);
+    drawTextTopLeft(secondary, left, LY + SY(126) - LY);
+  }
+  char big[8];
+  snprintf(big, sizeof(big), "%d%%", (int)round(pct));
+  canvas->setFont(&tiny_sans_bold_36);
+  canvas->setTextColor(COL_TEXT);
+  drawTextTopLeft(big, left, LY + SY(182) - LY);
+  canvas->setFont();
+}
+
 void drawPageCPU() {
+  if (strcmp(layoutForPage("cpu"), "ring") == 0) {
+    char sec[16] = "";
+    if (stats.cpu_watts > 0.05f) {
+      snprintf(sec, sizeof(sec), "%.1fW", stats.cpu_watts);
+    }
+    const char *name = stats.cpu_name.length() ? stats.cpu_name.c_str() : "CPU";
+    drawAppRing("CPU", name, sec, stats.cpu_pct);
+    return;
+  }
   if (strcmp(layoutForPage("cpu"), "dial") == 0) {
     char sub[24];
     if (stats.cpu_watts > 0.05f) {
@@ -744,6 +823,12 @@ void drawPageCPU() {
 }
 
 void drawPageRAM() {
+  if (strcmp(layoutForPage("ram"), "ring") == 0) {
+    char head[16];
+    snprintf(head, sizeof(head), "%.0f GB", stats.ram_total_gb);
+    drawAppRing("RAM", head, "", stats.ram_pct);
+    return;
+  }
   if (strcmp(layoutForPage("ram"), "dial") == 0) {
     char sub[24];
     // Total installed (OS-visible) RAM -- the collector reports GiB,
@@ -1483,7 +1568,7 @@ void handleSetConfig(JsonDocument &doc) {
                     (strcmp(want, "mist") == 0 || strcmp(want, "mist_anim") == 0)) ||
                    ((strcmp(config.pages[i], "cpu") == 0 ||
                      strcmp(config.pages[i], "ram") == 0) &&
-                    strcmp(want, "dial") == 0) ||
+                    (strcmp(want, "dial") == 0 || strcmp(want, "ring") == 0)) ||
                    (strcmp(config.pages[i], "net") == 0 &&
                     (strcmp(want, "bars") == 0 || strcmp(want, "graph") == 0)) ||
                    ((strcmp(config.pages[i], "mmc") == 0 ||
