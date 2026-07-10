@@ -196,6 +196,14 @@ int main() {
     CHECK(strcmp(config.layouts[0], "bars") == 0);
     CHECK(strcmp(config.layouts[1], "default") == 0);
     CHECK(strcmp(layoutForPage("net"), "bars") == 0);
+    JsonDocument doc6b;
+    JsonArray pages6b = doc6b["pages"].to<JsonArray>();
+    pages6b.add("net"); pages6b.add("ram");
+    doc6b["layouts"]["net"] = "graph";
+    doc6b["layouts"]["ram"] = "graph";                  // not for ram
+    handleSetConfig(doc6b);
+    CHECK(strcmp(config.layouts[0], "graph") == 0);
+    CHECK(strcmp(config.layouts[1], "default") == 0);
 
     // dots: valid for mmc and nas only
     JsonDocument doc7;
@@ -221,12 +229,34 @@ int main() {
     CHECK(strcmp(b, "950 Mbps") == 0);
     fmtBitsRate(1200.0f, b, sizeof(b));       // 2.5GbE someday
     CHECK(strcmp(b, "1.20 Gbps") == 0);
+    fmtBitsRate(950.0f, b, sizeof(b), true);  // compact for the Graph header
+    CHECK(strcmp(b, "950 Mb") == 0);
+    fmtBitsRate(0.5f, b, sizeof(b), true);
+    CHECK(strcmp(b, "500 Kb") == 0);
     CHECK(netBarPct(0.0f) == 0);              // idle -> empty
     CHECK(netBarPct(0.02f) == 0);             // sub-threshold noise -> empty
     CHECK(netBarPct(0.5f) == 2);              // alive -> minimum sliver
     CHECK(netBarPct(500.0f) == 50);           // half a gigabit
     CHECK(netBarPct(950.0f) == 95);           // gigabit speedtest, nearly full
     CHECK(netBarPct(2000.0f) == 100);         // clamped
+  }
+
+  // ---- ZimaOS Graph: ring buffer + autoscale ----
+  {
+    CHECK(netGraphScale() == 0.05f);           // empty history -> floor
+    netGraphPush(0.2f, 0.1f);
+    netGraphPush(0.6f, 0.3f);
+    CHECK(netHistLen == 2);
+    CHECK(netHistAt(netHistRx, 0) == 0.6f);    // 0 = newest
+    CHECK(netHistAt(netHistRx, 1) == 0.2f);
+    CHECK(netGraphScale() == 0.6f);            // tallest of either series
+    netGraphPush(0.1f, 5.0f);
+    CHECK(netGraphScale() == 5.0f);            // upload can set the scale
+    for (int i = 0; i < 300; i++) netGraphPush(1.0f, 1.0f);
+    CHECK(netHistLen == NET_HIST);             // ring caps, no overflow
+    CHECK(netHistAt(netHistRx, 0) == 1.0f);
+    CHECK(netGraphScale() == 1.0f);            // 5.0 spike aged out
+    netHistLen = 0; netHistHead = 0;           // leave state clean
   }
 
   // ---- Dots storage layout: fill count + threshold colors ----

@@ -199,6 +199,10 @@ class JsonVariantStub {
 
 template <> inline bool JsonVariantStub::is<bool>() const { return v->kind == JsonValue::BOOL; }
 template <> inline bool JsonVariantStub::is<int>() const { return v->kind == JsonValue::INT; }
+// ArduinoJson's is<float>() is true for any numeric value
+template <> inline bool JsonVariantStub::is<float>() const {
+  return v->kind == JsonValue::FLOAT || v->kind == JsonValue::INT;
+}
 template <> inline bool JsonVariantStub::is<const char *>() const { return v->kind == JsonValue::STR; }
 template <> inline bool JsonVariantStub::is<JsonArrayStub>() const { return v->kind == JsonValue::ARR; }
 template <> inline bool JsonVariantStub::is<JsonObjectStub>() const {

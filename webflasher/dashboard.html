@@ -762,6 +762,7 @@
     net: [
       { id: 'default',   label: 'TinyScreen (default)' },
       { id: 'bars',      label: 'Zima App Bars' },
+      { id: 'graph',     label: 'ZimaOS Graph' },
     ],
     mmc: [
       { id: 'default',   label: 'TinyScreen (default)' },
@@ -945,6 +946,42 @@
       '</svg>';
   }
 
+  // The ZimaOS Graph layout in SVG: rolling dual-series rate graph,
+  // download teal / upload purple, dim filled areas under bright lines,
+  // autoscaled to the tallest visible sample. Compact rate units up top.
+  function netGraphPreviewSVG(size) {
+    if (!('net' in PREVIEW_VALUES)) {
+      PREVIEW_VALUES.net = 15 + Math.floor(Math.random() * 70);
+    }
+    let s = 0xD1CE + PREVIEW_VALUES.net;
+    const rnd = () => (s = (s * 1664525 + 1013904223) >>> 0) / 4294967296;
+    const N = 52, rx = [], tx = [];
+    for (let i = 0; i < N; i++) {
+      const burst = 60 * Math.exp(-Math.pow((i - 38) / 5, 2)) + 22 * Math.exp(-Math.pow((i - 14) / 4, 2));
+      rx.push(1.5 + rnd() * 2 + burst);
+      tx.push(1 + rnd() * 1.5 + 18 * Math.exp(-Math.pow((i - 41) / 4, 2)));
+    }
+    const scale = Math.max(...rx, ...tx);
+    const left = 8, right = 92, top = 30, bottom = 90;
+    const pts = buf => buf.map((v, i) =>
+      (left + i * (right - left) / (N - 1)).toFixed(1) + ',' +
+      (bottom - v / scale * (bottom - top)).toFixed(1)).join(' ');
+    const fmt = m => m < 1 ? Math.round(m * 1000) + ' Kb'
+      : m < 10 ? m.toFixed(1) + ' Mb'
+      : m < 1000 ? Math.round(m) + ' Mb' : (m / 1000).toFixed(2) + ' Gb';
+    const series = (buf, col) =>
+      '<polygon points="' + left + ',' + bottom + ' ' + pts(buf) + ' ' + right + ',' + bottom +
+      '" fill="' + col + '" opacity="0.16"/>' +
+      '<polyline points="' + pts(buf) + '" fill="none" stroke="' + col + '" stroke-width="1.4"/>';
+    return '<svg width="' + size + '" height="' + size + '" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">' +
+      '<rect width="100" height="100" fill="#08141a"/>' +
+      '<text x="50" y="17" text-anchor="middle" font-size="9" font-weight="700" font-family="sans-serif">' +
+      '<tspan fill="#4fd1c5">\u2193 ' + fmt(rx[N - 1]) + '</tspan>' +
+      '<tspan fill="#ba84ff" dx="6">\u2191 ' + fmt(tx[N - 1]) + '</tspan></text>' +
+      series(rx, '#4fd1c5') + series(tx, '#ba84ff') +
+      '</svg>';
+  }
+
   // Mock "screenshots" of what each page looks like on the device --
   // same visual language as the firmware's renderer (dark screen, ring
   // gauge), with plausible random values. SVG so they stay crisp at
@@ -960,6 +997,9 @@
     }
     if (id === 'net' && pageLayouts[id] === 'bars') {
       return netBarsPreviewSVG(size);
+    }
+    if (id === 'net' && pageLayouts[id] === 'graph') {
+      return netGraphPreviewSVG(size);
     }
     if ((id === 'mmc' || id === 'nas') && pageLayouts[id] === 'dots') {
       return storageDotsPreviewSVG(size, id);

@@ -2,6 +2,17 @@
   "_comment": "Human-readable changelog for the dashboard's About tab -- written for people, not commit archaeologists. The dashboard fetches this from GitHub at page load (baked copy as fallback), so add an entry here with each release and every install sees it. Newest first. Dates are YYYY-MM-DD.",
   "entries": [
     {
+      "version": "0.8.9.20",
+      "date": "2026-07-10",
+      "title": "ZimaOS Graph: watch your traffic roll by",
+      "notes": [
+        "New network layout: a rolling graph of the last few minutes of traffic, download in teal and upload in purple, each a soft filled area with a bright line. Newest data on the right, one sample per second.",
+        "No axes on purpose -- the graph continuously rescales itself to the tallest thing on screen, so a quiet trickle and a full-speed download both draw an interesting picture. The live rates sit up top behind little arrows.",
+        "The rate readouts up top use compact units (Kb / Mb / Gb) and step down a font size when both numbers get long, so a two-way gigabit moment never runs off the edge.",
+        "History records in the background regardless of which layout is showing, so the moment you switch to the Graph it already has a story to tell."
+      ]
+    },
+    {
       "version": "0.8.9.19",
       "date": "2026-07-10",
       "title": "Dots fit right, RAM reads right, and the page dots retire",

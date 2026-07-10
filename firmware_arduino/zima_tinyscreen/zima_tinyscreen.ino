@@ -40,7 +40,7 @@
 // "Software Version" field via the get_config command below. No
 // auto-update-checking mechanism exists yet (that's a separate, not-yet
 // -built feature) -- this just answers "what's currently on my device."
-#define FIRMWARE_VERSION "1.12.0"
+#define FIRMWARE_VERSION "1.13.0"
 
 // Note: screen dimensions are NOT fixed -- board 1 (1.69") is 240x280,
 // taller than board 0's 240x240. See screenW/screenH globals, set from
@@ -856,15 +856,53 @@ void drawPageNAS() {
   drawRingGauge("NAS USAGE", stats.nas_pct, 0x9F7BC0, big, total);
 }
 
+// --- ZimaOS Graph layout: rolling rate history ------------------------
+// One sample lands per collector tick (~1 Hz), pushed at stats-parse
+// time regardless of the active layout so switching to the Graph shows
+// history immediately. 104 samples ~= 3.5 minutes across the panel.
+const int NET_HIST = 104;
+float netHistRx[NET_HIST];
+float netHistTx[NET_HIST];
+int netHistLen = 0;       // samples currently held (<= NET_HIST)
+int netHistHead = 0;      // next write slot in the ring
+
+void netGraphPush(float rx, float tx) {
+  netHistRx[netHistHead] = rx;
+  netHistTx[netHistHead] = tx;
+  netHistHead = (netHistHead + 1) % NET_HIST;
+  if (netHistLen < NET_HIST) netHistLen++;
+}
+
+// i-th sample counting back from the newest (0 = latest). Pure-ish.
+float netHistAt(const float *buf, int backIdx) {
+  int idx = (netHistHead - 1 - backIdx + 2 * NET_HIST) % NET_HIST;
+  return buf[idx];
+}
+
+// Vertical scale: the graph breathes with its own data -- the tallest
+// visible sample of either series sets the top, floored so idle noise
+// doesn't autoscale into fake mountains of nothing.
+float netGraphScale() {
+  float mx = 0.05f;
+  for (int i = 0; i < netHistLen; i++) {
+    if (netHistAt(netHistRx, i) > mx) mx = netHistAt(netHistRx, i);
+    if (netHistAt(netHistTx, i) > mx) mx = netHistAt(netHistTx, i);
+  }
+  return mx;
+}
+
 // Rate formatting in megabit units -- the language speedtests and ISPs
 // speak. (The first cut showed bytes: a 950 mbps speedtest rendered as
 // "113.2MB", which is the same speed but reads like a bug.) Pure for
 // host tests.
-void fmtBitsRate(float mbps, char *out, size_t n) {
-  if (mbps < 1.0f) snprintf(out, n, "%d Kbps", (int)(mbps * 1000.0f));
-  else if (mbps < 10.0f) snprintf(out, n, "%.1f Mbps", mbps);
-  else if (mbps < 1000.0f) snprintf(out, n, "%.0f Mbps", mbps);
-  else snprintf(out, n, "%.2f Gbps", mbps / 1000.0f);
+void fmtBitsRate(float mbps, char *out, size_t n, bool compact = false) {
+  const char *k = compact ? "Kb" : "Kbps";
+  const char *m = compact ? "Mb" : "Mbps";
+  const char *g = compact ? "Gb" : "Gbps";
+  if (mbps < 1.0f) snprintf(out, n, "%d %s", (int)(mbps * 1000.0f), k);
+  else if (mbps < 10.0f) snprintf(out, n, "%.1f %s", mbps, m);
+  else if (mbps < 1000.0f) snprintf(out, n, "%.0f %s", mbps, m);
+  else snprintf(out, n, "%.2f %s", mbps / 1000.0f, g);
 }
 
 // Bar fill for the Bars layout, 0..100: linear against a gigabit link,
@@ -934,7 +972,88 @@ void drawNetBars() {
   canvas->setFont();
 }
 
+// The "ZimaOS Graph" layout (firmware 1.13.0): rolling dual-series rate
+// graph, newest at the right. Download in teal, upload in purple, each
+// as a dim filled area with a bright line on top. No axes -- the graph
+// autoscales to the tallest visible sample, so shape is relative by
+// design. Header shows live rates behind hand-drawn triangle arrows
+// (the font faces don't carry Unicode arrows).
+void drawNetGraph() {
+  const uint16_t kGraphTeal   = rgb565(79, 209, 197);
+  const uint16_t kGraphPurple = rgb565(186, 132, 255);
+  int left  = LX + 16 * LW / 240;             // width-scaled lengths --
+  int right = LX + LW - 16 * LW / 240;        // see the Dots grid lesson
+  int top = SY(64), bottom = SY(206);
+
+  // Header: [v] download   [^] upload, the pair centered as a whole.
+  // Both rates at once can outgrow the panel ("289 Mbps" x2 at the
+  // 24px face is wider than the screen), so the face cascades down
+  // until the measured pair fits.
+  char rxs[16], txs[16];
+  fmtBitsRate(stats.net_rx_mbps, rxs, sizeof(rxs), true);   // compact: Kb/Mb/Gb
+  fmtBitsRate(stats.net_tx_mbps, txs, sizeof(txs), true);
+  int arrowW = 12 * LW / 240, gap = 8 * LW / 240, midGap = 18 * LW / 240;
+  const GFXfont *faces[3] = {&tiny_sans_bold_24, &tiny_sans_bold_20, &tiny_sans_18};
+  int16_t x1, y1; uint16_t rw, rh, tw, th;
+  int totalW = 0;
+  for (int f = 0; f < 3; f++) {
+    canvas->setFont(faces[f]);
+    canvas->getTextBounds(rxs, 0, 0, &x1, &y1, &rw, &rh);
+    canvas->getTextBounds(txs, 0, 0, &x1, &y1, &tw, &th);
+    totalW = arrowW + gap + (int)rw + midGap + arrowW + gap + (int)tw;
+    if (totalW <= LW - 10 * LW / 240) break;
+  }
+  int x = CX() - totalW / 2;
+  int cyH = SY(30);
+  int ah = 14 * LH / 240;                     // arrow height
+  // download: triangle pointing down
+  canvas->fillTriangle(x, cyH - ah / 2, x + arrowW, cyH - ah / 2,
+                       x + arrowW / 2, cyH + ah / 2, kGraphTeal);
+  canvas->setTextColor(kGraphTeal);
+  drawTextTopLeft(rxs, x + arrowW + gap, cyH - (int)rh / 2);
+  x += arrowW + gap + (int)rw + midGap;
+  // upload: triangle pointing up
+  canvas->fillTriangle(x, cyH + ah / 2, x + arrowW, cyH + ah / 2,
+                       x + arrowW / 2, cyH - ah / 2, kGraphPurple);
+  canvas->setTextColor(kGraphPurple);
+  drawTextTopLeft(txs, x + arrowW + gap, cyH - (int)th / 2);
+  canvas->setFont();
+
+  if (netHistLen < 2) return;                 // nothing to plot yet
+
+  float scale = netGraphScale();
+  int w = right - left;
+  int span = netHistLen - 1;                  // newest sample sits at right
+  // Filled areas first (download under upload), then both bright lines
+  // on top so neither burying the other's peak line.
+  for (int pass = 0; pass < 2; pass++) {
+    const float *bufs[2] = {netHistRx, netHistTx};
+    const uint16_t cols[2] = {kGraphTeal, kGraphPurple};
+    for (int s = 0; s < 2; s++) {
+      uint16_t dim = dimColor565(cols[s], 16, 100);
+      int prevX = -1, prevY = -1;
+      for (int i = span; i >= 0; i--) {
+        int px = right - (i * w) / (span > 0 ? span : 1);
+        float v = netHistAt(bufs[s], i);
+        int py = bottom - (int)((v / scale) * (bottom - top));
+        if (py < top) py = top;
+        if (pass == 0) {
+          canvas->drawLine(px, py, px, bottom, dim);
+        } else if (prevX >= 0) {
+          canvas->drawLine(prevX, prevY, px, py, cols[s]);
+          canvas->drawLine(prevX, prevY + 1, px, py + 1, cols[s]);
+        }
+        prevX = px; prevY = py;
+      }
+    }
+  }
+}
+
 void drawPageNet() {
+  if (strcmp(layoutForPage("net"), "graph") == 0) {
+    drawNetGraph();
+    return;
+  }
   if (strcmp(layoutForPage("net"), "bars") == 0) {
     drawNetBars();
     return;
@@ -1364,7 +1483,7 @@ void handleSetConfig(JsonDocument &doc) {
                      strcmp(config.pages[i], "ram") == 0) &&
                     strcmp(want, "dial") == 0) ||
                    (strcmp(config.pages[i], "net") == 0 &&
-                    strcmp(want, "bars") == 0) ||
+                    (strcmp(want, "bars") == 0 || strcmp(want, "graph") == 0)) ||
                    ((strcmp(config.pages[i], "mmc") == 0 ||
                      strcmp(config.pages[i], "nas") == 0) &&
                     strcmp(want, "dots") == 0);
@@ -1503,6 +1622,9 @@ void handleLine(const String &line) {
   stats.net_rx_mbps    = doc["net_rx_mbps"] | stats.net_rx_mbps;
   stats.net_tx_mbps    = doc["net_tx_mbps"] | stats.net_tx_mbps;
   stats.net_iface      = doc["net_iface"] | stats.net_iface;
+  if (doc["net_rx_mbps"].is<float>() || doc["net_tx_mbps"].is<float>()) {
+    netGraphPush(stats.net_rx_mbps, stats.net_tx_mbps);
+  }
   stats.nas_available  = doc["nas_available"] | stats.nas_available;
   stats.mmc_label      = doc["mmc_label"] | stats.mmc_label;
   stats.nas_label      = doc["nas_label"] | stats.nas_label;
