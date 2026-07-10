@@ -40,7 +40,7 @@
 // "Software Version" field via the get_config command below. No
 // auto-update-checking mechanism exists yet (that's a separate, not-yet
 // -built feature) -- this just answers "what's currently on my device."
-#define FIRMWARE_VERSION "1.9.0"
+#define FIRMWARE_VERSION "1.10.0"
 
 // Note: screen dimensions are NOT fixed -- board 1 (1.69") is 240x280,
 // taller than board 0's 240x240. See screenW/screenH globals, set from
@@ -521,6 +521,7 @@ struct SystemStats {
   float mmc_pct = 0;
   float net_rx_mbps = 0;
   float net_tx_mbps = 0;
+  String net_iface = "";
   bool nas_available = false;
   float nas_total_gb = 0;
   float nas_pct = 0;
@@ -682,7 +683,7 @@ void drawDialGauge(const char *label, float pct, const char *sub) {
   char num[8];
   snprintf(num, sizeof(num), "%d", (int)round(pct));
   int16_t nx1, ny1, px1, py1; uint16_t nw, nh, pw, ph;
-  canvas->setFont(&tiny_sans_bold_32);
+  canvas->setFont(&tiny_sans_bold_36);        // 1.5x the 24px rows below
   canvas->getTextBounds(num, 0, 0, &nx1, &ny1, &nw, &nh);
   int baseY = cy - (int)nh / 2 - ny1;         // center the digits on cy
   canvas->setTextColor(COL_TEXT);
@@ -694,13 +695,13 @@ void drawDialGauge(const char *label, float pct, const char *sub) {
   canvas->print("%");
 
   // Page label in the dial's bottom gap
-  canvas->setFont(&tiny_sans_bold_20);
+  canvas->setFont(&tiny_sans_bold_24);
   canvas->setTextColor(COL_TEXT);
   drawTextCentered(label, cx, SY(168));
 
   // Stats line under everything (watts/temp, used GB, ...)
   if (sub && sub[0]) {
-    canvas->setFont(&tiny_sans_bold_20);
+    canvas->setFont(&tiny_sans_bold_24);
     canvas->setTextColor(COL_TEXT);
     drawTextCentered(sub, cx, SY(212));
   }
@@ -789,7 +790,83 @@ void drawPageNAS() {
   drawRingGauge("NAS USAGE", stats.nas_pct, 0x9F7BC0, big, total);
 }
 
+// Human formatting for a byte rate given megabits/s: "573B", "42KB",
+// "3.4MB" (per second implied, like the preview). Pure for host tests.
+void fmtBytesRate(float mbps, char *out, size_t n) {
+  float bps = mbps * 125000.0f;               // megabits -> bytes
+  if (bps < 1000.0f) snprintf(out, n, "%dB", (int)bps);
+  else if (bps < 1024.0f * 1000.0f) {
+    float kb = bps / 1024.0f;
+    snprintf(out, n, kb < 10.0f ? "%.1fKB" : "%.0fKB", kb);
+  } else {
+    snprintf(out, n, "%.1fMB", bps / (1024.0f * 1024.0f));
+  }
+}
+
+// Bar fill for the Bars layout, 0..100: linear against a gigabit link,
+// with a minimum visible sliver for any nonzero traffic (the point is
+// "alive or idle" at a glance, not precision). Pure for host tests.
+int netBarPct(float mbps) {
+  if (mbps <= 0.04f) return 0;                // < ~5 KB/s counts as idle
+  int pct = (int)(mbps / 10.0f);              // 1000 mbps -> 100
+  if (pct < 2) pct = 2;
+  if (pct > 100) pct = 100;
+  return pct;
+}
+
+// The "Bars" layout for the network page (firmware 1.10.0): widget-card
+// look -- grey Network title, the dominant interface's name under it,
+// then Upload / Download rows, each a grey label, a right-aligned rate,
+// and a slim rounded bar that fills against a gigabit link.
+void drawNetBars() {
+  int left = LX + SY(16) - LY;
+  int right = LX + LW - SY(16) + LY;
+
+  canvas->setFont(&tiny_sans_18);
+  canvas->setTextColor(COL_SUBTEXT);
+  drawTextTopLeft("Network", left, LY + SY(16) - LY);
+  // the widget's little ... affordance, purely decorative
+  for (int i = 0; i < 3; i++) {
+    canvas->fillCircle(right - SY(20) + i * SY(8), LY + SY(22) - LY, SY(2), COL_SUBTEXT);
+  }
+  canvas->setFont(&tiny_sans_bold_24);
+  canvas->setTextColor(COL_TEXT);
+  const char *iface = stats.net_iface.length() ? stats.net_iface.c_str() : "--";
+  drawTextTopLeft(iface, left, LY + SY(42) - LY);
+
+  const uint16_t kNetBlue = rgb565(10, 132, 255);
+  struct Row { const char *label; float mbps; int labelY; };
+  Row rows[2] = {
+    {"Upload",   stats.net_tx_mbps, SY(108)},
+    {"Download", stats.net_rx_mbps, SY(170)},
+  };
+  for (int i = 0; i < 2; i++) {
+    canvas->setFont(&tiny_sans_18);
+    canvas->setTextColor(COL_SUBTEXT);
+    drawTextTopLeft(rows[i].label, left, rows[i].labelY);
+    char val[16];
+    fmtBytesRate(rows[i].mbps, val, sizeof(val));
+    canvas->setFont(&tiny_sans_bold_24);
+    canvas->setTextColor(COL_TEXT);
+    drawTextTopRight(val, right, rows[i].labelY - SY(4));
+
+    int barY = rows[i].labelY + SY(28);
+    int barH = SY(10), barW = right - left;
+    canvas->fillRoundRect(left, barY, barW, barH, barH / 2, COL_RING_BG);
+    int fillW = barW * netBarPct(rows[i].mbps) / 100;
+    if (fillW > 0) {
+      int r = fillW < barH ? fillW / 2 : barH / 2;
+      canvas->fillRoundRect(left, barY, fillW, barH, r, kNetBlue);
+    }
+  }
+  canvas->setFont();
+}
+
 void drawPageNet() {
+  if (strcmp(layoutForPage("net"), "bars") == 0) {
+    drawNetBars();
+    return;
+  }
   // Matches the dashboard preview: NET UTIL. title, then down/up rates
   // with little arrowheads, in the smooth fonts.
   canvas->setFont(&tiny_sans_18);
@@ -1214,7 +1291,9 @@ void handleSetConfig(JsonDocument &doc) {
                     (strcmp(want, "mist") == 0 || strcmp(want, "mist_anim") == 0)) ||
                    ((strcmp(config.pages[i], "cpu") == 0 ||
                      strcmp(config.pages[i], "ram") == 0) &&
-                    strcmp(want, "dial") == 0);
+                    strcmp(want, "dial") == 0) ||
+                   (strcmp(config.pages[i], "net") == 0 &&
+                    strcmp(want, "bars") == 0);
       strncpy(config.layouts[i], known ? want : "default", 11);
       config.layouts[i][11] = 0;
     }
@@ -1349,6 +1428,7 @@ void handleLine(const String &line) {
   stats.mmc_pct        = doc["mmc_pct"] | stats.mmc_pct;
   stats.net_rx_mbps    = doc["net_rx_mbps"] | stats.net_rx_mbps;
   stats.net_tx_mbps    = doc["net_tx_mbps"] | stats.net_tx_mbps;
+  stats.net_iface      = doc["net_iface"] | stats.net_iface;
   stats.nas_available  = doc["nas_available"] | stats.nas_available;
   stats.nas_total_gb   = doc["nas_total_gb"] | stats.nas_total_gb;
   stats.nas_pct        = doc["nas_pct"] | stats.nas_pct;

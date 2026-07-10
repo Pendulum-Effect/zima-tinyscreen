@@ -185,6 +185,35 @@ int main() {
     doc5["layouts"]["temp"] = "dial";                   // not for temp
     handleSetConfig(doc5);
     CHECK(strcmp(config.layouts[0], "default") == 0);
+
+    // bars: valid for net only
+    JsonDocument doc6;
+    JsonArray pages6 = doc6["pages"].to<JsonArray>();
+    pages6.add("net"); pages6.add("cpu");
+    doc6["layouts"]["net"] = "bars";
+    doc6["layouts"]["cpu"] = "bars";                    // not for cpu
+    handleSetConfig(doc6);
+    CHECK(strcmp(config.layouts[0], "bars") == 0);
+    CHECK(strcmp(config.layouts[1], "default") == 0);
+    CHECK(strcmp(layoutForPage("net"), "bars") == 0);
+  }
+
+  // ---- Bars layout helpers: byte-rate formatting + bar fill ----
+  {
+    char b[16];
+    fmtBytesRate(0.036f, b, sizeof(b));       // 4500 B/s
+    CHECK(strcmp(b, "4.4KB") == 0);
+    fmtBytesRate(0.004f, b, sizeof(b));       // 500 B/s
+    CHECK(strcmp(b, "500B") == 0);
+    fmtBytesRate(2.0f, b, sizeof(b));         // 250 KB/s
+    CHECK(strcmp(b, "244KB") == 0);
+    fmtBytesRate(200.0f, b, sizeof(b));       // 25 MB/s
+    CHECK(strcmp(b, "23.8MB") == 0);
+    CHECK(netBarPct(0.0f) == 0);              // idle -> empty
+    CHECK(netBarPct(0.02f) == 0);             // sub-threshold noise -> empty
+    CHECK(netBarPct(0.5f) == 2);              // alive -> minimum sliver
+    CHECK(netBarPct(500.0f) == 50);           // half a gigabit
+    CHECK(netBarPct(2000.0f) == 100);         // clamped
   }
 
   // ---- utilization ramp: green floor, red ceiling, warm middle ----

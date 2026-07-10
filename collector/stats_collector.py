@@ -98,6 +98,7 @@ class Stats:
     mmc_pct: float
     net_rx_mbps: float
     net_tx_mbps: float
+    net_iface: str
     nas_available: bool
     nas_total_gb: float
     nas_pct: float
@@ -271,6 +272,46 @@ class NetworkMeter:
             return (c.bytes_recv, c.bytes_sent) if c else (0, 0)
         c = psutil.net_io_counters()
         return (c.bytes_recv, c.bytes_sent)
+
+    def iface_name(self):
+        """Best display name for where the traffic numbers come from: the
+        explicitly requested interface, else the busiest real one.
+        Throughput is summed across all real interfaces, but in practice
+        a single NIC dominates on these boards, so its name is the
+        honest headline. Returns "" if nothing qualifies."""
+        if self.iface:
+            return self.iface
+        cands = []
+        if self.host_net_dev:
+            try:
+                with open(self.host_net_dev) as f:
+                    lines = f.readlines()[2:]
+            except (FileNotFoundError, PermissionError, OSError):
+                lines = []
+            for line in lines:
+                if ":" not in line:
+                    continue
+                name, data = line.split(":", 1)
+                name = name.strip()
+                if name == "lo" or name.startswith(("docker", "veth", "br-", "virbr")):
+                    continue
+                fields = data.split()
+                if len(fields) < 9:
+                    continue
+                try:
+                    cands.append((name, int(fields[0]) + int(fields[8])))
+                except ValueError:
+                    continue
+        if not cands:
+            try:
+                per = psutil.net_io_counters(pernic=True)
+                cands = [(n, x.bytes_recv + x.bytes_sent) for n, x in per.items()
+                         if n != "lo" and not n.startswith(("docker", "veth", "br-", "virbr"))]
+            except Exception:
+                cands = []
+        if not cands:
+            return ""
+        return max(cands, key=lambda t: t[1])[0]
 
     def sample_mbps(self):
         now = time.time()
@@ -565,6 +606,7 @@ def main():
                 mmc_pct=mmc_pct,
                 net_rx_mbps=rx_mbps,
                 net_tx_mbps=tx_mbps,
+                net_iface=net_meter.iface_name(),
                 nas_available=nas_available,
                 nas_total_gb=nas_total,
                 nas_pct=nas_pct,

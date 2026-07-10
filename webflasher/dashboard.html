@@ -759,6 +759,10 @@
       { id: 'default',   label: 'TinyScreen (default)' },
       { id: 'dial',      label: 'Dial' },
     ],
+    net: [
+      { id: 'default',   label: 'TinyScreen (default)' },
+      { id: 'bars',      label: 'Bars' },
+    ],
   };
   const DEFAULT_LAYOUTS = [{ id: 'default', label: 'TinyScreen (default)' }];
   const layoutsFor = id => PAGE_LAYOUTS[id] || DEFAULT_LAYOUTS;
@@ -858,14 +862,42 @@
       (val > 0 ? '<circle cx="' + cx + '" cy="' + cy + '" r="' + r + '" fill="none" stroke="' + col + '" stroke-width="11" ' +
       'stroke-linecap="round" stroke-dasharray="' + prog.toFixed(1) + ' ' + C.toFixed(1) + '" ' +
       'transform="rotate(135 ' + cx + ' ' + cy + ')"/>' : '') +
-      '<text x="' + cx + '" y="' + (cy + 7) + '" text-anchor="middle" fill="#eaf6f4" font-size="20" ' +
+      '<text x="' + cx + '" y="' + (cy + 5) + '" text-anchor="middle" fill="#eaf6f4" font-size="15" ' +
       'font-weight="700" font-family="sans-serif">' + val + '</text>' +
-      '<text x="' + (cx + String(val).length * 6.2 + 2).toFixed(1) + '" y="' + (cy + 7) + '" text-anchor="start" ' +
-      'fill="#eaf6f4" font-size="10" font-weight="700" font-family="sans-serif">%</text>' +
+      '<text x="' + (cx + String(val).length * 4.7 + 2).toFixed(1) + '" y="' + (cy + 5) + '" text-anchor="start" ' +
+      'fill="#eaf6f4" font-size="7.5" font-weight="700" font-family="sans-serif">%</text>' +
       '<text x="' + cx + '" y="73" text-anchor="middle" fill="#eaf6f4" font-size="10" font-weight="700" ' +
       'font-family="sans-serif">' + (id === 'cpu' ? 'CPU' : 'RAM') + '</text>' +
       '<text x="' + cx + '" y="90" text-anchor="middle" fill="#eaf6f4" font-size="10" font-weight="700" ' +
       'font-family="sans-serif">' + sub + '</text>' +
+      '</svg>';
+  }
+
+  // The Bars layout for the network page, in SVG: widget-card look with
+  // the interface name up top and Upload / Download rows, each a rate
+  // and a slim rounded bar (blue, filling against a gigabit link).
+  function netBarsPreviewSVG(size) {
+    if (!('net' in PREVIEW_VALUES)) {
+      PREVIEW_VALUES.net = 15 + Math.floor(Math.random() * 70);
+    }
+    const v = PREVIEW_VALUES.net;
+    const fmtB = b => b < 1000 ? Math.round(b) + 'B'
+      : b < 1024 * 1000 ? (b / 1024 < 10 ? (b / 1024).toFixed(1) : Math.round(b / 1024)) + 'KB'
+      : (b / 1048576).toFixed(1) + 'MB';
+    const up = 80 + (v * 7) % 850, down = 80 + (v * 13) % 850;
+    const row = (label, bytes, y) =>
+      '<text x="10" y="' + y + '" fill="#8fb0ac" font-size="8" font-family="sans-serif">' + label + '</text>' +
+      '<text x="90" y="' + y + '" text-anchor="end" fill="#eaf6f4" font-size="9" font-weight="700" ' +
+      'font-family="sans-serif">' + fmtB(bytes) + '</text>' +
+      '<rect x="10" y="' + (y + 4) + '" width="80" height="4.5" rx="2.25" fill="#1e3a3a"/>' +
+      '<rect x="10" y="' + (y + 4) + '" width="2.5" height="4.5" rx="1.25" fill="#0a84ff"/>';
+    return '<svg width="' + size + '" height="' + size + '" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">' +
+      '<rect width="100" height="100" fill="#08141a"/>' +
+      '<text x="10" y="17" fill="#8fb0ac" font-size="8" font-family="sans-serif">Network</text>' +
+      '<circle cx="82" cy="14" r="1.3" fill="#8fb0ac"/><circle cx="87" cy="14" r="1.3" fill="#8fb0ac"/>' +
+      '<circle cx="92" cy="14" r="1.3" fill="#8fb0ac"/>' +
+      '<text x="10" y="31" fill="#eaf6f4" font-size="11" font-weight="700" font-family="sans-serif">eth0</text>' +
+      row('Upload', up, 55) + row('Download', down, 80) +
       '</svg>';
   }
 
@@ -881,6 +913,9 @@
     }
     if ((id === 'cpu' || id === 'ram') && pageLayouts[id] === 'dial') {
       return dialPreviewSVG(size, id);
+    }
+    if (id === 'net' && pageLayouts[id] === 'bars') {
+      return netBarsPreviewSVG(size);
     }
     if (!(id in PREVIEW_VALUES)) {
       PREVIEW_VALUES[id] = def.unit === '°C'

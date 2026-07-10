@@ -32,7 +32,9 @@ FONTS = [
     # -- used to keep huge display faces from bloating the header.
     ("tiny_sans_18",       DEJAVU,      18,  None),
     ("tiny_sans_bold_20",  DEJAVU_BOLD, 20,  None),
+    ("tiny_sans_bold_24",  DEJAVU_BOLD, 24,  None),
     ("tiny_sans_bold_32",  DEJAVU_BOLD, 32,  None),
+    ("tiny_sans_bold_36",  DEJAVU_BOLD, 36,  None),
     ("tiny_sans_bold_64",  DEJAVU_BOLD, 64,  None),
     # Digits-only jumbo face for the mist layout's big temperature
     ("tiny_sans_bold_128", DEJAVU_BOLD, 128, "0123456789-. \xb0"),
