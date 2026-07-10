@@ -2,6 +2,16 @@
   "_comment": "Human-readable changelog for the dashboard's About tab -- written for people, not commit archaeologists. The dashboard fetches this from GitHub at page load (baked copy as fallback), so add an entry here with each release and every install sees it. Newest first. Dates are YYYY-MM-DD.",
   "entries": [
     {
+      "version": "0.8.9.21",
+      "date": "2026-07-10",
+      "title": "Graph header: steadier, and properly purple",
+      "notes": [
+        "The Graph's rate arrows are now slim stroke-style arrows (stem and chevron) instead of solid triangles, matching the dashboard preview's look.",
+        "Upload purple is now the exact shade from the reference design, on both the device and the preview.",
+        "The rate readouts sit in fixed slots -- arrows, text, and baseline never shift as the numbers change width, so the header stops dancing during a busy transfer. One font size fits everything up to a two-way gigabit, verified against the actual glyph tables."
+      ]
+    },
+    {
       "version": "0.8.9.20",
       "date": "2026-07-10",
       "title": "ZimaOS Graph: watch your traffic roll by",

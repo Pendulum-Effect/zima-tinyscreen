@@ -40,7 +40,7 @@
 // "Software Version" field via the get_config command below. No
 // auto-update-checking mechanism exists yet (that's a separate, not-yet
 // -built feature) -- this just answers "what's currently on my device."
-#define FIRMWARE_VERSION "1.13.0"
+#define FIRMWARE_VERSION "1.14.0"
 
 // Note: screen dimensions are NOT fixed -- board 1 (1.69") is 240x280,
 // taller than board 0's 240x240. See screenW/screenH globals, set from
@@ -980,43 +980,45 @@ void drawNetBars() {
 // (the font faces don't carry Unicode arrows).
 void drawNetGraph() {
   const uint16_t kGraphTeal   = rgb565(79, 209, 197);
-  const uint16_t kGraphPurple = rgb565(186, 132, 255);
+  const uint16_t kGraphPurple = rgb565(177, 121, 255);  // sampled from the reference
   int left  = LX + 16 * LW / 240;             // width-scaled lengths --
   int right = LX + LW - 16 * LW / 240;        // see the Dots grid lesson
   int top = SY(64), bottom = SY(206);
 
-  // Header: [v] download   [^] upload, the pair centered as a whole.
-  // Both rates at once can outgrow the panel ("289 Mbps" x2 at the
-  // 24px face is wider than the screen), so the face cascades down
-  // until the measured pair fits.
+  // Header: [v] download   [^] upload, in FIXED slots -- arrow x, text
+  // x, face, and baseline never move, so changing digits don't make the
+  // header dance. The 20px face holds every compact rate ("1.20 Gb" x2
+  // included -- verified against the glyph tables), which is what let
+  // the old measure-and-cascade logic retire. Arrows are stroke-style
+  // (stem + chevron), like the reference's Unicode glyphs.
   char rxs[16], txs[16];
   fmtBitsRate(stats.net_rx_mbps, rxs, sizeof(rxs), true);   // compact: Kb/Mb/Gb
   fmtBitsRate(stats.net_tx_mbps, txs, sizeof(txs), true);
-  int arrowW = 12 * LW / 240, gap = 8 * LW / 240, midGap = 18 * LW / 240;
-  const GFXfont *faces[3] = {&tiny_sans_bold_24, &tiny_sans_bold_20, &tiny_sans_18};
-  int16_t x1, y1; uint16_t rw, rh, tw, th;
-  int totalW = 0;
-  for (int f = 0; f < 3; f++) {
-    canvas->setFont(faces[f]);
-    canvas->getTextBounds(rxs, 0, 0, &x1, &y1, &rw, &rh);
-    canvas->getTextBounds(txs, 0, 0, &x1, &y1, &tw, &th);
-    totalW = arrowW + gap + (int)rw + midGap + arrowW + gap + (int)tw;
-    if (totalW <= LW - 10 * LW / 240) break;
-  }
-  int x = CX() - totalW / 2;
+  int aw = 10 * LW / 240, gap = 8 * LW / 240;
   int cyH = SY(30);
-  int ah = 14 * LH / 240;                     // arrow height
-  // download: triangle pointing down
-  canvas->fillTriangle(x, cyH - ah / 2, x + arrowW, cyH - ah / 2,
-                       x + arrowW / 2, cyH + ah / 2, kGraphTeal);
-  canvas->setTextColor(kGraphTeal);
-  drawTextTopLeft(rxs, x + arrowW + gap, cyH - (int)rh / 2);
-  x += arrowW + gap + (int)rw + midGap;
-  // upload: triangle pointing up
-  canvas->fillTriangle(x, cyH + ah / 2, x + arrowW, cyH + ah / 2,
-                       x + arrowW / 2, cyH - ah / 2, kGraphPurple);
-  canvas->setTextColor(kGraphPurple);
-  drawTextTopLeft(txs, x + arrowW + gap, cyH - (int)th / 2);
+  int ah = 15 * LH / 240;
+  int aTop = cyH - ah / 2, aBot = cyH + ah / 2;
+  int baseline = cyH + 7 * LH / 240;          // fixed: no vertical bounce
+  int slots[2] = {CX() - 104 * LW / 240, CX() + 10 * LW / 240};
+  const char *vals[2] = {rxs, txs};
+  const uint16_t cols[2] = {kGraphTeal, kGraphPurple};
+  canvas->setFont(&tiny_sans_bold_20);
+  for (int s = 0; s < 2; s++) {
+    int acx = slots[s] + aw / 2;
+    for (int o = 0; o < 2; o++) {             // double-strike for weight
+      canvas->drawLine(acx + o, aTop, acx + o, aBot, cols[s]);
+      if (s == 0) {                           // down chevron
+        canvas->drawLine(slots[s] + o, aBot - aw / 2, acx + o, aBot, cols[s]);
+        canvas->drawLine(slots[s] + aw + o, aBot - aw / 2, acx + o, aBot, cols[s]);
+      } else {                                // up chevron
+        canvas->drawLine(slots[s] + o, aTop + aw / 2, acx + o, aTop, cols[s]);
+        canvas->drawLine(slots[s] + aw + o, aTop + aw / 2, acx + o, aTop, cols[s]);
+      }
+    }
+    canvas->setTextColor(cols[s]);
+    canvas->setCursor(slots[s] + aw + gap, baseline);
+    canvas->print(vals[s]);
+  }
   canvas->setFont();
 
   if (netHistLen < 2) return;                 // nothing to plot yet

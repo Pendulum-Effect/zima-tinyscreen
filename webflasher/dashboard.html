@@ -975,10 +975,11 @@
       '<polyline points="' + pts(buf) + '" fill="none" stroke="' + col + '" stroke-width="1.4"/>';
     return '<svg width="' + size + '" height="' + size + '" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">' +
       '<rect width="100" height="100" fill="#08141a"/>' +
-      '<text x="50" y="17" text-anchor="middle" font-size="9" font-weight="700" font-family="sans-serif">' +
-      '<tspan fill="#4fd1c5">\u2193 ' + fmt(rx[N - 1]) + '</tspan>' +
-      '<tspan fill="#ba84ff" dx="6">\u2191 ' + fmt(tx[N - 1]) + '</tspan></text>' +
-      series(rx, '#4fd1c5') + series(tx, '#ba84ff') +
+      '<text x="8" y="17" text-anchor="start" font-size="9" font-weight="700" font-family="sans-serif" ' +
+      'fill="#b179ff"><tspan fill="#4fd1c5">\u2193 ' + fmt(rx[N - 1]) + '</tspan></text>' +
+      '<text x="55" y="17" text-anchor="start" font-size="9" font-weight="700" font-family="sans-serif" ' +
+      'fill="#b179ff">\u2191 ' + fmt(tx[N - 1]) + '</text>' +
+      series(rx, '#4fd1c5') + series(tx, '#b179ff') +
       '</svg>';
   }
 
