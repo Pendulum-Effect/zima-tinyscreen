@@ -3,6 +3,7 @@
   "project": {
     "name": "TinyScreen",
     "tagline": "A tiny external status display for your ZimaBoard or ZimaBlade.",
+    "logo_url": "logo.png",
     "description": "TinyScreen streams live system stats -- CPU, RAM, storage, network, temperature -- from a ZimaOS device to a small ESP32-S3 display plugged into its USB port. It also handles flashing the display's firmware and configuring what it shows, all from this dashboard.",
     "repo_url": "https://github.com/Pendulum-Effect/zima-tinyscreen",
     "author": {
@@ -28,7 +29,7 @@
       },
       {
         "name": "ArduinoJson",
-        "by": "Benoît Blanchon",
+        "by": "Beno\u00eet Blanchon",
         "url": "https://arduinojson.org",
         "note": "Parses and builds the JSON messages the display and the app exchange over USB. MIT licensed.",
         "github": "bblanchon"
@@ -70,7 +71,7 @@
       },
       {
         "name": "psutil",
-        "by": "Giampaolo Rodolà and contributors",
+        "by": "Giampaolo Rodol\u00e0 and contributors",
         "url": "https://github.com/giampaolo/psutil",
         "note": "Gathers most of the system stats that end up on the screen. BSD 3-Clause licensed.",
         "github": "giampaolo"

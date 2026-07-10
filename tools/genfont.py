@@ -26,15 +26,20 @@ FIRST, LAST = 32, 176  # ASCII printable + latin-1 gap + degree sign
 DEGREE = 176
 
 FONTS = [
-    # (c identifier, ttf path, pixel size)
-    ("tiny_sans_18",      DEJAVU,      18),
-    ("tiny_sans_bold_20", DEJAVU_BOLD, 20),
-    ("tiny_sans_bold_32", DEJAVU_BOLD, 32),
-    ("tiny_sans_bold_64", DEJAVU_BOLD, 64),
+    # (c identifier, ttf path, pixel size, charset)
+    # charset None = full printable ASCII + degree sign; a string limits
+    # the face to just those characters (others become zero-size glyphs)
+    # -- used to keep huge display faces from bloating the header.
+    ("tiny_sans_18",       DEJAVU,      18,  None),
+    ("tiny_sans_bold_20",  DEJAVU_BOLD, 20,  None),
+    ("tiny_sans_bold_32",  DEJAVU_BOLD, 32,  None),
+    ("tiny_sans_bold_64",  DEJAVU_BOLD, 64,  None),
+    # Digits-only jumbo face for the mist layout's big temperature
+    ("tiny_sans_bold_128", DEJAVU_BOLD, 128, "0123456789-. \xb0"),
 ]
 
 
-def build_font(name, path, px):
+def build_font(name, path, px, charset=None):
     font = ImageFont.truetype(path, px)
     ascent, descent = font.getmetrics()
     bitmap = bytearray()
@@ -51,6 +56,8 @@ def build_font(name, path, px):
     glyphs = []
     for code in range(FIRST, LAST + 1):
         renderable = (32 <= code <= 126) or code == DEGREE
+        if charset is not None:
+            renderable = renderable and chr(code if code != DEGREE else 0xB0) in charset
         ch = chr(code)
         if not renderable:
             glyphs.append((len(bitmap), 0, 0, 0, 0, 0, code))
@@ -112,8 +119,8 @@ def main():
     print("#pragma once")
     print()
     total = 0
-    for name, path, px in FONTS:
-        bitmap, glyphs, ya = build_font(name, path, px)
+    for name, path, px, charset in FONTS:
+        bitmap, glyphs, ya = build_font(name, path, px, charset)
         total += len(bitmap) + len(glyphs) * 7
         print(f"// --- {name}: {px}px, {len(bitmap)} bitmap bytes ---")
         print(emit(name, bitmap, glyphs, ya))

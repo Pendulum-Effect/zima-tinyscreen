@@ -399,7 +399,7 @@
     display: flex; align-items: center; justify-content: center;
     font-size: 9px; letter-spacing: 0.06em; text-transform: uppercase;
   }
-  .logo-slot img { width: 100%; height: 100%; border-radius: 12px; object-fit: cover; }
+  .about-logo { height: 44px; width: auto; max-width: 100%; display: block; }
   .ai-spark { width: 20px; height: 20px; color: var(--teal); flex-shrink: 0; }
   .save-banner .banner-msg { font-size: 13.5px; }
   .banner-discard {
@@ -769,50 +769,41 @@
   }
   const pageLabel = id => pageDef(id).label;
 
-  // The Mist layout, in SVG, for the dashboard previews: corner glow,
-  // deterministic speckle, widget-style labels, and the big number in
-  // the shared temperature ramp. Animated variant shows a few brighter
-  // drifting pixels frozen mid-flight.
+  // The Mist layout, in SVG, for the dashboard previews: a soft glow
+  // out of the bottom-left corner, widget-style labels, and the big
+  // number in the shared temperature ramp. Animated variant shows a few
+  // rising particles frozen mid-flight, fading out by mid-screen.
   function mistPreviewSVG(size, animated) {
     if (!('temp_mist' in PREVIEW_VALUES)) {
       PREVIEW_VALUES.temp_mist = 33 + Math.floor(Math.random() * 12);
     }
     const val = PREVIEW_VALUES.temp_mist;
     const col = tempColorJS(val);
-    // deterministic speckle via a little LCG, denser near bottom-right
     let s = 0xC0FFEE;
     const rnd = () => (s = (s * 1664525 + 1013904223) >>> 0) / 4294967296;
-    let speckle = '';
-    for (let i = 0; i < 130; i++) {
-      const x = rnd() * 100, y = rnd() * 100;
-      const d = ((100 - x) + (100 - y)) / 2;   // 0 at corner .. 100 far
-      if (rnd() * 100 < d) continue;            // density falloff
-      const o = (0.10 + (1 - d / 100) * 0.30).toFixed(2);
-      speckle += '<rect x="' + x.toFixed(1) + '" y="' + y.toFixed(1) +
-        '" width="1" height="1" fill="' + col + '" opacity="' + o + '"/>';
-    }
     let particles = '';
     if (animated) {
+      // rising out of the bottom-left corner, gone by ~halfway up
       for (let i = 0; i < 7; i++) {
         const t = rnd();
-        const x = 96 - t * 46 - rnd() * 8, y = 96 - t * 46 - rnd() * 8;
+        const x = 4 + t * 30 + rnd() * 10, y = 96 - t * 42 - rnd() * 6;
         particles += '<rect x="' + x.toFixed(1) + '" y="' + y.toFixed(1) +
-          '" width="1.8" height="1.8" fill="' + col + '" opacity="' + (0.75 - t * 0.6).toFixed(2) + '"/>';
+          '" width="1.8" height="1.8" fill="' + col + '" opacity="' + (0.75 * (1 - t)).toFixed(2) + '"/>';
       }
     }
     return '<svg width="' + size + '" height="' + size + '" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">' +
-      '<defs><radialGradient id="mistg" cx="100%" cy="100%" r="95%">' +
+      '<defs><radialGradient id="mistg" cx="0%" cy="100%" r="95%">' +
       '<stop offset="0%" stop-color="' + col + '" stop-opacity="0.38"/>' +
       '<stop offset="60%" stop-color="' + col + '" stop-opacity="0.10"/>' +
       '<stop offset="100%" stop-color="' + col + '" stop-opacity="0"/>' +
       '</radialGradient></defs>' +
       '<rect width="100" height="100" fill="#08141a"/>' +
       '<rect width="100" height="100" fill="url(#mistg)"/>' +
-      speckle + particles +
+      particles +
       '<text x="10" y="16" fill="#8fb0ac" font-size="8" font-family="sans-serif">CPU</text>' +
       '<text x="10" y="27" fill="#eaf6f4" font-size="8.5" font-weight="700" font-family="sans-serif">Temperature</text>' +
       '<text x="90" y="16" text-anchor="end" fill="#eaf6f4" font-size="8" font-family="sans-serif">\u00b0C</text>' +
-      '<text x="90" y="88" text-anchor="end" fill="' + col + '" font-size="30" font-weight="700" ' +
+      '<text x="90" y="88" text-anchor="end" fill="' + col + '" font-size="56" font-weight="700" ' +
       'font-family="sans-serif">' + val + '</text>' +
       '</svg>';
   }
@@ -1570,23 +1561,32 @@
       head.style.display = 'flex';
       head.style.gap = '16px';
       head.style.alignItems = 'center';
-      // Reserved logo spot: shows the real logo the moment
-      // project.logo_url appears in about.json, dashed placeholder until.
-      const slot = el('div', 'logo-slot');
+      // The wordmark IS the title when we have one -- it already says
+      // "Tiny Screen", so repeating the name as text would read twice.
+      // Falls back to the dashed placeholder + text title until
+      // project.logo_url appears in about.json.
       if (p.logo_url) {
         const img = document.createElement('img');
+        img.className = 'about-logo';
         img.src = p.logo_url; img.alt = (p.name || 'TinyScreen') + ' logo';
-        slot.style.border = 'none';
-        slot.appendChild(img);
+        const titleWrap = el('div');
+        titleWrap.appendChild(img);
+        if (p.tagline) {
+          const tg = el('div', 'card-desc', p.tagline);
+          tg.style.marginTop = '8px';
+          titleWrap.appendChild(tg);
+        }
+        head.appendChild(titleWrap);
       } else {
+        const slot = el('div', 'logo-slot');
         slot.textContent = 'logo';
         slot.title = 'Reserved for the TinyScreen logo';
+        head.appendChild(slot);
+        const titleWrap = el('div');
+        titleWrap.appendChild(el('div', 'card-title', p.name || 'TinyScreen'));
+        if (p.tagline) titleWrap.appendChild(el('div', 'card-desc', p.tagline));
+        head.appendChild(titleWrap);
       }
-      head.appendChild(slot);
-      const titleWrap = el('div');
-      titleWrap.appendChild(el('div', 'card-title', p.name || 'TinyScreen'));
-      if (p.tagline) titleWrap.appendChild(el('div', 'card-desc', p.tagline));
-      head.appendChild(titleWrap);
       c.appendChild(head);
       if (p.description) {
         const d = el('div', 'card-desc', p.description);

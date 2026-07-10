@@ -137,11 +137,11 @@ int main() {
   uint32_t seed = 42;
   MistParticle mp;
   for (int i = 0; i < 50; i++) {
-    mistRespawn(&mp, &seed, 240, 240);
-    CHECK(mp.x > 240 - 35 && mp.x <= 240);
+    mistRespawn(&mp, &seed, 0, 240);   // bottom-LEFT corner
+    CHECK(mp.x >= 0 && mp.x < 35);
     CHECK(mp.y > 240 - 35 && mp.y <= 240);
-    CHECK(mp.vx < 0 && mp.vx >= -3 && mp.vy < 0 && mp.vy >= -3);
-    CHECK(mp.life == mp.maxLife && mp.maxLife >= 14);
+    CHECK(mp.vx > 0 && mp.vx <= 3 && mp.vy < 0 && mp.vy >= -3);
+    CHECK(mp.life == mp.maxLife && mp.maxLife >= 20);
   }
 
   // ---- layouts protocol: set_config -> NVS roundtrip -> whitelist ----
@@ -185,6 +185,12 @@ int main() {
   CHECK(gdeg->width > 0 && gdeg->yOffset < -8);   // degree sign: small, high
   const GFXglyph *gspace = &tiny_sans_18_Glyphs[' ' - 32];
   CHECK(gspace->width == 0 && gspace->xAdvance > 0);
+  // jumbo digits-only face: digits real, letters stripped to zero-size
+  CHECK(tiny_sans_bold_128.first == 32 && tiny_sans_bold_128.last == 176);
+  const GFXglyph *g8 = &tiny_sans_bold_128_Glyphs['8' - 32];
+  CHECK(g8->width > 60 && g8->height > 80 && g8->xAdvance >= g8->width);
+  const GFXglyph *gA = &tiny_sans_bold_128_Glyphs['A' - 32];
+  CHECK(gA->width == 0 && gA->height == 0);
 
   printf("ALL FIRMWARE LOGIC TESTS PASS\n");
   return 0;

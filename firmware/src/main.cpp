@@ -40,7 +40,7 @@
 // "Software Version" field via the get_config command below. No
 // auto-update-checking mechanism exists yet (that's a separate, not-yet
 // -built feature) -- this just answers "what's currently on my device."
-#define FIRMWARE_VERSION "1.5.0"
+#define FIRMWARE_VERSION "1.6.0"
 
 // Note: screen dimensions are NOT fixed -- board 1 (1.69") is 240x280,
 // taller than board 0's 240x240. See screenW/screenH globals, set from
@@ -759,19 +759,19 @@ void drawPage(const char *pageId) {
 }
 
 // ---------------------------------------------------------------------
-// "Mist" layouts for CPU Temperature (firmware 1.4.0): a card-style
+// "Mist" layouts for CPU Temperature (firmware 1.6.0): a card-style
 // widget look -- CPU / Temperature label top-left, degree unit
-// top-right, a big temperature number bottom-right, and a speckled mist
-// glowing out of the bottom-right corner. The mist and the number share
+// top-right, a big temperature number bottom-right, and a soft glow
+// rising out of the BOTTOM-LEFT corner. The glow and the number share
 // the temperature-reactive color ramp, so the whole page cools and
-// warms with the CPU. The static variant draws a fixed speckle field
-// (deterministic PRNG, so it doesn't shimmer frame to frame); the
-// animated one adds drifting pixels that fade as they leave the corner.
+// warms with the CPU. The static variant is just the glow; the animated
+// one adds particles that drift up out of the corner and fade to
+// nothing by about halfway up the screen.
 // ---------------------------------------------------------------------
 
 struct MistParticle {
   int16_t x, y;      // position (screen px)
-  int8_t vx, vy;     // velocity per frame (negative = up/left)
+  int8_t vx, vy;     // velocity per frame (vx>0 right, vy<0 up)
   uint8_t life;      // frames remaining
   uint8_t maxLife;
 };
@@ -785,49 +785,68 @@ uint32_t mistRand(uint32_t *s) {  // small LCG; deterministic + cheap
   return *s >> 8;
 }
 
-// Respawn a particle near the bottom-right corner with an up/left drift.
-// Pure-ish (PRNG state passed in) for host testing.
+// Respawn a particle near the bottom-left corner with an up/right drift.
+// Pure-ish (PRNG state passed in) for host testing. Lifetimes are long
+// enough that most particles hit the half-screen fade ceiling in
+// drawTempMist rather than dying of old age.
 void mistRespawn(MistParticle *p, uint32_t *rng, int cornerX, int cornerY) {
-  p->x = cornerX - (int16_t)(mistRand(rng) % 34);
+  p->x = cornerX + (int16_t)(mistRand(rng) % 34);
   p->y = cornerY - (int16_t)(mistRand(rng) % 34);
-  p->vx = -1 - (int8_t)(mistRand(rng) % 3);   // -1..-3 px/frame
-  p->vy = -1 - (int8_t)(mistRand(rng) % 3);
-  p->maxLife = 14 + (uint8_t)(mistRand(rng) % 12);
+  p->vx = 1 + (int8_t)(mistRand(rng) % 3);    // +1..+3 px/frame (right)
+  p->vy = -1 - (int8_t)(mistRand(rng) % 3);   // -1..-3 px/frame (up)
+  p->maxLife = 20 + (uint8_t)(mistRand(rng) % 20);
   p->life = p->maxLife;
 }
 
 void drawTempMist(bool animated) {
   canvas->fillScreen(COL_BG);
   uint16_t tcol = tempColorFor(stats.cpu_temp_c);
-  int cornerX = LX + LW, cornerY = LY + LH;
+  int cornerX = LX, cornerY = LY + LH;        // mist lives bottom-LEFT
   int diag = (LW + LH) / 2;
 
-  // Soft glow body rising out of the corner: concentric quarter-rings,
-  // brightening toward the corner -- the continuous "mist" the speckle
-  // sits on (the previews' radial gradient, in 565).
+  // Soft glow rising out of the corner, drawn per-pixel. Concentric
+  // fillArc rings banded badly on hardware: RGB565 only has 5/6 bits
+  // per channel, so ANY stepped-brightness ring scheme shows visible
+  // contour lines. Instead each pixel gets a radial brightness from a
+  // curve matching the dashboard preview's gradient stops (38% at the
+  // corner, 10% at 60% radius, 0 at the edge), plus positional hash
+  // noise -- randomized rounding that dissolves the quantization steps
+  // and doubles as mist texture. The noise amplitude tapers to zero
+  // below ~2% brightness: down there a 565 pixel is binary (lit or
+  // not), so dithering can only make speckle -- plain truncation gives
+  // a clean fade instead. ~17k px/frame is nothing at 5fps.
   int glowR = diag * 11 / 20;
-  for (int r = glowR; r > 6; r -= 5) {
-    int b = 4 + 26 * (glowR - r) / glowR;     // 4..30 of 100
-    canvas->fillArc(cornerX, cornerY, r, r - 5, 180, 270,
-                    dimColor565(tcol, b, 100));
-  }
-
-  // Static speckle field: same seed every frame, so the mist holds still.
-  uint32_t rng = 0xC0FFEE;
-  for (int i = 0; i < 2600; i++) {
-    int px = LX + (int)(mistRand(&rng) % LW);
-    int py = LY + (int)(mistRand(&rng) % LH);
-    int dx = cornerX - px, dy = cornerY - py;
-    // Manhattan-ish distance is plenty here and avoids sqrt
-    int d = (dx + dy) / 2;
-    if (d > diag) continue;
-    int fall = diag - d;                      // 0 at edge .. diag at corner
-    if ((int)(mistRand(&rng) % (unsigned)diag) > fall) continue;  // density falloff
-    int bright = 12 + fall * 36 / diag;       // 12..48 out of 100
-    canvas->drawPixel(px, py, dimColor565(tcol, bright, 100));
+  long glowR2 = (long)glowR * glowR;
+  for (int py = cornerY - glowR; py <= cornerY; py++) {
+    long dy = cornerY - py;
+    for (int px = cornerX; px <= cornerX + glowR; px++) {
+      long dx = px - cornerX;
+      long d2 = dx * dx + dy * dy;
+      if (d2 >= glowR2) continue;
+      int d = (int)sqrtf((float)d2);
+      long bFine;                             // brightness in 0.01% units
+      if (d * 10 <= glowR * 6) {
+        bFine = 3800 - (2800L * d * 10) / (glowR * 6);
+      } else {
+        bFine = 1000 - (1000L * (d * 10 - glowR * 6)) / (glowR * 4);
+      }
+      long amp = (bFine - 200) / 2;             // dither amplitude, 0.01%
+      if (amp < 0) amp = 0;
+      if (amp > 160) amp = 160;
+      uint32_t h = ((uint32_t)px * 73856093u) ^ ((uint32_t)py * 19349663u);
+      h = h * 1664525u + 1013904223u;
+      long b = (bFine + (long)((h >> 8) % (uint32_t)(2 * amp + 1)) - amp) / 100;
+      if (b <= 0) continue;
+      if (b > 38) b = 38;
+      canvas->drawPixel(px, py, dimColor565(tcol, (int)b, 100));
+    }
   }
 
   if (animated) {
+    // Particles drift up out of the corner and fade to nothing by
+    // about halfway up the screen (hard respawn ceiling at LH/2, with
+    // brightness scaled toward zero as they approach it).
+    int riseMax = LH / 2;
     if (!mistInited) {
       uint32_t seed = 0xBEEF;
       for (int i = 0; i < MIST_PARTICLES; i++) {
@@ -843,13 +862,18 @@ void drawTempMist(bool animated) {
       p->x += p->vx;
       p->y += p->vy;
       if (p->life > 0) p->life--;
-      if (p->life == 0 || p->x < LX || p->y < LY) {
+      int risen = cornerY - p->y;
+      if (p->life == 0 || risen >= riseMax || p->x > LX + LW) {
         mistRespawn(p, &liveRng, cornerX, cornerY);
+        risen = cornerY - p->y;
       }
-      // Fade with remaining life; brighter than the static field so the
-      // motion reads, and young particles are a pixel bigger.
-      int bright = 16 + (int)p->life * 68 / p->maxLife;
-      uint16_t c = dimColor565(tcol, bright > 84 ? 84 : bright, 100);
+      // Height does most of the fading (0 at the half-screen ceiling);
+      // remaining life adds per-particle variety on top.
+      int heightPct = (riseMax - risen) * 100 / riseMax;   // 100 -> 0
+      int bright = (28 + (int)p->life * 56 / p->maxLife) * heightPct / 100;
+      if (bright > 84) bright = 84;
+      if (bright < 2) continue;
+      uint16_t c = dimColor565(tcol, bright, 100);
       int sz = (p->life * 10 > p->maxLife * 6) ? 3 : 2;
       canvas->fillRect(p->x, p->y, sz, sz, c);
     }
@@ -867,14 +891,16 @@ void drawTempMist(bool animated) {
   // Degree unit, top-right -- DejaVu has a real degree glyph (0xB0)
   canvas->setFont(&tiny_sans_18);
   canvas->setTextColor(COL_TEXT);
-  drawTextTopRight("\xB0""C", cornerX - SY(14) + LY, LY + SY(14) - LY);
+  drawTextTopRight("\xB0""C", LX + LW - SY(14) + LY, LY + SY(14) - LY);
 
-  // The big number, bottom-right, in the temperature color
+  // The big number, bottom-right, in the temperature color. The jumbo
+  // face only fits two digits on a 240px panel, so 100degC+ (or below
+  // -9) falls back to the 64px face rather than clipping.
   char big[8];
   snprintf(big, sizeof(big), "%.0f", stats.cpu_temp_c);
-  canvas->setFont(&tiny_sans_bold_64);
+  canvas->setFont(strlen(big) <= 2 ? &tiny_sans_bold_128 : &tiny_sans_bold_64);
   canvas->setTextColor(tcol);
-  drawTextBottomRight(big, cornerX - SY(12) + LY, cornerY - SY(10) + LY);
+  drawTextBottomRight(big, LX + LW - SY(12) + LY, cornerY - SY(10) + LY);
   canvas->setFont();
 }
 

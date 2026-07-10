@@ -2,6 +2,17 @@
   "_comment": "Human-readable changelog for the dashboard's About tab -- written for people, not commit archaeologists. The dashboard fetches this from GitHub at page load (baked copy as fallback), so add an entry here with each release and every install sees it. Newest first. Dates are YYYY-MM-DD.",
   "entries": [
     {
+      "version": "0.8.9.13",
+      "date": "2026-07-09",
+      "title": "Mist, take three -- and we have a logo",
+      "notes": [
+        "The Mist glow is finally smooth. Turns out the little screen's colors are chunky enough that any ring-based gradient shows contour lines, so the glow is now drawn pixel by pixel with a touch of noise mixed in to hide the steps. No more banding.",
+        "The mist moved to the bottom-LEFT corner, where it always belonged, and the background speckle is gone entirely -- the animated layout's rising particles are the only mist particles now, and they fade out by about halfway up the screen.",
+        "The big temperature number is now roughly twice the size, in a new jumbo digits-only font. If your CPU somehow hits triple digits, it politely steps down a size instead of running off the screen.",
+        "TinyScreen has a logo! The hand-made wordmark now headlines the About tab, retiring the dashed placeholder that's been holding its seat."
+      ]
+    },
+    {
       "version": "0.8.9.12",
       "date": "2026-07-09",
       "title": "Smooth fonts and a thicker mist",

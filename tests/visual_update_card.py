@@ -168,7 +168,9 @@ def main():
         page.click("#update-app-btn")
         page.wait_for_timeout(400)
         page.screenshot(path=str(SHOTS / "5_armed_confirm.png")); print("shot: 5_armed_confirm")
-        page.click("#update-app-btn")
+        # confirm happens in the modal now (0.8.9.8+) -- the card button
+        # is behind the overlay and modern Playwright refuses to click it
+        page.click("#modal-continue")
         page.wait_for_timeout(2000)
         page.screenshot(path=str(SHOTS / "6_pulling.png")); print("shot: 6_pulling")
         page.wait_for_timeout(5000)
