@@ -40,7 +40,7 @@
 // "Software Version" field via the get_config command below. No
 // auto-update-checking mechanism exists yet (that's a separate, not-yet
 // -built feature) -- this just answers "what's currently on my device."
-#define FIRMWARE_VERSION "1.7.0"
+#define FIRMWARE_VERSION "1.8.0"
 
 // Note: screen dimensions are NOT fixed -- board 1 (1.69") is 240x280,
 // taller than board 0's 240x240. See screenW/screenH globals, set from
@@ -632,6 +632,83 @@ void drawRingGauge(const char *title, float pct, uint16_t color,
   canvas->setFont();  // back to classic for whatever draws next
 }
 
+// Utilization ramp for the Dial layout: calm green through 60%, warms
+// to amber by 80%, red by 95%. Same idea as tempColorFor but anchored
+// on percent-busy instead of degrees. Pure for host testing; mirrored
+// in the dashboard's utilColorJS.
+uint16_t utilColorFor(float pct) {
+  // k-prefixed: GREEN/RED are bare Arduino_GFX macros (see kMist* saga)
+  const uint16_t kUtilGreen = rgb565(96, 205, 120);
+  const uint16_t kUtilAmber = rgb565(255, 184, 84);
+  const uint16_t kUtilRed   = rgb565(255, 92, 74);
+  if (pct <= 60.0f) return kUtilGreen;
+  if (pct >= 95.0f) return kUtilRed;
+  if (pct <= 80.0f) return lerpColor565(kUtilGreen, kUtilAmber, (uint8_t)((pct - 60.0f) * 255.0f / 20.0f));
+  return lerpColor565(kUtilAmber, kUtilRed, (uint8_t)((pct - 80.0f) * 255.0f / 15.0f));
+}
+
+// The "Dial" layout for CPU / RAM (firmware 1.8.0): a speedometer-style
+// ring with its gap at the bottom, sweeping clockwise from bottom-left.
+// Big percentage (small % sign on the shared baseline) in the middle,
+// the page label parked in the bottom gap, and a stats line underneath.
+// The ring color rides the utilization ramp, so a straining box glows
+// amber and then red.
+void drawDialGauge(const char *label, float pct, const char *sub) {
+  pct = constrain(pct, 0.0f, 100.0f);
+  int cx = CX();
+  int cy = SY(108);
+  int rOuter = SY(84), rInner = SY(68);
+  uint16_t color = utilColorFor(pct);
+  int sweep = (int)(pct * 2.7f);              // 270-degree dial
+
+  // Track then progress, both rounded. Angles: 0 deg = 3 o'clock,
+  // clockwise; 135 starts at the bottom-left, 405 ends bottom-right.
+  canvas->fillArc(cx, cy, rOuter, rInner, 135, 405, COL_RING_BG);
+  int rMid = (rOuter + rInner) / 2;
+  int capR = (rOuter - rInner) / 2;
+  float a0 = 135.0f * DEG_TO_RAD;
+  float a1 = (135.0f + 270.0f) * DEG_TO_RAD;
+  canvas->fillCircle(cx + (int)(cosf(a0) * rMid), cy + (int)(sinf(a0) * rMid), capR, COL_RING_BG);
+  canvas->fillCircle(cx + (int)(cosf(a1) * rMid), cy + (int)(sinf(a1) * rMid), capR, COL_RING_BG);
+  if (sweep > 0) {
+    canvas->fillArc(cx, cy, rOuter, rInner, 135, 135 + sweep, color);
+    float ap = (135.0f + sweep) * DEG_TO_RAD;
+    canvas->fillCircle(cx + (int)(cosf(a0) * rMid), cy + (int)(sinf(a0) * rMid), capR, color);
+    canvas->fillCircle(cx + (int)(cosf(ap) * rMid), cy + (int)(sinf(ap) * rMid), capR, color);
+  }
+
+  // Big number with a smaller % sign hanging off it, one shared baseline
+  char num[8];
+  snprintf(num, sizeof(num), "%d", (int)round(pct));
+  int16_t nx1, ny1, px1, py1; uint16_t nw, nh, pw, ph;
+  canvas->setFont(&tiny_sans_bold_32);
+  canvas->getTextBounds(num, 0, 0, &nx1, &ny1, &nw, &nh);
+  canvas->setFont(&tiny_sans_18);
+  canvas->getTextBounds("%", 0, 0, &px1, &py1, &pw, &ph);
+  int totalW = (int)nw + SY(3) + (int)pw;
+  int baseY = cy - (int)nh / 2 - ny1;         // center the digits on cy
+  canvas->setTextColor(COL_TEXT);
+  canvas->setFont(&tiny_sans_bold_32);
+  canvas->setCursor(cx - totalW / 2 - nx1, baseY);
+  canvas->print(num);
+  canvas->setFont(&tiny_sans_18);
+  canvas->setCursor(cx - totalW / 2 + (int)nw + SY(3) - px1, baseY);
+  canvas->print("%");
+
+  // Page label in the dial's bottom gap
+  canvas->setFont(&tiny_sans_bold_20);
+  canvas->setTextColor(COL_TEXT);
+  drawTextCentered(label, cx, SY(168));
+
+  // Stats line under everything (watts/temp, used GB, ...)
+  if (sub && sub[0]) {
+    canvas->setFont(&tiny_sans_bold_20);
+    canvas->setTextColor(COL_TEXT);
+    drawTextCentered(sub, cx, SY(212));
+  }
+  canvas->setFont();  // back to classic for whatever draws next
+}
+
 void drawStaleBanner() {
   if (haveData && (millis() - stats.last_update_ms) < 5000) return;
   canvas->setTextColor(COL_WARN);
@@ -654,7 +731,22 @@ void drawFooterDots() {
   }
 }
 
+// layoutForPage is defined with the mist machinery further down;
+// declared here because the CPU/RAM pages dispatch on it too.
+const char *layoutForPage(const char *pageId);
+
 void drawPageCPU() {
+  if (strcmp(layoutForPage("cpu"), "dial") == 0) {
+    char sub[24];
+    if (stats.cpu_watts > 0.05f) {
+      snprintf(sub, sizeof(sub), "%.1fW / %.1f\xB0""C", stats.cpu_watts, stats.cpu_temp_c);
+    } else {
+      // RAPL wattage unavailable on this host -- temp still earns its spot
+      snprintf(sub, sizeof(sub), "%.1f\xB0""C", stats.cpu_temp_c);
+    }
+    drawDialGauge("CPU", stats.cpu_pct, sub);
+    return;
+  }
   char big[16], watts[16];
   snprintf(big, sizeof(big), "%d%%", (int)round(stats.cpu_pct));
   snprintf(watts, sizeof(watts), "%.1f W", stats.cpu_watts);
@@ -662,6 +754,13 @@ void drawPageCPU() {
 }
 
 void drawPageRAM() {
+  if (strcmp(layoutForPage("ram"), "dial") == 0) {
+    char sub[24];
+    snprintf(sub, sizeof(sub), "%.1f GB",
+             stats.ram_total_gb * stats.ram_pct / 100.0f);
+    drawDialGauge("RAM", stats.ram_pct, sub);
+    return;
+  }
   char big[16], total[24];
   snprintf(big, sizeof(big), "%d%%", (int)round(stats.ram_pct));
   snprintf(total, sizeof(total), "%.1f GB", stats.ram_total_gb);
@@ -738,9 +837,9 @@ void drawPageTemp() {
 }
 
 // Defined below drawCurrentScreen (with the rest of the mist machinery);
-// declared here because drawPage dispatches into them.
+// declared here because drawPage dispatches into it. (layoutForPage is
+// forward-declared above the CPU page for the same reason.)
 void drawTempMist(bool animated);
-const char *layoutForPage(const char *pageId);
 
 void drawPage(const char *pageId) {
   if (strcmp(pageId, "cpu") == 0) drawPageCPU();
@@ -1114,7 +1213,10 @@ void handleSetConfig(JsonDocument &doc) {
       if (want == nullptr) continue;
       bool known = strcmp(want, "default") == 0 ||
                    (strcmp(config.pages[i], "temp") == 0 &&
-                    (strcmp(want, "mist") == 0 || strcmp(want, "mist_anim") == 0));
+                    (strcmp(want, "mist") == 0 || strcmp(want, "mist_anim") == 0)) ||
+                   ((strcmp(config.pages[i], "cpu") == 0 ||
+                     strcmp(config.pages[i], "ram") == 0) &&
+                    strcmp(want, "dial") == 0);
       strncpy(config.layouts[i], known ? want : "default", 11);
       config.layouts[i][11] = 0;
     }

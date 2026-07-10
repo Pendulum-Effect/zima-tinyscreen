@@ -174,7 +174,24 @@ int main() {
     doc3["layouts"]["temp"] = "mist_anim";
     handleSetConfig(doc3);
     CHECK(strcmp(config.layouts[0], "mist_anim") == 0);
+
+    // dial: valid for cpu and ram, nowhere else
+    JsonDocument doc4;
+    doc4["layouts"]["cpu"] = "dial";
+    handleSetConfig(doc4);
+    CHECK(strcmp(config.layouts[1], "dial") == 0);
+    CHECK(strcmp(layoutForPage("cpu"), "dial") == 0);
+    JsonDocument doc5;
+    doc5["layouts"]["temp"] = "dial";                   // not for temp
+    handleSetConfig(doc5);
+    CHECK(strcmp(config.layouts[0], "default") == 0);
   }
+
+  // ---- utilization ramp: green floor, red ceiling, warm middle ----
+  CHECK(utilColorFor(0) == utilColorFor(60));            // flat green zone
+  CHECK(utilColorFor(60) != utilColorFor(70));           // warming
+  CHECK(utilColorFor(95) == utilColorFor(100));          // flat red zone
+  CHECK(utilColorFor(80) != utilColorFor(95));
 
   // ---- generated fonts: sane ranges, degree glyph present, digits real ----
   CHECK(tiny_sans_18.first == 32 && tiny_sans_18.last == 176);

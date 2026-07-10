@@ -751,6 +751,14 @@
       { id: 'mist',      label: 'Mist' },
       { id: 'mist_anim', label: 'Mist (animated)' },
     ],
+    cpu: [
+      { id: 'default',   label: 'TinyScreen (default)' },
+      { id: 'dial',      label: 'Dial' },
+    ],
+    ram: [
+      { id: 'default',   label: 'TinyScreen (default)' },
+      { id: 'dial',      label: 'Dial' },
+    ],
   };
   const DEFAULT_LAYOUTS = [{ id: 'default', label: 'TinyScreen (default)' }];
   const layoutsFor = id => PAGE_LAYOUTS[id] || DEFAULT_LAYOUTS;
@@ -765,6 +773,18 @@
     else if (c >= 85) rgb = R;
     else if (c <= 65) rgb = lerp(G, A, (c - 45) / 20);
     else rgb = lerp(A, R, (c - 65) / 20);
+    return 'rgb(' + rgb.join(',') + ')';
+  }
+  // Utilization ramp for the Dial layout (mirrors firmware utilColorFor:
+  // green through 60%, amber by 80%, red by 95%)
+  function utilColorJS(p) {
+    const lerp = (a, b, t) => a.map((v, i) => Math.round(v + (b[i] - v) * t));
+    const G = [96, 205, 120], A = [255, 184, 84], R = [255, 92, 74];
+    let rgb;
+    if (p <= 60) rgb = G;
+    else if (p >= 95) rgb = R;
+    else if (p <= 80) rgb = lerp(G, A, (p - 60) / 20);
+    else rgb = lerp(A, R, (p - 80) / 15);
     return 'rgb(' + rgb.join(',') + ')';
   }
   const pageLabel = id => pageDef(id).label;
@@ -810,6 +830,44 @@
       '</svg>';
   }
 
+  // The Dial layout, in SVG, for the dashboard previews: speedometer
+  // ring with its gap at the bottom, big percentage with a small % sign,
+  // the page label parked in the gap, and a stats line underneath. Ring
+  // color rides the utilization ramp.
+  function dialPreviewSVG(size, id) {
+    if (!(id in PREVIEW_VALUES)) {
+      PREVIEW_VALUES[id] = 15 + Math.floor(Math.random() * 70);
+    }
+    const val = PREVIEW_VALUES[id];
+    const col = utilColorJS(val);
+    const cx = 50, cy = 44, r = 31, C = 2 * Math.PI * r;
+    const track = C * 0.75, prog = track * val / 100;
+    let sub;
+    if (id === 'cpu') {
+      const w = (1.4 + (val % 30) / 10).toFixed(1);
+      const t = (35 + val % 12).toFixed(1);
+      sub = w + 'W / ' + t + '\u00b0C';
+    } else {
+      sub = (16 * val / 100).toFixed(1) + ' GB';
+    }
+    return '<svg width="' + size + '" height="' + size + '" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">' +
+      '<rect width="100" height="100" fill="#08141a"/>' +
+      '<circle cx="' + cx + '" cy="' + cy + '" r="' + r + '" fill="none" stroke="#1e3a3a" stroke-width="13" ' +
+      'stroke-linecap="round" stroke-dasharray="' + track.toFixed(1) + ' ' + C.toFixed(1) + '" ' +
+      'transform="rotate(135 ' + cx + ' ' + cy + ')"/>' +
+      (val > 0 ? '<circle cx="' + cx + '" cy="' + cy + '" r="' + r + '" fill="none" stroke="' + col + '" stroke-width="13" ' +
+      'stroke-linecap="round" stroke-dasharray="' + prog.toFixed(1) + ' ' + C.toFixed(1) + '" ' +
+      'transform="rotate(135 ' + cx + ' ' + cy + ')"/>' : '') +
+      '<text x="' + cx + '" y="' + (cy + 7) + '" text-anchor="middle" fill="#eaf6f4" font-family="sans-serif">' +
+      '<tspan font-size="20" font-weight="700">' + val + '</tspan>' +
+      '<tspan font-size="10" font-weight="700">%</tspan></text>' +
+      '<text x="' + cx + '" y="73" text-anchor="middle" fill="#eaf6f4" font-size="10" font-weight="700" ' +
+      'font-family="sans-serif">' + (id === 'cpu' ? 'CPU' : 'RAM') + '</text>' +
+      '<text x="' + cx + '" y="90" text-anchor="middle" fill="#eaf6f4" font-size="10" font-weight="700" ' +
+      'font-family="sans-serif">' + sub + '</text>' +
+      '</svg>';
+  }
+
   // Mock "screenshots" of what each page looks like on the device --
   // same visual language as the firmware's renderer (dark screen, ring
   // gauge, footer dots), with plausible random values. SVG so they stay
@@ -819,6 +877,9 @@
     const def = pageDef(id);
     if (id === 'temp' && (pageLayouts[id] === 'mist' || pageLayouts[id] === 'mist_anim')) {
       return mistPreviewSVG(size, pageLayouts[id] === 'mist_anim');
+    }
+    if ((id === 'cpu' || id === 'ram') && pageLayouts[id] === 'dial') {
+      return dialPreviewSVG(size, id);
     }
     if (!(id in PREVIEW_VALUES)) {
       PREVIEW_VALUES[id] = def.unit === '°C'
