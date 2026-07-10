@@ -40,7 +40,7 @@
 // "Software Version" field via the get_config command below. No
 // auto-update-checking mechanism exists yet (that's a separate, not-yet
 // -built feature) -- this just answers "what's currently on my device."
-#define FIRMWARE_VERSION "1.11.0"
+#define FIRMWARE_VERSION "1.12.0"
 
 // Note: screen dimensions are NOT fixed -- board 1 (1.69") is 240x280,
 // taller than board 0's 240x240. See screenW/screenH globals, set from
@@ -559,8 +559,8 @@ void advancePage(int dir) {
 // is the BASELINE, not the top-left like the classic 5x7 -- these
 // anchor via getTextBounds so callers never juggle baselines. Callers
 // pick a font with canvas->setFont(&tiny_...) first; drawCurrentScreen
-// resets to the classic font after each page so the footer dots and
-// stale banner are unaffected.
+// resets to the classic font after each page so the stale banner is
+// unaffected.
 // ---------------------------------------------------------------------
 void drawTextCentered(const char *s, int cx, int cyCenter) {
   int16_t x1, y1; uint16_t w, h;
@@ -721,17 +721,6 @@ void drawStaleBanner() {
   canvas->print(msg);
 }
 
-void drawFooterDots() {
-  if (config.numPages <= 1) return;
-  int totalW = config.numPages * 12;
-  int startX = CX() - totalW / 2;
-  int y = SYB(14);
-  for (int i = 0; i < config.numPages; i++) {
-    uint16_t c = (i == currentPageIdx) ? COL_TEAL : COL_RING_BG;
-    canvas->fillCircle(startX + i * 12 + 6, y, 3, c);
-  }
-}
-
 // layoutForPage is defined with the mist machinery further down;
 // declared here because the CPU/RAM pages dispatch on it too.
 const char *layoutForPage(const char *pageId);
@@ -757,9 +746,10 @@ void drawPageCPU() {
 void drawPageRAM() {
   if (strcmp(layoutForPage("ram"), "dial") == 0) {
     char sub[24];
-    // Available (free) RAM, per the design -- not the amount in use
-    snprintf(sub, sizeof(sub), "%.1f GB",
-             stats.ram_total_gb * (100.0f - stats.ram_pct) / 100.0f);
+    // Total installed (OS-visible) RAM -- the collector reports GiB,
+    // the same convention the OS uses, so this matches what Settings
+    // says. (One round showed free RAM here; the intent was capacity.)
+    snprintf(sub, sizeof(sub), "%.1f GB", stats.ram_total_gb);
     drawDialGauge("RAM", stats.ram_pct, sub);
     return;
   }
@@ -800,11 +790,17 @@ void drawStorageDots(const char *title, const char *name,
 
   // 12 columns x 4 rows, filling column-major (each column top to
   // bottom, columns left to right) so partial fill reads as a level.
+  // Geometry is derived from the available WIDTH -- SY() scales by
+  // height, and using it for horizontal lengths ran the grid off the
+  // right edge on the 240x280 panel (hardware round 0.8.9.18). This
+  // way the margins stay symmetric on every panel shape.
   const int COLS = 12, ROWS = 4;
   int lit = dotsLit(pct);
   uint16_t litCol = dotsColorFor(pct);
   uint16_t offCol = rgb565(74, 74, 74);
-  int pitch = SY(17), r = SY(5);
+  int right = LX + LW - (SY(16) - LY);
+  int r = (right - left) / 48;                // slightly daintier dots
+  int pitch = (right - left - 2 * r) / (COLS - 1);
   int x0 = left + r, y0 = LY + SY(96) - LY;
   for (int c = 0; c < COLS; c++) {
     for (int row = 0; row < ROWS; row++) {
@@ -903,17 +899,25 @@ void drawNetBars() {
   drawTextTopLeft(iface, left, LY + SY(42) - LY);
 
   const uint16_t kNetBlue = rgb565(10, 132, 255);
-  struct Row { const char *label; float mbps; int labelY; };
+  struct Row { const char *label; const char *shortLabel; float mbps; int labelY; };
   Row rows[2] = {
-    {"Upload",   stats.net_tx_mbps, SY(108)},
-    {"Download", stats.net_rx_mbps, SY(170)},
+    {"Upload",   "Up..",   stats.net_tx_mbps, SY(108)},
+    {"Download", "Down..", stats.net_rx_mbps, SY(170)},
   };
   for (int i = 0; i < 2; i++) {
-    canvas->setFont(&tiny_sans_18);
-    canvas->setTextColor(COL_SUBTEXT);
-    drawTextTopLeft(rows[i].label, left, rows[i].labelY);
     char val[16];
     fmtBitsRate(rows[i].mbps, val, sizeof(val));
+    // A triple-digit "289 Mbps" can crowd "Download" -- measure both
+    // and fall back to the short label instead of colliding.
+    int16_t x1, y1; uint16_t lw, lh, vw, vh;
+    canvas->setFont(&tiny_sans_bold_24);
+    canvas->getTextBounds(val, 0, 0, &x1, &y1, &vw, &vh);
+    canvas->setFont(&tiny_sans_18);
+    canvas->getTextBounds(rows[i].label, 0, 0, &x1, &y1, &lw, &lh);
+    const char *label = ((int)lw + (int)vw + SY(10) - LY > right - left)
+                          ? rows[i].shortLabel : rows[i].label;
+    canvas->setTextColor(COL_SUBTEXT);
+    drawTextTopLeft(label, left, rows[i].labelY);
     canvas->setFont(&tiny_sans_bold_24);
     canvas->setTextColor(COL_TEXT);
     drawTextTopRight(val, right, rows[i].labelY - SY(4));
@@ -1180,7 +1184,6 @@ void drawCurrentScreen() {
   canvas->fillScreen(COL_BG);
   drawPage(config.pages[currentPageIdx]);
   drawStaleBanner();
-  drawFooterDots();
   canvas->flush();
 }
 

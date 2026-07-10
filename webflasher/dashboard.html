@@ -748,28 +748,28 @@
   const PAGE_LAYOUTS = {
     temp: [
       { id: 'default',   label: 'TinyScreen (default)' },
-      { id: 'mist',      label: 'Mist' },
-      { id: 'mist_anim', label: 'Mist (animated)' },
+      { id: 'mist',      label: 'ZimaOS Mist' },
+      { id: 'mist_anim', label: 'ZimaOS Mist (animated)' },
     ],
     cpu: [
       { id: 'default',   label: 'TinyScreen (default)' },
-      { id: 'dial',      label: 'Dial' },
+      { id: 'dial',      label: 'ZimaOS Dial' },
     ],
     ram: [
       { id: 'default',   label: 'TinyScreen (default)' },
-      { id: 'dial',      label: 'Dial' },
+      { id: 'dial',      label: 'ZimaOS Dial' },
     ],
     net: [
       { id: 'default',   label: 'TinyScreen (default)' },
-      { id: 'bars',      label: 'Bars' },
+      { id: 'bars',      label: 'Zima App Bars' },
     ],
     mmc: [
       { id: 'default',   label: 'TinyScreen (default)' },
-      { id: 'dots',      label: 'Dots' },
+      { id: 'dots',      label: 'ZimaOS Dots' },
     ],
     nas: [
       { id: 'default',   label: 'TinyScreen (default)' },
-      { id: 'dots',      label: 'Dots' },
+      { id: 'dots',      label: 'ZimaOS Dots' },
     ],
   };
   const DEFAULT_LAYOUTS = [{ id: 'default', label: 'TinyScreen (default)' }];
@@ -860,7 +860,7 @@
       const t = (35 + val % 12).toFixed(1);
       sub = w + 'W / ' + t + '\u00b0C';
     } else {
-      sub = (16 * (100 - val) / 100).toFixed(1) + ' GB';   // available
+      sub = '16.0 GB';   // total installed RAM, like the OS reports
     }
     return '<svg width="' + size + '" height="' + size + '" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">' +
       '<rect width="100" height="100" fill="#08141a"/>' +
@@ -947,8 +947,8 @@
 
   // Mock "screenshots" of what each page looks like on the device --
   // same visual language as the firmware's renderer (dark screen, ring
-  // gauge, footer dots), with plausible random values. SVG so they stay
-  // crisp at both thumbnail sizes.
+  // gauge), with plausible random values. SVG so they stay crisp at
+  // both thumbnail sizes.
   const PREVIEW_VALUES = {};  // stable per page per load
   function previewSVG(id, size) {
     const def = pageDef(id);

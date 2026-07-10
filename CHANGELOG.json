@@ -2,6 +2,18 @@
   "_comment": "Human-readable changelog for the dashboard's About tab -- written for people, not commit archaeologists. The dashboard fetches this from GitHub at page load (baked copy as fallback), so add an entry here with each release and every install sees it. Newest first. Dates are YYYY-MM-DD.",
   "entries": [
     {
+      "version": "0.8.9.19",
+      "date": "2026-07-10",
+      "title": "Dots fit right, RAM reads right, and the page dots retire",
+      "notes": [
+        "The Dots grid no longer crowds the right edge -- its spacing is now computed from the actual panel width (a height-based scaling bug pushed it off the edge on the 240x280 screen), and the dots slimmed down a touch for comfortable margins on every panel.",
+        "The RAM dial now shows total installed memory -- the same number your OS reports (15.5 GB on a 16 GB stick, after the system's own reservations).",
+        "On the network card, 'Download' politely steps aside as 'Down..' whenever the rate text would crowd it -- measured against the actual rendered widths, not a guess.",
+        "The layouts got proper names: ZimaOS Mist, ZimaOS Dial, Zima App Bars, and ZimaOS Dots. Your saved settings carry over unchanged.",
+        "The little page-indicator dots at the bottom of the screen are gone -- swiping needs no map, and every layout gets the breathing room back."
+      ]
+    },
+    {
       "version": "0.8.9.18",
       "date": "2026-07-10",
       "title": "Network speaks Mbps, RAM shows what's free, and storage gets Dots",
