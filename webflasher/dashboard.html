@@ -783,10 +783,12 @@
     const rnd = () => (s = (s * 1664525 + 1013904223) >>> 0) / 4294967296;
     let particles = '';
     if (animated) {
-      // rising out of the bottom-left corner, gone by ~halfway up
+      // radiating out of the bottom-left corner in every direction,
+      // gone about half a screen away from it
       for (let i = 0; i < 7; i++) {
-        const t = rnd();
-        const x = 4 + t * 30 + rnd() * 10, y = 96 - t * 42 - rnd() * 6;
+        const t = rnd(), a = rnd() * Math.PI / 2;
+        const r = 6 + t * 40;
+        const x = 4 + Math.cos(a) * r, y = 96 - Math.sin(a) * r;
         particles += '<rect x="' + x.toFixed(1) + '" y="' + y.toFixed(1) +
           '" width="1.8" height="1.8" fill="' + col + '" opacity="' + (0.75 * (1 - t)).toFixed(2) + '"/>';
       }

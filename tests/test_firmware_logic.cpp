@@ -140,7 +140,8 @@ int main() {
     mistRespawn(&mp, &seed, 0, 240);   // bottom-LEFT corner
     CHECK(mp.x >= 0 && mp.x < 35);
     CHECK(mp.y > 240 - 35 && mp.y <= 240);
-    CHECK(mp.vx > 0 && mp.vx <= 3 && mp.vy < 0 && mp.vy >= -3);
+    CHECK(mp.vx >= 0 && mp.vx <= 3 && mp.vy <= 0 && mp.vy >= -3);
+    CHECK(mp.vx != 0 || mp.vy != 0);   // never a dead stop
     CHECK(mp.life == mp.maxLife && mp.maxLife >= 20);
   }
 

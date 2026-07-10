@@ -2,6 +2,16 @@
   "_comment": "Human-readable changelog for the dashboard's About tab -- written for people, not commit archaeologists. The dashboard fetches this from GitHub at page load (baked copy as fallback), so add an entry here with each release and every install sees it. Newest first. Dates are YYYY-MM-DD.",
   "entries": [
     {
+      "version": "0.8.9.14",
+      "date": "2026-07-09",
+      "title": "The corona stretches its legs",
+      "notes": [
+        "The Mist glow now reaches all the way out -- its furthest edges brush the top-left and bottom-right corners, matching the preview instead of stopping halfway. It also runs a touch brighter on the device, because the little panel swallows dark shades harder than a computer monitor does.",
+        "Particles now radiate from the corner in every direction -- straight up, straight right, and everything in between -- instead of marching single-file toward the middle. They still fade out about half a screen from home.",
+        "Fixed along the way: a faded particle sitting on the bright part of the glow could punch a dark hole in it. Particles now add their light on top of the glow instead of replacing it."
+      ]
+    },
+    {
       "version": "0.8.9.13",
       "date": "2026-07-09",
       "title": "Mist, take three -- and we have a logo",

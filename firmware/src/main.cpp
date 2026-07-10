@@ -40,7 +40,7 @@
 // "Software Version" field via the get_config command below. No
 // auto-update-checking mechanism exists yet (that's a separate, not-yet
 // -built feature) -- this just answers "what's currently on my device."
-#define FIRMWARE_VERSION "1.6.0"
+#define FIRMWARE_VERSION "1.7.0"
 
 // Note: screen dimensions are NOT fixed -- board 1 (1.69") is 240x280,
 // taller than board 0's 240x240. See screenW/screenH globals, set from
@@ -765,8 +765,8 @@ void drawPage(const char *pageId) {
 // rising out of the BOTTOM-LEFT corner. The glow and the number share
 // the temperature-reactive color ramp, so the whole page cools and
 // warms with the CPU. The static variant is just the glow; the animated
-// one adds particles that drift up out of the corner and fade to
-// nothing by about halfway up the screen.
+// one adds particles that radiate out of the corner in every direction
+// and fade to nothing about half a screen away from it.
 // ---------------------------------------------------------------------
 
 struct MistParticle {
@@ -785,17 +785,32 @@ uint32_t mistRand(uint32_t *s) {  // small LCG; deterministic + cheap
   return *s >> 8;
 }
 
-// Respawn a particle near the bottom-left corner with an up/right drift.
+// Respawn a particle near the bottom-left corner, headed anywhere in
+// the up/right quadrant.
 // Pure-ish (PRNG state passed in) for host testing. Lifetimes are long
 // enough that most particles hit the half-screen fade ceiling in
 // drawTempMist rather than dying of old age.
 void mistRespawn(MistParticle *p, uint32_t *rng, int cornerX, int cornerY) {
   p->x = cornerX + (int16_t)(mistRand(rng) % 34);
   p->y = cornerY - (int16_t)(mistRand(rng) % 34);
-  p->vx = 1 + (int8_t)(mistRand(rng) % 3);    // +1..+3 px/frame (right)
-  p->vy = -1 - (int8_t)(mistRand(rng) % 3);   // -1..-3 px/frame (up)
+  // Any direction in the up/right quadrant: straight up, straight
+  // right, and everything between (just never a dead stop).
+  do {
+    p->vx = (int8_t)(mistRand(rng) % 4);      //  0..+3 px/frame (right)
+    p->vy = -(int8_t)(mistRand(rng) % 4);     //  0..-3 px/frame (up)
+  } while (p->vx == 0 && p->vy == 0);
   p->maxLife = 20 + (uint8_t)(mistRand(rng) % 20);
   p->life = p->maxLife;
+}
+
+// Glow brightness at distance d from the corner, in 0.01% units --
+// shared by the per-pixel gradient and the particles, which draw
+// additively on top of it so a faded particle never reads as a dark
+// hole punched in the glow.
+long mistGlowFine(long d, long glowR) {
+  if (d >= glowR) return 0;
+  if (d * 10 <= glowR * 6) return 4600 - (3300L * d * 10) / (glowR * 6);
+  return 1300 - (1300L * (d * 10 - glowR * 6)) / (glowR * 4);
 }
 
 void drawTempMist(bool animated) {
@@ -808,14 +823,16 @@ void drawTempMist(bool animated) {
   // fillArc rings banded badly on hardware: RGB565 only has 5/6 bits
   // per channel, so ANY stepped-brightness ring scheme shows visible
   // contour lines. Instead each pixel gets a radial brightness from a
-  // curve matching the dashboard preview's gradient stops (38% at the
-  // corner, 10% at 60% radius, 0 at the edge), plus positional hash
-  // noise -- randomized rounding that dissolves the quantization steps
-  // and doubles as mist texture. The noise amplitude tapers to zero
+  // curve shaped like the dashboard preview's gradient (brightest at
+  // the corner, a knee at 60% radius, 0 at the edge -- the corner
+  // brightness runs a bit hotter than the preview's 38% because the
+  // panel's gamma crushes dark shades harder than a monitor), plus
+  // positional hash noise -- randomized rounding that dissolves the
+  // quantization steps and doubles as mist texture. The amplitude tapers to zero
   // below ~2% brightness: down there a 565 pixel is binary (lit or
   // not), so dithering can only make speckle -- plain truncation gives
   // a clean fade instead. ~17k px/frame is nothing at 5fps.
-  int glowR = diag * 11 / 20;
+  int glowR = diag * 19 / 20;   // furthest reaches touch the far corners
   long glowR2 = (long)glowR * glowR;
   for (int py = cornerY - glowR; py <= cornerY; py++) {
     long dy = cornerY - py;
@@ -824,12 +841,7 @@ void drawTempMist(bool animated) {
       long d2 = dx * dx + dy * dy;
       if (d2 >= glowR2) continue;
       int d = (int)sqrtf((float)d2);
-      long bFine;                             // brightness in 0.01% units
-      if (d * 10 <= glowR * 6) {
-        bFine = 3800 - (2800L * d * 10) / (glowR * 6);
-      } else {
-        bFine = 1000 - (1000L * (d * 10 - glowR * 6)) / (glowR * 4);
-      }
+      long bFine = mistGlowFine(d, glowR);    // brightness in 0.01% units
       long amp = (bFine - 200) / 2;             // dither amplitude, 0.01%
       if (amp < 0) amp = 0;
       if (amp > 160) amp = 160;
@@ -837,16 +849,19 @@ void drawTempMist(bool animated) {
       h = h * 1664525u + 1013904223u;
       long b = (bFine + (long)((h >> 8) % (uint32_t)(2 * amp + 1)) - amp) / 100;
       if (b <= 0) continue;
-      if (b > 38) b = 38;
+      if (b > 46) b = 46;
       canvas->drawPixel(px, py, dimColor565(tcol, (int)b, 100));
     }
   }
 
   if (animated) {
-    // Particles drift up out of the corner and fade to nothing by
-    // about halfway up the screen (hard respawn ceiling at LH/2, with
-    // brightness scaled toward zero as they approach it).
-    int riseMax = LH / 2;
+    // Particles radiate out of the corner in every direction and fade
+    // to nothing by about half a screen away from it (hard respawn
+    // ceiling, brightness scaled toward zero on approach). Distance is
+    // Chebyshev -- max of the two axes -- so a particle skimming along
+    // the bottom edge fades on the same schedule as one going straight
+    // up.
+    int fadeMax = LH / 2;
     if (!mistInited) {
       uint32_t seed = 0xBEEF;
       for (int i = 0; i < MIST_PARTICLES; i++) {
@@ -862,17 +877,24 @@ void drawTempMist(bool animated) {
       p->x += p->vx;
       p->y += p->vy;
       if (p->life > 0) p->life--;
-      int risen = cornerY - p->y;
-      if (p->life == 0 || risen >= riseMax || p->x > LX + LW) {
+      int dxp = p->x - cornerX, dyp = cornerY - p->y;
+      int dist = dxp > dyp ? dxp : dyp;
+      if (p->life == 0 || dist >= fadeMax) {
         mistRespawn(p, &liveRng, cornerX, cornerY);
-        risen = cornerY - p->y;
+        dxp = p->x - cornerX; dyp = cornerY - p->y;
+        dist = dxp > dyp ? dxp : dyp;
       }
-      // Height does most of the fading (0 at the half-screen ceiling);
-      // remaining life adds per-particle variety on top.
-      int heightPct = (riseMax - risen) * 100 / riseMax;   // 100 -> 0
-      int bright = (28 + (int)p->life * 56 / p->maxLife) * heightPct / 100;
+      // Distance does most of the fading (0 at the ceiling); remaining
+      // life adds per-particle variety on top.
+      int distPct = (fadeMax - dist) * 100 / fadeMax;   // 100 -> 0
+      int bright = (28 + (int)p->life * 56 / p->maxLife) * distPct / 100;
       if (bright > 84) bright = 84;
       if (bright < 2) continue;
+      // Additive over the glow underneath (same curve, no noise)
+      long pd2 = (long)dxp * dxp + (long)dyp * dyp;
+      int gB = (int)(mistGlowFine((long)sqrtf((float)pd2), glowR) / 100);
+      bright += gB;
+      if (bright > 92) bright = 92;
       uint16_t c = dimColor565(tcol, bright, 100);
       int sz = (p->life * 10 > p->maxLife * 6) ? 3 : 2;
       canvas->fillRect(p->x, p->y, sz, sz, c);
