@@ -40,7 +40,7 @@
 // "Software Version" field via the get_config command below. No
 // auto-update-checking mechanism exists yet (that's a separate, not-yet
 // -built feature) -- this just answers "what's currently on my device."
-#define FIRMWARE_VERSION "1.10.0"
+#define FIRMWARE_VERSION "1.11.0"
 
 // Note: screen dimensions are NOT fixed -- board 1 (1.69") is 240x280,
 // taller than board 0's 240x240. See screenW/screenH globals, set from
@@ -525,6 +525,8 @@ struct SystemStats {
   bool nas_available = false;
   float nas_total_gb = 0;
   float nas_pct = 0;
+  String mmc_label = "";
+  String nas_label = "";
   unsigned long last_update_ms = 0;
 } stats;
 
@@ -755,8 +757,9 @@ void drawPageCPU() {
 void drawPageRAM() {
   if (strcmp(layoutForPage("ram"), "dial") == 0) {
     char sub[24];
+    // Available (free) RAM, per the design -- not the amount in use
     snprintf(sub, sizeof(sub), "%.1f GB",
-             stats.ram_total_gb * stats.ram_pct / 100.0f);
+             stats.ram_total_gb * (100.0f - stats.ram_pct) / 100.0f);
     drawDialGauge("RAM", stats.ram_pct, sub);
     return;
   }
@@ -766,7 +769,69 @@ void drawPageRAM() {
   drawRingGauge("RAM UTIL.", stats.ram_pct, COL_TEAL_2, big, total);
 }
 
+// The "Dots" storage layout (firmware 1.11.0): a 12x4 grid of dots that
+// fills column by column with the used fraction, like a tank gauge you
+// can read across the room. Lit dots are green until the volume gets
+// tight: amber from 75% used, red from 95%. Both helpers pure for host
+// tests.
+int dotsLit(float pct) {
+  int lit = (int)round(pct * 48.0f / 100.0f);
+  if (lit < 0) lit = 0;
+  if (lit > 48) lit = 48;
+  return lit;
+}
+
+uint16_t dotsColorFor(float pct) {
+  if (pct >= 95.0f) return rgb565(255, 92, 74);    // red
+  if (pct >= 75.0f) return rgb565(255, 184, 84);   // amber
+  return rgb565(96, 205, 120);                     // green
+}
+
+void drawStorageDots(const char *title, const char *name,
+                     float totalGb, float pct) {
+  int left = LX + SY(16) - LY;
+
+  canvas->setFont(&tiny_sans_18);
+  canvas->setTextColor(COL_SUBTEXT);
+  drawTextTopLeft(title, left, LY + SY(16) - LY);
+  canvas->setFont(&tiny_sans_bold_24);
+  canvas->setTextColor(COL_TEXT);
+  drawTextTopLeft(name, left, LY + SY(42) - LY);
+
+  // 12 columns x 4 rows, filling column-major (each column top to
+  // bottom, columns left to right) so partial fill reads as a level.
+  const int COLS = 12, ROWS = 4;
+  int lit = dotsLit(pct);
+  uint16_t litCol = dotsColorFor(pct);
+  uint16_t offCol = rgb565(74, 74, 74);
+  int pitch = SY(17), r = SY(5);
+  int x0 = left + r, y0 = LY + SY(96) - LY;
+  for (int c = 0; c < COLS; c++) {
+    for (int row = 0; row < ROWS; row++) {
+      bool on = (c * ROWS + row) < lit;
+      canvas->fillCircle(x0 + c * pitch, y0 + row * pitch, r,
+                         on ? litCol : offCol);
+    }
+  }
+
+  // Available space, the number people actually plan around
+  canvas->setFont(&tiny_sans_18);
+  canvas->setTextColor(COL_SUBTEXT);
+  drawTextTopLeft("Available", left, LY + SY(166) - LY);
+  char avail[16];
+  snprintf(avail, sizeof(avail), "%.1f GB", totalGb * (100.0f - pct) / 100.0f);
+  canvas->setFont(&tiny_sans_bold_36);
+  canvas->setTextColor(COL_TEXT);
+  drawTextTopLeft(avail, left, LY + SY(186) - LY);
+  canvas->setFont();
+}
+
 void drawPageMMC() {
+  if (strcmp(layoutForPage("mmc"), "dots") == 0) {
+    const char *name = stats.mmc_label.length() ? stats.mmc_label.c_str() : "MMC";
+    drawStorageDots("System", name, stats.mmc_total_gb, stats.mmc_pct);
+    return;
+  }
   char big[16], total[24];
   snprintf(big, sizeof(big), "%d%%", (int)round(stats.mmc_pct));
   snprintf(total, sizeof(total), "%.0f GB", stats.mmc_total_gb);
@@ -784,23 +849,26 @@ void drawPageNAS() {
     canvas->print(msg);
     return;
   }
+  if (strcmp(layoutForPage("nas"), "dots") == 0) {
+    const char *name = stats.nas_label.length() ? stats.nas_label.c_str() : "NAS";
+    drawStorageDots("Storage", name, stats.nas_total_gb, stats.nas_pct);
+    return;
+  }
   char big[16], total[24];
   snprintf(big, sizeof(big), "%d%%", (int)round(stats.nas_pct));
   snprintf(total, sizeof(total), "%.0f GB", stats.nas_total_gb);
   drawRingGauge("NAS USAGE", stats.nas_pct, 0x9F7BC0, big, total);
 }
 
-// Human formatting for a byte rate given megabits/s: "573B", "42KB",
-// "3.4MB" (per second implied, like the preview). Pure for host tests.
-void fmtBytesRate(float mbps, char *out, size_t n) {
-  float bps = mbps * 125000.0f;               // megabits -> bytes
-  if (bps < 1000.0f) snprintf(out, n, "%dB", (int)bps);
-  else if (bps < 1024.0f * 1000.0f) {
-    float kb = bps / 1024.0f;
-    snprintf(out, n, kb < 10.0f ? "%.1fKB" : "%.0fKB", kb);
-  } else {
-    snprintf(out, n, "%.1fMB", bps / (1024.0f * 1024.0f));
-  }
+// Rate formatting in megabit units -- the language speedtests and ISPs
+// speak. (The first cut showed bytes: a 950 mbps speedtest rendered as
+// "113.2MB", which is the same speed but reads like a bug.) Pure for
+// host tests.
+void fmtBitsRate(float mbps, char *out, size_t n) {
+  if (mbps < 1.0f) snprintf(out, n, "%d Kbps", (int)(mbps * 1000.0f));
+  else if (mbps < 10.0f) snprintf(out, n, "%.1f Mbps", mbps);
+  else if (mbps < 1000.0f) snprintf(out, n, "%.0f Mbps", mbps);
+  else snprintf(out, n, "%.2f Gbps", mbps / 1000.0f);
 }
 
 // Bar fill for the Bars layout, 0..100: linear against a gigabit link,
@@ -845,7 +913,7 @@ void drawNetBars() {
     canvas->setTextColor(COL_SUBTEXT);
     drawTextTopLeft(rows[i].label, left, rows[i].labelY);
     char val[16];
-    fmtBytesRate(rows[i].mbps, val, sizeof(val));
+    fmtBitsRate(rows[i].mbps, val, sizeof(val));
     canvas->setFont(&tiny_sans_bold_24);
     canvas->setTextColor(COL_TEXT);
     drawTextTopRight(val, right, rows[i].labelY - SY(4));
@@ -1293,7 +1361,10 @@ void handleSetConfig(JsonDocument &doc) {
                      strcmp(config.pages[i], "ram") == 0) &&
                     strcmp(want, "dial") == 0) ||
                    (strcmp(config.pages[i], "net") == 0 &&
-                    strcmp(want, "bars") == 0);
+                    strcmp(want, "bars") == 0) ||
+                   ((strcmp(config.pages[i], "mmc") == 0 ||
+                     strcmp(config.pages[i], "nas") == 0) &&
+                    strcmp(want, "dots") == 0);
       strncpy(config.layouts[i], known ? want : "default", 11);
       config.layouts[i][11] = 0;
     }
@@ -1430,6 +1501,8 @@ void handleLine(const String &line) {
   stats.net_tx_mbps    = doc["net_tx_mbps"] | stats.net_tx_mbps;
   stats.net_iface      = doc["net_iface"] | stats.net_iface;
   stats.nas_available  = doc["nas_available"] | stats.nas_available;
+  stats.mmc_label      = doc["mmc_label"] | stats.mmc_label;
+  stats.nas_label      = doc["nas_label"] | stats.nas_label;
   stats.nas_total_gb   = doc["nas_total_gb"] | stats.nas_total_gb;
   stats.nas_pct        = doc["nas_pct"] | stats.nas_pct;
   // Host wall-clock time (minutes since UTC midnight), for night mode and

@@ -102,6 +102,8 @@ class Stats:
     nas_available: bool
     nas_total_gb: float
     nas_pct: float
+    mmc_label: str
+    nas_label: str
     # Minutes since UTC midnight -- the display board has no clock of its
     # own, so night mode and the clock screensaver run on host-supplied
     # time, extrapolated between updates on the board side. UTC (not
@@ -372,20 +374,22 @@ def get_nas_pool(data_path):
     /DATA's own reported size never changed at all -- the additional
     drive was always a fully separate mount alongside it, not merged in.
 
-    Returns (available: bool, total_gb: float, pct: float).
+    Returns (available: bool, total_gb: float, pct: float, label: str).
+    The label is the drive's mount-directory name when there's exactly
+    one (e.g. "SSD"), or "N drives" when the pool spans several.
     """
     media_dir = os.path.join(data_path, ".media")
     if not os.path.isdir(media_dir):
-        return False, 0.0, 0.0
+        return False, 0.0, 0.0, ""
 
     try:
         entries = os.listdir(media_dir)
     except OSError:
-        return False, 0.0, 0.0
+        return False, 0.0, 0.0, ""
 
     total = 0
     used = 0
-    found = False
+    names = []
     for name in entries:
         mount_path = os.path.join(media_dir, name)
         if not os.path.ismount(mount_path):
@@ -396,12 +400,13 @@ def get_nas_pool(data_path):
             continue
         total += du.total
         used += du.used
-        found = True
+        names.append(name)
 
-    if not found or total == 0:
-        return False, 0.0, 0.0
+    if not names or total == 0:
+        return False, 0.0, 0.0, ""
     pct = round((used / total) * 100, 1)
-    return True, _decimal_gb(total), pct
+    label = names[0] if len(names) == 1 else f"{len(names)} drives"
+    return True, _decimal_gb(total), pct, label
 
 
 # --------------------------------------------------------------------------
@@ -586,7 +591,7 @@ def main():
                 cpu_watts = power_meter.sample_watts()
                 ram_total, ram_pct = get_ram()
                 mmc_total, mmc_pct = get_mmc(args.disk_path)
-                nas_available, nas_total, nas_pct = get_nas_pool(args.data_path)
+                nas_available, nas_total, nas_pct, nas_label = get_nas_pool(args.data_path)
                 rx_mbps, tx_mbps = net_meter.sample_mbps()
             except Exception as e:
                 # Never let a single bad reading crash the whole
@@ -610,6 +615,10 @@ def main():
                 nas_available=nas_available,
                 nas_total_gb=nas_total,
                 nas_pct=nas_pct,
+                # The onboard volume's display name; ZimaOS presents it
+                # as "ZimaOS-HD", overridable for other setups.
+                mmc_label=os.environ.get("TINYSCREEN_MMC_LABEL", "ZimaOS-HD"),
+                nas_label=nas_label,
                 utc_min=(lambda t: t.tm_hour * 60 + t.tm_min)(time.gmtime()),
                 local_min=local_minutes_now(),
             )

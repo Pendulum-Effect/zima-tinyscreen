@@ -763,6 +763,14 @@
       { id: 'default',   label: 'TinyScreen (default)' },
       { id: 'bars',      label: 'Bars' },
     ],
+    mmc: [
+      { id: 'default',   label: 'TinyScreen (default)' },
+      { id: 'dots',      label: 'Dots' },
+    ],
+    nas: [
+      { id: 'default',   label: 'TinyScreen (default)' },
+      { id: 'dots',      label: 'Dots' },
+    ],
   };
   const DEFAULT_LAYOUTS = [{ id: 'default', label: 'TinyScreen (default)' }];
   const layoutsFor = id => PAGE_LAYOUTS[id] || DEFAULT_LAYOUTS;
@@ -852,7 +860,7 @@
       const t = (35 + val % 12).toFixed(1);
       sub = w + 'W / ' + t + '\u00b0C';
     } else {
-      sub = (16 * val / 100).toFixed(1) + ' GB';
+      sub = (16 * (100 - val) / 100).toFixed(1) + ' GB';   // available
     }
     return '<svg width="' + size + '" height="' + size + '" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">' +
       '<rect width="100" height="100" fill="#08141a"/>' +
@@ -881,16 +889,20 @@
       PREVIEW_VALUES.net = 15 + Math.floor(Math.random() * 70);
     }
     const v = PREVIEW_VALUES.net;
-    const fmtB = b => b < 1000 ? Math.round(b) + 'B'
-      : b < 1024 * 1000 ? (b / 1024 < 10 ? (b / 1024).toFixed(1) : Math.round(b / 1024)) + 'KB'
-      : (b / 1048576).toFixed(1) + 'MB';
-    const up = 80 + (v * 7) % 850, down = 80 + (v * 13) % 850;
-    const row = (label, bytes, y) =>
-      '<text x="10" y="' + y + '" fill="#8fb0ac" font-size="8" font-family="sans-serif">' + label + '</text>' +
+    // megabit units, like the firmware's fmtBitsRate (speedtest language)
+    const fmtR = m => m < 1 ? Math.round(m * 1000) + ' Kbps'
+      : m < 10 ? m.toFixed(1) + ' Mbps'
+      : m < 1000 ? Math.round(m) + ' Mbps'
+      : (m / 1000).toFixed(2) + ' Gbps';
+    const up = 2 + (v * 7) % 90, down = 40 + (v * 13) % 700;
+    const row = (label, mbps, y) => {
+      const w = Math.max(mbps > 0.04 ? 1.6 : 0, Math.min(80, 80 * mbps / 1000));
+      return '<text x="10" y="' + y + '" fill="#8fb0ac" font-size="8" font-family="sans-serif">' + label + '</text>' +
       '<text x="90" y="' + y + '" text-anchor="end" fill="#eaf6f4" font-size="9" font-weight="700" ' +
-      'font-family="sans-serif">' + fmtB(bytes) + '</text>' +
+      'font-family="sans-serif">' + fmtR(mbps) + '</text>' +
       '<rect x="10" y="' + (y + 4) + '" width="80" height="4.5" rx="2.25" fill="#1e3a3a"/>' +
-      '<rect x="10" y="' + (y + 4) + '" width="2.5" height="4.5" rx="1.25" fill="#0a84ff"/>';
+      '<rect x="10" y="' + (y + 4) + '" width="' + w.toFixed(1) + '" height="4.5" rx="' + Math.min(2.25, w / 2).toFixed(2) + '" fill="#0a84ff"/>';
+    };
     return '<svg width="' + size + '" height="' + size + '" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">' +
       '<rect width="100" height="100" fill="#08141a"/>' +
       '<text x="10" y="17" fill="#8fb0ac" font-size="8" font-family="sans-serif">Network</text>' +
@@ -898,6 +910,38 @@
       '<circle cx="92" cy="14" r="1.3" fill="#8fb0ac"/>' +
       '<text x="10" y="31" fill="#eaf6f4" font-size="11" font-weight="700" font-family="sans-serif">eth0</text>' +
       row('Upload', up, 55) + row('Download', down, 80) +
+      '</svg>';
+  }
+
+  // The Dots storage layout in SVG: 12x4 dot grid filling column by
+  // column with usage, green until 75% (amber) and 95% (red), plus the
+  // available space headline. Used for both MMC and NAS pages.
+  function storageDotsPreviewSVG(size, id) {
+    if (!(id in PREVIEW_VALUES)) {
+      PREVIEW_VALUES[id] = 20 + Math.floor(Math.random() * 60);
+    }
+    const pct = PREVIEW_VALUES[id];
+    const lit = Math.round(pct * 48 / 100);
+    const litCol = pct >= 95 ? 'rgb(255,92,74)' : pct >= 75 ? 'rgb(255,184,84)' : 'rgb(96,205,120)';
+    const title = id === 'mmc' ? 'System' : 'Storage';
+    const name = id === 'mmc' ? 'ZimaOS\u2013HD' : 'SSD';
+    const totalGb = id === 'mmc' ? 28 : 480;
+    let dots = '';
+    for (let c = 0; c < 12; c++) {
+      for (let r = 0; r < 4; r++) {
+        const on = (c * 4 + r) < lit;
+        dots += '<circle cx="' + (12 + c * 7) + '" cy="' + (42 + r * 7) + '" r="2.1" fill="' +
+          (on ? litCol : 'rgb(74,74,74)') + '"/>';
+      }
+    }
+    const avail = (totalGb * (100 - pct) / 100).toFixed(1);
+    return '<svg width="' + size + '" height="' + size + '" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">' +
+      '<rect width="100" height="100" fill="#08141a"/>' +
+      '<text x="10" y="17" fill="#8fb0ac" font-size="8" font-family="sans-serif">' + title + '</text>' +
+      '<text x="10" y="31" fill="#eaf6f4" font-size="11" font-weight="700" font-family="sans-serif">' + name + '</text>' +
+      dots +
+      '<text x="10" y="80" fill="#8fb0ac" font-size="8" font-family="sans-serif">Available</text>' +
+      '<text x="10" y="94" fill="#eaf6f4" font-size="13" font-weight="700" font-family="sans-serif">' + avail + ' GB</text>' +
       '</svg>';
   }
 
@@ -916,6 +960,9 @@
     }
     if (id === 'net' && pageLayouts[id] === 'bars') {
       return netBarsPreviewSVG(size);
+    }
+    if ((id === 'mmc' || id === 'nas') && pageLayouts[id] === 'dots') {
+      return storageDotsPreviewSVG(size, id);
     }
     if (!(id in PREVIEW_VALUES)) {
       PREVIEW_VALUES[id] = def.unit === '°C'

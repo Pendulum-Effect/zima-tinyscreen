@@ -2,6 +2,17 @@
   "_comment": "Human-readable changelog for the dashboard's About tab -- written for people, not commit archaeologists. The dashboard fetches this from GitHub at page load (baked copy as fallback), so add an entry here with each release and every install sees it. Newest first. Dates are YYYY-MM-DD.",
   "entries": [
     {
+      "version": "0.8.9.18",
+      "date": "2026-07-10",
+      "title": "Network speaks Mbps, RAM shows what's free, and storage gets Dots",
+      "notes": [
+        "The Bars network layout now shows rates in megabits -- the same language your speedtest uses. A 950 Mbps test previously displayed as '113.2MB' (megaBYTES per second, the identical speed in confusing clothing); now it just says 950 Mbps. The bars were already scaled to a full gigabit link and stay that way.",
+        "The RAM dial's bottom number now shows available memory instead of memory in use, as intended.",
+        "New 'Dots' layout for the MMC and NAS pages: a 12x4 grid of dots that fills column by column as the volume fills up, with the available space headlined below. The dots glow green until 75% used, amber to 95%, and red beyond -- a fuel gauge you can read from across the room.",
+        "The Dots card headlines your volume: the system disk shows as ZimaOS-HD (override with TINYSCREEN_MMC_LABEL if yours differs), and the NAS card names your attached drive."
+      ]
+    },
+    {
       "version": "0.8.9.17",
       "date": "2026-07-10",
       "title": "Bigger dial text, and a Bars layout for the network",

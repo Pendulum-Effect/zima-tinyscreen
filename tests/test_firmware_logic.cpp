@@ -196,25 +196,48 @@ int main() {
     CHECK(strcmp(config.layouts[0], "bars") == 0);
     CHECK(strcmp(config.layouts[1], "default") == 0);
     CHECK(strcmp(layoutForPage("net"), "bars") == 0);
+
+    // dots: valid for mmc and nas only
+    JsonDocument doc7;
+    JsonArray pages7 = doc7["pages"].to<JsonArray>();
+    pages7.add("mmc"); pages7.add("nas"); pages7.add("cpu");
+    doc7["layouts"]["mmc"] = "dots";
+    doc7["layouts"]["nas"] = "dots";
+    doc7["layouts"]["cpu"] = "dots";                    // not for cpu
+    handleSetConfig(doc7);
+    CHECK(strcmp(config.layouts[0], "dots") == 0);
+    CHECK(strcmp(config.layouts[1], "dots") == 0);
+    CHECK(strcmp(config.layouts[2], "default") == 0);
   }
 
-  // ---- Bars layout helpers: byte-rate formatting + bar fill ----
+  // ---- Bars layout helpers: megabit formatting + bar fill ----
   {
     char b[16];
-    fmtBytesRate(0.036f, b, sizeof(b));       // 4500 B/s
-    CHECK(strcmp(b, "4.4KB") == 0);
-    fmtBytesRate(0.004f, b, sizeof(b));       // 500 B/s
-    CHECK(strcmp(b, "500B") == 0);
-    fmtBytesRate(2.0f, b, sizeof(b));         // 250 KB/s
-    CHECK(strcmp(b, "244KB") == 0);
-    fmtBytesRate(200.0f, b, sizeof(b));       // 25 MB/s
-    CHECK(strcmp(b, "23.8MB") == 0);
+    fmtBitsRate(0.5f, b, sizeof(b));          // browsing trickle
+    CHECK(strcmp(b, "500 Kbps") == 0);
+    fmtBitsRate(3.25f, b, sizeof(b));
+    CHECK(strcmp(b, "3.2 Mbps") == 0);
+    fmtBitsRate(950.0f, b, sizeof(b));        // the speedtest that started this
+    CHECK(strcmp(b, "950 Mbps") == 0);
+    fmtBitsRate(1200.0f, b, sizeof(b));       // 2.5GbE someday
+    CHECK(strcmp(b, "1.20 Gbps") == 0);
     CHECK(netBarPct(0.0f) == 0);              // idle -> empty
     CHECK(netBarPct(0.02f) == 0);             // sub-threshold noise -> empty
     CHECK(netBarPct(0.5f) == 2);              // alive -> minimum sliver
     CHECK(netBarPct(500.0f) == 50);           // half a gigabit
+    CHECK(netBarPct(950.0f) == 95);           // gigabit speedtest, nearly full
     CHECK(netBarPct(2000.0f) == 100);         // clamped
   }
+
+  // ---- Dots storage layout: fill count + threshold colors ----
+  CHECK(dotsLit(0) == 0 && dotsLit(100) == 48);
+  CHECK(dotsLit(50) == 24);
+  CHECK(dotsLit(120) == 48 && dotsLit(-5) == 0);   // clamped
+  CHECK(dotsColorFor(50) == dotsColorFor(74.9f));  // green zone
+  CHECK(dotsColorFor(74.9f) != dotsColorFor(75));  // amber at 75
+  CHECK(dotsColorFor(75) == dotsColorFor(94.9f));
+  CHECK(dotsColorFor(94.9f) != dotsColorFor(95));  // red at 95
+  CHECK(dotsColorFor(95) == dotsColorFor(100));
 
   // ---- utilization ramp: green floor, red ceiling, warm middle ----
   CHECK(utilColorFor(0) == utilColorFor(60));            // flat green zone
