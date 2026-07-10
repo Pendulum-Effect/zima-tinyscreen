@@ -2,6 +2,15 @@
   "_comment": "Human-readable changelog for the dashboard's About tab -- written for people, not commit archaeologists. The dashboard fetches this from GitHub at page load (baked copy as fallback), so add an entry here with each release and every install sees it. Newest first. Dates are YYYY-MM-DD.",
   "entries": [
     {
+      "version": "0.8.9.16",
+      "date": "2026-07-10",
+      "title": "Dial fit and finish",
+      "notes": [
+        "The dial's ring is meatier on the device (it was rendering skinnier than intended), while the dashboard preview slimmed down a touch -- the two now carry the same visual weight.",
+        "The big percentage is now truly centered on the dial; the little % sign rides along on the right without dragging the number off-axis."
+      ]
+    },
+    {
       "version": "0.8.9.15",
       "date": "2026-07-09",
       "title": "New Dial layout for CPU and RAM",

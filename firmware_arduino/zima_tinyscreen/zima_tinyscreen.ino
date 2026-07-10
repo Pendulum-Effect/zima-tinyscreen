@@ -40,7 +40,7 @@
 // "Software Version" field via the get_config command below. No
 // auto-update-checking mechanism exists yet (that's a separate, not-yet
 // -built feature) -- this just answers "what's currently on my device."
-#define FIRMWARE_VERSION "1.8.0"
+#define FIRMWARE_VERSION "1.9.0"
 
 // Note: screen dimensions are NOT fixed -- board 1 (1.69") is 240x280,
 // taller than board 0's 240x240. See screenW/screenH globals, set from
@@ -657,7 +657,7 @@ void drawDialGauge(const char *label, float pct, const char *sub) {
   pct = constrain(pct, 0.0f, 100.0f);
   int cx = CX();
   int cy = SY(108);
-  int rOuter = SY(84), rInner = SY(68);
+  int rOuter = SY(86), rInner = SY(62);   // 24px thick at full size
   uint16_t color = utilColorFor(pct);
   int sweep = (int)(pct * 2.7f);              // 270-degree dial
 
@@ -677,22 +677,20 @@ void drawDialGauge(const char *label, float pct, const char *sub) {
     canvas->fillCircle(cx + (int)(cosf(ap) * rMid), cy + (int)(sinf(ap) * rMid), capR, color);
   }
 
-  // Big number with a smaller % sign hanging off it, one shared baseline
+  // Big number dead-centered on the dial; the smaller % sign hangs off
+  // its right shoulder on the same baseline, excluded from centering.
   char num[8];
   snprintf(num, sizeof(num), "%d", (int)round(pct));
   int16_t nx1, ny1, px1, py1; uint16_t nw, nh, pw, ph;
   canvas->setFont(&tiny_sans_bold_32);
   canvas->getTextBounds(num, 0, 0, &nx1, &ny1, &nw, &nh);
-  canvas->setFont(&tiny_sans_18);
-  canvas->getTextBounds("%", 0, 0, &px1, &py1, &pw, &ph);
-  int totalW = (int)nw + SY(3) + (int)pw;
   int baseY = cy - (int)nh / 2 - ny1;         // center the digits on cy
   canvas->setTextColor(COL_TEXT);
-  canvas->setFont(&tiny_sans_bold_32);
-  canvas->setCursor(cx - totalW / 2 - nx1, baseY);
+  canvas->setCursor(cx - (int)nw / 2 - nx1, baseY);
   canvas->print(num);
   canvas->setFont(&tiny_sans_18);
-  canvas->setCursor(cx - totalW / 2 + (int)nw + SY(3) - px1, baseY);
+  canvas->getTextBounds("%", 0, 0, &px1, &py1, &pw, &ph);
+  canvas->setCursor(cx + (int)nw / 2 + SY(4) - px1, baseY);
   canvas->print("%");
 
   // Page label in the dial's bottom gap

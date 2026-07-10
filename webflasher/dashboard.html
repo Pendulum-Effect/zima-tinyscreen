@@ -852,15 +852,16 @@
     }
     return '<svg width="' + size + '" height="' + size + '" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">' +
       '<rect width="100" height="100" fill="#08141a"/>' +
-      '<circle cx="' + cx + '" cy="' + cy + '" r="' + r + '" fill="none" stroke="#1e3a3a" stroke-width="13" ' +
+      '<circle cx="' + cx + '" cy="' + cy + '" r="' + r + '" fill="none" stroke="#1e3a3a" stroke-width="11" ' +
       'stroke-linecap="round" stroke-dasharray="' + track.toFixed(1) + ' ' + C.toFixed(1) + '" ' +
       'transform="rotate(135 ' + cx + ' ' + cy + ')"/>' +
-      (val > 0 ? '<circle cx="' + cx + '" cy="' + cy + '" r="' + r + '" fill="none" stroke="' + col + '" stroke-width="13" ' +
+      (val > 0 ? '<circle cx="' + cx + '" cy="' + cy + '" r="' + r + '" fill="none" stroke="' + col + '" stroke-width="11" ' +
       'stroke-linecap="round" stroke-dasharray="' + prog.toFixed(1) + ' ' + C.toFixed(1) + '" ' +
       'transform="rotate(135 ' + cx + ' ' + cy + ')"/>' : '') +
-      '<text x="' + cx + '" y="' + (cy + 7) + '" text-anchor="middle" fill="#eaf6f4" font-family="sans-serif">' +
-      '<tspan font-size="20" font-weight="700">' + val + '</tspan>' +
-      '<tspan font-size="10" font-weight="700">%</tspan></text>' +
+      '<text x="' + cx + '" y="' + (cy + 7) + '" text-anchor="middle" fill="#eaf6f4" font-size="20" ' +
+      'font-weight="700" font-family="sans-serif">' + val + '</text>' +
+      '<text x="' + (cx + String(val).length * 6.2 + 2).toFixed(1) + '" y="' + (cy + 7) + '" text-anchor="start" ' +
+      'fill="#eaf6f4" font-size="10" font-weight="700" font-family="sans-serif">%</text>' +
       '<text x="' + cx + '" y="73" text-anchor="middle" fill="#eaf6f4" font-size="10" font-weight="700" ' +
       'font-family="sans-serif">' + (id === 'cpu' ? 'CPU' : 'RAM') + '</text>' +
       '<text x="' + cx + '" y="90" text-anchor="middle" fill="#eaf6f4" font-size="10" font-weight="700" ' +
