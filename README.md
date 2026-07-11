@@ -164,6 +164,55 @@ The firmware acks with `{"ack":"set_config","ok":true}` and persists to
 NVS. The dashboard (WebSerial) and `server.py`'s `/api/configure`
 (direct serial) both speak this same protocol.
 
+## Security model
+
+Written down so the trust decisions are explicit rather than accidental.
+
+**What this app trusts.** By default, every device on your local
+network. There are no accounts; the API is open on ports 8989/8990.
+That's the normal posture for a homelab dashboard, and for a display
+gadget it's usually the right trade -- but "the LAN" on a home network
+includes every family laptop, phone, smart TV, and guest device, so
+read on for what that exposes and how to narrow it.
+
+**What's protected even with no PIN.** State-changing requests are
+guarded against cross-site attacks: a malicious website open in your
+browser cannot drive this API (same-origin/custom-header check on every
+POST). Firmware flashing only ever writes the binaries bundled inside
+the app image -- there is no endpoint that accepts arbitrary firmware or
+an arbitrary update image, so a LAN attacker can annoy you (reflash,
+reset, reconfigure the display, swap the TLS certificate) and read your
+system stats, but cannot use this API to run their own code.
+
+**The optional PIN** (General tab -> Dashboard PIN) closes the rest:
+with it enabled, every state-changing request requires a login (once per
+browser, 30 days), and an extra toggle also locks the read-only stats
+for households that consider CPU/disk/network numbers sensitive. The
+PIN is stored only as a salted pbkdf2-sha256 hash (600k iterations) in
+the app's state folder; login is rate-limited (5 wrong guesses -> 60s
+lockout, for everyone -- deliberate, since per-IP limits mean nothing on
+a flat LAN). Changing or removing the PIN always requires the current
+PIN, so a stolen session cookie alone can't take over the lock. Forgot
+it? Delete `auth.json` from the app's state folder (AppData on your
+ZimaOS drive): physical access to the machine outranks the PIN, which is
+the right hierarchy for a home appliance.
+
+**Why the container is privileged with the Docker socket mounted, and
+why that's accepted rather than "fixed."** `/dev` access is needed for
+serial hotplug and SMART health data, and the socket is what powers
+self-update. We looked at shrinking `privileged` to device-cgroup rules:
+SMART needs raw-IO ioctls on block devices and NVMe char devices use
+dynamic major numbers, so the rules end up brittle -- and more
+importantly, a container holding the Docker socket is root-equivalent on
+the host *regardless* of the privileged flag, so dropping the flag would
+be cosmetic. The honest statement is: **if this app's process is ever
+fully compromised, the host is compromised.** That is exactly why the
+PIN exists (it gates every endpoint, raising the bar in front of any
+future endpoint bug), why inputs are validated strictly, and why the
+dependency set is pinned and small. If your threat model can't accept
+that, don't mount the socket -- the app runs fine without it, you just
+lose the self-update button.
+
 ## Testing
 
 Everything testable without hardware is tested without hardware:
@@ -180,6 +229,10 @@ python3 tests/test_collector_health.py
 # against a pty-pair fake device + fake esptool -- covers the collector
 # pause/resume choreography and the real wire protocol
 python3 tests/test_serial_endpoints.py
+
+# optional PIN authentication (lifecycle, guard ordering, lockout, on-disk
+# hygiene, and that with no PIN set nothing changes at all)
+python3 tests/test_auth.py
 
 # dashboard visual states (needs playwright + chromium)
 python3 tests/visual_update_card.py

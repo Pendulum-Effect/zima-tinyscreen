@@ -2,6 +2,18 @@
   "_comment": "Human-readable changelog for the dashboard's About tab -- written for people, not commit archaeologists. The dashboard fetches this from GitHub at page load (baked copy as fallback), so add an entry here with each release and every install sees it. Newest first. Dates are YYYY-MM-DD.",
   "entries": [
     {
+      "version": "0.9.5.0",
+      "date": "2026-07-11",
+      "title": "0.9.5: optional dashboard PIN",
+      "notes": [
+        "You can now protect the dashboard with a PIN (General tab -> Dashboard PIN). With it on, changing anything -- flashing, settings, updates, certificates -- asks for the PIN once per browser and remembers you for 30 days. It's off by default, and if you never turn it on, nothing changes.",
+        "An extra toggle also locks the read-only stats, for homes where CPU/disk/network numbers feel private.",
+        "The PIN is never stored in readable form (only a strongly salted hash), guessing is rate-limited (five wrong tries locks login for a minute), and changing or removing the PIN always requires the current one. Forgot it? Delete auth.json from the app's state folder and the dashboard unlocks -- someone with access to the machine itself always outranks the PIN.",
+        "The README now has a written-down Security model section: exactly what this app trusts and why, what's protected even without a PIN, and an honest explanation of the privileged-container + Docker-socket design.",
+        "No firmware changes."
+      ]
+    },
+    {
       "version": "0.9.4.0",
       "date": "2026-07-11",
       "title": "0.9.4: the flash path gets a test rig",

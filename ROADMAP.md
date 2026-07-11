@@ -6,7 +6,7 @@ eventually hit context limits). It carries the current state, what's
 done, and what's next, so any session can pick up where the last left
 off. **Delete this file at the final 1.0 release.**
 
-Snapshot as of **0.9.4.0** (2026-07-11).
+Snapshot as of **0.9.5.0** (2026-07-11).
 
 ## How to get oriented fast
 
@@ -66,20 +66,40 @@ Snapshot as of **0.9.4.0** (2026-07-11).
         suites run on every build (previously CI never ran tests).
   - [x] CI guard against firmware copy drift (byte-diff of both trees).
 
+- [x] **0.9.4 hardware round passed** (2026-07-11): real flash + settings
+      save confirmed; first CI run of the checks job green.
+- [x] **0.9.5** Optional dashboard PIN + written security model:
+  - [x] pbkdf2-sha256 (600k iters, per-set salt, 0600 auth.json in the
+        state dir), Flask signed-cookie sessions (HttpOnly, SameSite=Lax,
+        30d, NO Secure flag -- HTTP LAN listener is primary), global
+        login rate limit (5 fails -> 60s). Guard runs AFTER the CSRF
+        guard. Changing/disabling/toggling requires the CURRENT pin in
+        the body, never just a session. lock_stats toggle extends the
+        gate to GET /api/*; static pages never gated. Recovery = delete
+        auth.json (takes effect immediately; auth config is re-read per
+        request on purpose).
+  - [x] Dashboard: fetch() wrapper intercepts 401+auth_required, shows a
+        PIN overlay, retries the original request -- call sites don't
+        know auth exists. Concurrent 401s share one overlay. PIN card +
+        management subview in General (NOTE: like all General cards,
+        device-gated behind general-content -- hidden when no display is
+        connected; pre-existing behavior, revisit someday?).
+  - [x] tests/test_auth.py (18 tests) incl. "no PIN set changes nothing"
+        regression; suite wired into CI. E2E overlay + subview flows
+        verified with playwright during development.
+  - [x] README "Security model" section: LAN trust statement, what the
+        CSRF guard covers, PIN design, and the honest privileged+socket
+        rationale (socket = root-equivalent regardless of the privileged
+        flag; shrinking to cgroup rules is brittle AND cosmetic -- the
+        decision is documented, not deferred).
+
 ## Next up (suggested order)
 
-- [ ] **Hardware round for 0.9.4** (small): one real flash + one real
-      settings save through the dashboard, just to confirm nothing in
-      the (unchanged) app behavior regressed. Nothing else in 0.9.4
-      touches runtime code paths.
-- [ ] **Security posture decision for 1.0 (proposed 0.9.5, needs a
-      design discussion first, not just implementation)** -- the app is deliberately
-      unauthenticated on the LAN while being a privileged container with
-      the Docker socket. Either add an optional dashboard PIN/token, or
-      write the trust model down explicitly (short THREAT_MODEL section
-      in the README). Also check whether `privileged: true` can shrink
-      to `device_cgroup_rules` + the `/dev` bind under ZimaOS's compose
-      form.
+- [ ] **Hardware round for 0.9.5**: enable the PIN on the real box, make
+      sure the overlay behaves on the phone browser you actually use,
+      one flash + one settings save while locked (session cookie over
+      plain HTTP on the LAN), then the forgot-PIN recovery once
+      (delete auth.json via ZimaOS Files) to confirm the documented path.
 - [ ] **Placeholder metadata pass** -- `docker-compose.customapp.yml`
       x-casaos block has `author: you` / placeholder icon URL; verify an
       icon asset actually exists at the referenced path so the ZimaOS

@@ -22,9 +22,12 @@ CollectorManager and fight over the same collector subprocess.
 """
 
 import glob
+import hashlib
+import hmac
 import json
 import os
 import re
+import secrets
 import shutil
 import ssl
 import sys
@@ -33,9 +36,10 @@ import threading
 import time
 import urllib.request
 import urllib.error
+from datetime import timedelta
 from pathlib import Path
 
-from flask import Flask, jsonify, redirect, request, send_from_directory
+from flask import Flask, jsonify, redirect, request, send_from_directory, session
 
 from dockerapi import DockerClient, DockerAPIError
 
@@ -129,6 +133,272 @@ def _csrf_guard():
                   "the dashboard itself; scripted clients should send the "
                   f"{CUSTOM_REQUEST_HEADER} header."),
     }), 403
+
+
+# ---------------------------------------------------------------------
+# Optional PIN authentication (0.9.5)
+# ---------------------------------------------------------------------
+# The threat model this addresses (see README "Security model"): the app
+# deliberately trusts the LAN for convenience, but "the LAN" on a home
+# network includes every family laptop, phone, smart TV, and guest
+# device -- and this container holds the Docker socket, so gating the
+# API raises the bar in front of any future endpoint bug, not just the
+# annoyance-tier actions (reflash/reset/reconfigure) an open API allows.
+#
+# Design decisions, so future rounds don't relitigate them:
+#   - OFF by default, enabled from the dashboard's General tab. This is
+#     a display gadget; mandatory auth in the wizard would be friction
+#     disproportionate to the asset for many installs.
+#   - When enabled, every state-changing (POST/PUT/PATCH/DELETE) /api/
+#     endpoint requires a logged-in session. A separate "lock_stats"
+#     toggle extends that to the read-only GET endpoints for households
+#     that consider system stats sensitive. Static pages stay open
+#     either way -- they're the same files for everyone and contain no
+#     data.
+#   - PIN is pbkdf2-sha256, per-PIN random salt, 600k iterations,
+#     stored 0600 in the state dir (survives app updates). Changing,
+#     disabling, or toggling lock_stats requires the CURRENT pin in the
+#     request body -- a hijacked session cookie alone can't take over
+#     or remove the lock.
+#   - Login is globally rate-limited (5 consecutive failures -> 60s
+#     lockout) rather than per-IP: on a flat LAN, per-IP limits are
+#     trivially dodged and the only cost of a global limit is that a
+#     failed brute force briefly locks everyone out -- acceptable, and
+#     visible.
+#   - Sessions are Flask's signed cookies (HttpOnly, SameSite=Lax,
+#     30 days). The Secure flag is deliberately NOT set: the primary
+#     interface is plain HTTP on the LAN (8989), and a Secure cookie
+#     would silently break login there. The cookie grants access to a
+#     LAN display dashboard; anyone positioned to sniff it is already
+#     on the trusted network segment this model accepts.
+#   - Recovery from a forgotten PIN: delete auth.json from the app's
+#     state directory (documented in the README) -- physical/ZimaOS
+#     access outranks the PIN, which is the right hierarchy for a home
+#     appliance.
+
+AUTH_FILE_NAME = "auth.json"
+_PBKDF2_ITERATIONS = 600_000
+_PIN_MIN_LEN, _PIN_MAX_LEN = 4, 128
+_LOCKOUT_THRESHOLD = 5
+_LOCKOUT_SECONDS = 60
+
+_login_lock = threading.Lock()
+_login_failures = 0
+_login_locked_until = 0.0
+
+# Endpoints that must work while locked, or nothing can ever unlock:
+_AUTH_EXEMPT_PATHS = {"/api/auth/status", "/api/auth/login"}
+
+
+def _auth_file():
+    return STATE_DIR / AUTH_FILE_NAME
+
+
+def _load_auth():
+    """The stored auth config, or None when the PIN is not enabled.
+    Read per-request on purpose: it's a tiny local file, and rereading
+    means an admin deleting auth.json (the documented recovery path)
+    takes effect immediately, no restart."""
+    try:
+        cfg = json.loads(_auth_file().read_text())
+        if not isinstance(cfg, dict) or "hash" not in cfg or "salt" not in cfg:
+            return None
+        return cfg
+    except (FileNotFoundError, OSError, json.JSONDecodeError, UnicodeDecodeError):
+        return None
+
+
+def _hash_pin(pin: str, salt: bytes, iterations: int) -> bytes:
+    return hashlib.pbkdf2_hmac("sha256", pin.encode("utf-8"), salt, iterations)
+
+
+def _verify_pin(pin, cfg) -> bool:
+    if not isinstance(pin, str):
+        return False
+    try:
+        salt = bytes.fromhex(cfg["salt"])
+        want = bytes.fromhex(cfg["hash"])
+        iters = int(cfg.get("iterations", _PBKDF2_ITERATIONS))
+    except (KeyError, ValueError, TypeError):
+        return False
+    return hmac.compare_digest(_hash_pin(pin, salt, iters), want)
+
+
+def _write_auth(pin: str, lock_stats: bool) -> None:
+    salt = secrets.token_bytes(16)
+    cfg = {
+        "algo": "pbkdf2-sha256",
+        "iterations": _PBKDF2_ITERATIONS,
+        "salt": salt.hex(),
+        "hash": _hash_pin(pin, salt, _PBKDF2_ITERATIONS).hex(),
+        "lock_stats": bool(lock_stats),
+    }
+    STATE_DIR.mkdir(parents=True, exist_ok=True)
+    tmp = _auth_file().with_suffix(".json.tmp")
+    tmp.write_text(json.dumps(cfg))
+    os.chmod(tmp, 0o600)
+    os.replace(tmp, _auth_file())
+
+
+def _valid_new_pin(pin):
+    return isinstance(pin, str) and _PIN_MIN_LEN <= len(pin) <= _PIN_MAX_LEN
+
+
+def _session_secret() -> bytes:
+    """Signing key for the session cookie, persisted in the state dir so
+    logins survive app updates and restarts. Generated on first use."""
+    path = STATE_DIR / "session_secret"
+    try:
+        secret = path.read_bytes()
+        if len(secret) >= 32:
+            return secret
+    except (FileNotFoundError, OSError):
+        pass
+    secret = secrets.token_bytes(32)
+    try:
+        STATE_DIR.mkdir(parents=True, exist_ok=True)
+        tmp = path.with_suffix(".tmp")
+        tmp.write_bytes(secret)
+        os.chmod(tmp, 0o600)
+        os.replace(tmp, path)
+    except OSError as e:
+        # Worst case (read-only state dir): sessions won't survive a
+        # restart. Auth still works; users just log in again.
+        print(f"[auth] could not persist session secret ({e}); "
+              f"logins will not survive restarts.", file=sys.stderr)
+    return secret
+
+
+app.secret_key = _session_secret()
+app.config.update(
+    SESSION_COOKIE_HTTPONLY=True,
+    SESSION_COOKIE_SAMESITE="Lax",
+    PERMANENT_SESSION_LIFETIME=timedelta(days=30),
+)
+
+
+@app.before_request
+def _auth_guard():
+    """Runs AFTER _csrf_guard (registration order): a request must be
+    same-origin/headered first, then authenticated. No-op until a PIN
+    is set."""
+    cfg = _load_auth()
+    if cfg is None:
+        return None
+    path = request.path
+    if path in _AUTH_EXEMPT_PATHS or not path.startswith("/api/"):
+        return None
+    needs_auth = request.method in _GUARDED_METHODS or cfg.get("lock_stats")
+    if not needs_auth or session.get("auth_ok"):
+        return None
+    return jsonify({
+        "ok": False,
+        "auth_required": True,
+        "error": "This dashboard is PIN-protected. Enter the PIN to continue.",
+    }), 401
+
+
+@app.route("/api/auth/status", methods=["GET"])
+def api_auth_status():
+    cfg = _load_auth()
+    return jsonify({
+        "ok": True,
+        "enabled": cfg is not None,
+        "authed": bool(session.get("auth_ok")),
+        "lock_stats": bool(cfg.get("lock_stats")) if cfg else False,
+    })
+
+
+@app.route("/api/auth/login", methods=["POST"])
+def api_auth_login():
+    global _login_failures, _login_locked_until
+    cfg = _load_auth()
+    if cfg is None:
+        return jsonify({"ok": False, "error": "No PIN is set."}), 400
+
+    with _login_lock:
+        wait = _login_locked_until - time.time()
+        if wait > 0:
+            return jsonify({"ok": False,
+                            "error": f"Too many attempts. Try again in {int(wait) + 1}s.",
+                            "retry_in": int(wait) + 1}), 429
+
+    pin = (request.get_json(silent=True) or {}).get("pin")
+    if _verify_pin(pin, cfg):
+        with _login_lock:
+            _login_failures = 0
+        session.permanent = True
+        session["auth_ok"] = True
+        return jsonify({"ok": True})
+
+    with _login_lock:
+        _login_failures += 1
+        if _login_failures >= _LOCKOUT_THRESHOLD:
+            _login_locked_until = time.time() + _LOCKOUT_SECONDS
+            _login_failures = 0
+    return jsonify({"ok": False, "error": "Wrong PIN."}), 403
+
+
+@app.route("/api/auth/set_pin", methods=["POST"])
+def api_auth_set_pin():
+    """Set, change, or disable the PIN, or toggle the stats lock. Any
+    change while a PIN is enabled requires the CURRENT pin in the body
+    -- a session cookie alone is deliberately not enough (see design
+    notes above)."""
+    body = request.get_json(silent=True) or {}
+    cfg = _load_auth()
+
+    if cfg is not None and not _verify_pin(body.get("current_pin"), cfg):
+        return jsonify({"ok": False,
+                        "error": "Current PIN is required (and must be correct) "
+                                 "to change these settings."}), 403
+
+    if body.get("disable"):
+        if cfg is None:
+            return jsonify({"ok": False, "error": "No PIN is set."}), 400
+        try:
+            _auth_file().unlink()
+        except FileNotFoundError:
+            pass
+        except OSError as e:
+            return _server_error("Could not remove the PIN.", e)
+        return jsonify({"ok": True, "enabled": False})
+
+    new_pin = body.get("new_pin")
+    lock_stats = body.get("lock_stats")
+
+    if new_pin is not None:
+        if not _valid_new_pin(new_pin):
+            return jsonify({"ok": False,
+                            "error": f"PIN must be {_PIN_MIN_LEN}-{_PIN_MAX_LEN} "
+                                     f"characters."}), 400
+        effective_lock = bool(lock_stats) if lock_stats is not None \
+            else bool(cfg.get("lock_stats")) if cfg else False
+        try:
+            _write_auth(new_pin, effective_lock)
+        except OSError as e:
+            return _server_error("Could not store the PIN.", e)
+        # Log the requester in so enabling the PIN doesn't immediately
+        # lock out the person who just enabled it.
+        session.permanent = True
+        session["auth_ok"] = True
+        return jsonify({"ok": True, "enabled": True, "lock_stats": effective_lock})
+
+    if lock_stats is not None:
+        if cfg is None:
+            return jsonify({"ok": False, "error": "Set a PIN first."}), 400
+        cfg["lock_stats"] = bool(lock_stats)
+        try:
+            STATE_DIR.mkdir(parents=True, exist_ok=True)
+            tmp = _auth_file().with_suffix(".json.tmp")
+            tmp.write_text(json.dumps(cfg))
+            os.chmod(tmp, 0o600)
+            os.replace(tmp, _auth_file())
+        except OSError as e:
+            return _server_error("Could not update the setting.", e)
+        return jsonify({"ok": True, "enabled": True, "lock_stats": bool(lock_stats)})
+
+    return jsonify({"ok": False, "error": "Nothing to do."}), 400
 
 
 class RawSerialPort:

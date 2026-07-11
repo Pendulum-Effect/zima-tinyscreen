@@ -413,6 +413,27 @@
   }
   .btn:hover { background: #6fe2d7; }
   .btn:disabled { background: #2c3f3d; color: #6a827e; cursor: not-allowed; }
+
+  /* Dashboard PIN: the lock overlay + shared password-input styling */
+  .pin-overlay {
+    position: fixed; inset: 0; z-index: 200;
+    background: rgba(6, 14, 17, 0.88); backdrop-filter: blur(3px);
+    display: flex; align-items: center; justify-content: center;
+  }
+  .pin-box {
+    background: var(--panel); border: 1px solid #17313a; border-radius: 14px;
+    padding: 26px; width: min(340px, calc(100vw - 48px));
+    display: flex; flex-direction: column; gap: 10px;
+  }
+  .pin-input {
+    width: 100%; box-sizing: border-box; padding: 11px 12px;
+    border-radius: 10px; border: 1px solid #24424d;
+    background: var(--panel-raised); color: var(--text);
+    font-size: 15px; letter-spacing: 2px;
+  }
+  .pin-input:focus { outline: none; border-color: var(--teal); }
+  .pin-error:not(:empty) { color: var(--err); }
+
   .status-msg { font-size: 13.5px; }
   .status-msg.ok { color: var(--teal); }
   .status-msg.err { color: var(--err); }
@@ -564,6 +585,16 @@
               <div class="card-desc" id="cert-summary">Checking…</div>
             </div>
             <button class="btn btn-uniform" id="cert-manage-btn">Manage</button>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <div>
+              <div class="card-title">Dashboard PIN</div>
+              <div class="card-desc" id="pin-summary">Checking…</div>
+            </div>
+            <button class="btn btn-uniform" id="pin-manage-btn">Manage</button>
           </div>
         </div>
 
@@ -773,6 +804,82 @@
 </div>
 
 <script>
+  // ---------------------------------------------------------------------
+  // PIN authentication plumbing (0.9.5)
+  // ---------------------------------------------------------------------
+  // Every API call in this file (and any added later) goes through this
+  // fetch wrapper. When the server answers 401 + auth_required (the
+  // optional dashboard PIN is enabled and this browser has no session),
+  // a PIN overlay appears; after a successful login the ORIGINAL request
+  // is retried once, so no call site anywhere needs to know auth exists.
+  // Concurrent 401s (the dashboard fires several fetches on load when
+  // "also lock stats" is on) share one overlay via a single promise.
+  const rawFetch = window.fetch.bind(window);
+  let pinPrompt = null;  // in-flight overlay promise, shared
+
+  window.fetch = async (input, init) => {
+    const res = await rawFetch(input, init);
+    if (res.status !== 401) return res;
+    let payload = null;
+    try { payload = await res.clone().json(); } catch (e) { /* not ours */ }
+    if (!payload || !payload.auth_required) return res;
+    const unlocked = await requirePin();
+    return unlocked ? rawFetch(input, init) : res;
+  };
+
+  function requirePin() {
+    if (pinPrompt) return pinPrompt;
+    pinPrompt = new Promise((resolve) => {
+      const overlay = document.createElement('div');
+      overlay.className = 'pin-overlay';
+      overlay.innerHTML =
+        '<div class="pin-box">' +
+        '  <div class="card-title">Dashboard locked</div>' +
+        '  <div class="card-desc">Enter the PIN to continue.</div>' +
+        '  <input type="password" class="pin-input" autocomplete="current-password" />' +
+        '  <div class="pin-error card-desc"></div>' +
+        '  <button class="btn pin-unlock">Unlock</button>' +
+        '</div>';
+      document.body.appendChild(overlay);
+      const input = overlay.querySelector('.pin-input');
+      const err = overlay.querySelector('.pin-error');
+      const btn = overlay.querySelector('.pin-unlock');
+      input.focus();
+
+      const attempt = async () => {
+        if (!input.value) return;
+        btn.disabled = true;
+        err.textContent = '';
+        try {
+          // rawFetch on purpose: the wrapper must never intercept its
+          // own login call.
+          const r = await rawFetch('/api/auth/login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-TinyScreen-Request': '1' },
+            body: JSON.stringify({ pin: input.value }),
+          });
+          const data = await r.json();
+          if (data.ok) {
+            overlay.remove();
+            pinPrompt = null;
+            resolve(true);
+            return;
+          }
+          err.textContent = data.error || 'Wrong PIN.';
+          input.value = '';
+          input.focus();
+        } catch (e) {
+          err.textContent = 'Could not reach the app: ' + e.message;
+        } finally {
+          btn.disabled = false;
+        }
+      };
+      btn.addEventListener('click', attempt);
+      input.addEventListener('keydown', (e) => { if (e.key === 'Enter') attempt(); });
+    });
+    return pinPrompt;
+  }
+
   // ---------------------------------------------------------------------
   // Tab switching
   // ---------------------------------------------------------------------
@@ -2319,6 +2426,148 @@
 
   document.getElementById('cert-manage-btn').addEventListener('click', openCertView);
   loadCertInfo();
+
+  // --- Dashboard PIN management (0.9.5) ----------------------------------
+  let authStatus = null;
+
+  async function loadPinSummary() {
+    const summary = document.getElementById('pin-summary');
+    try {
+      authStatus = await (await fetch('/api/auth/status')).json();
+      summary.textContent = authStatus.enabled
+        ? 'On — settings need a PIN' + (authStatus.lock_stats ? '; stats locked too.' : '.')
+        : 'Off — anyone on your network can change settings.';
+    } catch (e) {
+      summary.textContent = 'Could not check PIN status.';
+    }
+  }
+
+  async function openPinView() {
+    await loadPinSummary();
+    document.getElementById('general-sub-title').textContent = 'Dashboard PIN';
+    const body = document.getElementById('general-sub-body');
+    body.textContent = '';
+    const enabled = authStatus && authStatus.enabled;
+
+    const c = el('div', 'card');
+    c.appendChild(el('div', 'card-title', enabled ? 'Change or remove the PIN' : 'Set a PIN'));
+    c.appendChild(el('div', 'card-desc',
+      'When a PIN is set, changing anything from this dashboard (flashing, ' +
+      'settings, updates, certificates) requires it once per browser. ' +
+      'Viewing stays open unless you also lock it below.'));
+
+    const mkInput = (ph, top) => {
+      const i = document.createElement('input');
+      i.type = 'password';
+      i.placeholder = ph;
+      i.className = 'pin-input';
+      i.style.marginTop = top;
+      c.appendChild(i);
+      return i;
+    };
+    const current = enabled ? mkInput('Current PIN', '14px') : null;
+    const fresh = mkInput(enabled ? 'New PIN (leave empty to keep)' : 'New PIN (4+ characters)', enabled ? '10px' : '14px');
+    const confirm = mkInput('Repeat new PIN', '10px');
+
+    const lockRow = el('label', 'card-desc');
+    lockRow.style.cssText = 'display:flex; align-items:center; gap:8px; margin-top:14px; cursor:pointer;';
+    const lockBox = document.createElement('input');
+    lockBox.type = 'checkbox';
+    lockBox.checked = !!(authStatus && authStatus.lock_stats);
+    lockRow.appendChild(lockBox);
+    lockRow.appendChild(document.createTextNode('Also require the PIN just to view stats'));
+    c.appendChild(lockRow);
+
+    const status = el('div', 'card-desc', '');
+    status.style.marginTop = '12px';
+    c.appendChild(status);
+
+    const save = el('button', 'btn', enabled ? 'Save changes' : 'Turn on PIN');
+    save.style.marginTop = '12px';
+    save.addEventListener('click', async () => {
+      const payload = {};
+      if (enabled) payload.current_pin = current.value;
+      if (fresh.value || !enabled) {
+        if (fresh.value !== confirm.value) {
+          status.textContent = 'The two PIN fields don\u2019t match.';
+          return;
+        }
+        payload.new_pin = fresh.value;
+      }
+      payload.lock_stats = lockBox.checked;
+      save.disabled = true;
+      status.textContent = 'Saving\u2026';
+      try {
+        const r = await fetch('/api/auth/set_pin', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-TinyScreen-Request': '1' },
+          body: JSON.stringify(payload),
+        });
+        const data = await r.json();
+        status.textContent = data.ok ? 'Saved \u2713' : (data.error || 'Failed.');
+        if (data.ok) { await loadPinSummary(); openPinView(); }
+      } catch (e) {
+        status.textContent = 'Failed: ' + e.message;
+      } finally {
+        save.disabled = false;
+      }
+    });
+    c.appendChild(save);
+    body.appendChild(c);
+
+    if (enabled) {
+      const off = el('div', 'card');
+      off.appendChild(el('div', 'card-title', 'Turn the PIN off'));
+      off.appendChild(el('div', 'card-desc',
+        'Removes the PIN entirely; the dashboard goes back to trusting every ' +
+        'device on your network.'));
+      const offStatus = el('div', 'card-desc', '');
+      offStatus.style.marginTop = '10px';
+      const offBtn = el('button', 'btn', 'Turn off');
+      offBtn.style.marginTop = '12px';
+      offBtn.addEventListener('click', async () => {
+        offBtn.disabled = true;
+        offStatus.textContent = 'Removing\u2026';
+        try {
+          const r = await fetch('/api/auth/set_pin', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-TinyScreen-Request': '1' },
+            body: JSON.stringify({ disable: true, current_pin: current ? current.value : '' }),
+          });
+          const data = await r.json();
+          offStatus.textContent = data.ok
+            ? 'PIN removed.'
+            : (data.error || 'Failed.') + (data.error && data.error.indexOf('Current PIN') === 0
+               ? ' (Fill in the Current PIN field above, then press Turn off.)' : '');
+          if (data.ok) { await loadPinSummary(); openPinView(); }
+        } catch (e) {
+          offStatus.textContent = 'Failed: ' + e.message;
+        } finally {
+          offBtn.disabled = false;
+        }
+      });
+      off.appendChild(offBtn);
+      body.appendChild(off);
+    }
+
+    const note = el('div', 'card-desc',
+      'Forgot the PIN? Delete the file auth.json from this app\u2019s state folder ' +
+      '(AppData on your ZimaOS drive) and the dashboard unlocks immediately \u2014 ' +
+      'someone with access to the machine itself always outranks the PIN.');
+    note.style.marginTop = '14px';
+    body.appendChild(note);
+
+    document.getElementById('general-main').classList.add('view-swap-out');
+    const sub = document.getElementById('general-sub');
+    sub.classList.remove('open');
+    void sub.offsetWidth;
+    sub.classList.add('open');
+    document.querySelector('.main').scrollTop = 0;
+  }
+
+  document.getElementById('pin-manage-btn').addEventListener('click', openPinView);
+  loadPinSummary();
+
   document.getElementById('general-sub-back').addEventListener('click', resetSubViews);
 
   // ---------------------------------------------------------------------
