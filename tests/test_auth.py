@@ -293,6 +293,131 @@ class TestLockout(AuthTestBase):
             self.assertEqual(self.login("0000", client=other).status_code, 403)
 
 
+class TestSessionRevocation(AuthTestBase):
+    """0.9.5.1: rotating or removing the PIN must revoke every existing
+    session -- the whole reason to change a PIN is that some device
+    shouldn't have access anymore."""
+
+    def test_pin_change_revokes_other_sessions(self):
+        self.enable_pin("1111")
+        other = self.fresh_client()
+        self.login("1111", client=other)
+        self.assertEqual(other.post("/api/reset_device", headers=HDRS).status_code, 400)
+        # The owner changes the PIN from their own device...
+        self.client.post("/api/auth/set_pin",
+                         json={"current_pin": "1111", "new_pin": "2222"},
+                         headers=HDRS)
+        # ...the other device's 30-day cookie dies with the old PIN,
+        self.assertEqual(other.post("/api/reset_device", headers=HDRS).status_code, 401)
+        self.assertFalse(other.get("/api/auth/status").get_json()["authed"])
+        # while the changer keeps working (new-generation session).
+        self.assertEqual(self.client.post("/api/reset_device", headers=HDRS).status_code, 400)
+
+    def test_disable_reenable_revokes_old_sessions(self):
+        self.enable_pin("1111")
+        other = self.fresh_client()
+        self.login("1111", client=other)
+        self.client.post("/api/auth/set_pin",
+                         json={"disable": True, "current_pin": "1111"}, headers=HDRS)
+        self.enable_pin("3333")  # fresh generation
+        self.assertEqual(other.post("/api/reset_device", headers=HDRS).status_code, 401)
+
+    def test_lock_stats_toggle_preserves_sessions(self):
+        """A preference flip is not a credential change; nobody should
+        get logged out by it."""
+        self.enable_pin("1111")
+        other = self.fresh_client()
+        self.login("1111", client=other)
+        self.client.post("/api/auth/set_pin",
+                         json={"current_pin": "1111", "lock_stats": True},
+                         headers=HDRS)
+        self.assertEqual(other.get("/api/last_flash").status_code, 200)
+        self.assertEqual(other.post("/api/reset_device", headers=HDRS).status_code, 400)
+
+    def test_gen_less_auth_file_from_0950_still_works(self):
+        """Backward compat: an auth.json written by 0.9.5.0 has no gen
+        field. Logins against it must work (session gen None == cfg gen
+        None), and the first PIN change upgrades it to a gen'd file."""
+        salt = os.urandom(16)
+        cfg = {"algo": "pbkdf2-sha256", "iterations": 600_000,
+               "salt": salt.hex(),
+               "hash": server._hash_pin("oldpin", salt, 600_000).hex(),
+               "lock_stats": False}
+        (STATE / server.AUTH_FILE_NAME).write_text(json.dumps(cfg))
+        other = self.fresh_client()
+        self.assertEqual(self.login("oldpin", client=other).status_code, 200)
+        self.assertEqual(other.post("/api/reset_device", headers=HDRS).status_code, 400)
+        other.post("/api/auth/set_pin",
+                   json={"current_pin": "oldpin", "new_pin": "newpin"}, headers=HDRS)
+        self.assertIn("gen", server._load_auth())
+
+
+class TestSetPinLockout(AuthTestBase):
+    """0.9.5.1: set_pin's current_pin check shares the login lockout.
+    In 0.9.5.0 it had no rate limit. A sessionless attacker never
+    reaches it (the auth guard 401s first -- asserted below), so the
+    real exposure was narrower but still exactly the scenario
+    current_pin exists to resist: someone holding a HIJACKED SESSION
+    could brute-force current_pin at full speed to take over or remove
+    the lock."""
+
+    def test_sessionless_attacker_never_reaches_set_pin(self):
+        self.enable_pin("9999")
+        r = self.fresh_client().post("/api/auth/set_pin",
+                                     json={"current_pin": "0000", "new_pin": "hacked"},
+                                     headers=HDRS)
+        self.assertEqual(r.status_code, 401)
+
+    def test_session_holder_guessing_current_pin_hits_shared_lockout(self):
+        self.enable_pin("9999")
+        # A hijacked-cookie attacker: valid session, unknown PIN.
+        hijacker = self.fresh_client()
+        self.login("9999", client=hijacker)  # stands in for the stolen cookie
+        for _ in range(server._LOCKOUT_THRESHOLD):
+            r = hijacker.post("/api/auth/set_pin",
+                              json={"current_pin": "0000", "new_pin": "hacked"},
+                              headers=HDRS)
+            self.assertEqual(r.status_code, 403)
+        r = hijacker.post("/api/auth/set_pin",
+                          json={"current_pin": "0001", "new_pin": "hacked"},
+                          headers=HDRS)
+        self.assertEqual(r.status_code, 429)
+        self.assertIn("retry_in", r.get_json())
+        # The SAME counter locks login too -- one pool of attempts total.
+        self.assertEqual(self.login("9999", client=self.fresh_client()).status_code, 429)
+        # And the PIN was never changed.
+        self.assertTrue(server._verify_pin("9999", server._load_auth()))
+
+    def test_login_failures_lock_set_pin_too(self):
+        self.enable_pin("9999")  # self.client now holds a valid session
+        attacker = self.fresh_client()
+        for _ in range(server._LOCKOUT_THRESHOLD):
+            self.login("0000", client=attacker)
+        # Even the legitimate, logged-in owner shares the pool: one
+        # global gate on ALL pin verification, visible to everyone.
+        r = self.client.post("/api/auth/set_pin",
+                             json={"current_pin": "9999", "new_pin": "x" * 8},
+                             headers=HDRS)
+        self.assertEqual(r.status_code, 429)
+
+
+class TestSecurityHeaders(AuthTestBase):
+    def test_frame_denial_and_sniffing_headers_everywhere(self):
+        for path in ("/dashboard.html", "/wizard.html", "/api/last_flash"):
+            r = self.client.get(path)
+            self.assertEqual(r.headers.get("X-Frame-Options"), "DENY", path)
+            self.assertEqual(r.headers.get("Content-Security-Policy"),
+                             "frame-ancestors 'none'", path)
+            self.assertEqual(r.headers.get("X-Content-Type-Options"), "nosniff", path)
+
+    def test_auth_responses_never_cached(self):
+        self.assertEqual(self.client.get("/api/auth/status")
+                         .headers.get("Cache-Control"), "no-store")
+        self.enable_pin("1234")
+        r = self.login("1234", client=self.fresh_client())
+        self.assertEqual(r.headers.get("Cache-Control"), "no-store")
+
+
 if __name__ == "__main__":
     result = unittest.main(exit=False, verbosity=1).result
     ok = result.wasSuccessful()

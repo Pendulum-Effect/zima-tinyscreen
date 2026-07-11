@@ -190,6 +190,51 @@ _login_locked_until = 0.0
 _AUTH_EXEMPT_PATHS = {"/api/auth/status", "/api/auth/login"}
 
 
+# --- Shared brute-force lockout (0.9.5.1) ------------------------------
+# One counter for EVERY place a PIN is verified. 0.9.5.0 rate-limited
+# only /api/auth/login, leaving /api/auth/set_pin's current_pin check
+# unlimited. The auth guard keeps sessionless attackers away from
+# set_pin, so the exposure was narrower than "open oracle" -- but a
+# HIJACKED SESSION could brute-force current_pin at full speed to take
+# over or remove the lock, defeating the exact protection current_pin
+# exists to provide. Any new endpoint that ever verifies a PIN must go
+# through _check_pin_with_lockout().
+
+def _lockout_remaining() -> int:
+    """Seconds until PIN attempts are accepted again, 0 if not locked."""
+    with _login_lock:
+        wait = _login_locked_until - time.time()
+    return int(wait) + 1 if wait > 0 else 0
+
+
+def _record_pin_attempt(success: bool) -> None:
+    global _login_failures, _login_locked_until
+    with _login_lock:
+        if success:
+            _login_failures = 0
+            return
+        _login_failures += 1
+        if _login_failures >= _LOCKOUT_THRESHOLD:
+            _login_locked_until = time.time() + _LOCKOUT_SECONDS
+            _login_failures = 0
+
+
+def _check_pin_with_lockout(pin, cfg):
+    """Verify a PIN under the global lockout. Returns (ok, error_response)
+    where error_response is a ready (json, status) pair when refused --
+    either 429 (locked) or None alongside ok=False (wrong pin, recorded)."""
+    remaining = _lockout_remaining()
+    if remaining:
+        return False, (jsonify({
+            "ok": False,
+            "error": f"Too many attempts. Try again in {remaining}s.",
+            "retry_in": remaining,
+        }), 429)
+    ok = _verify_pin(pin, cfg)
+    _record_pin_attempt(ok)
+    return ok, None
+
+
 def _auth_file():
     return STATE_DIR / AUTH_FILE_NAME
 
@@ -232,12 +277,27 @@ def _write_auth(pin: str, lock_stats: bool) -> None:
         "salt": salt.hex(),
         "hash": _hash_pin(pin, salt, _PBKDF2_ITERATIONS).hex(),
         "lock_stats": bool(lock_stats),
+        # Session generation (0.9.5.1): every session records the gen it
+        # logged in under, and the guard requires it to match. A fresh
+        # gen on every PIN set/change therefore revokes ALL existing
+        # sessions at once -- which is the point of changing a PIN: if
+        # you rotated it because some device shouldn't have access
+        # anymore, that device's 30-day cookie must die with the old
+        # PIN. (Toggling lock_stats deliberately preserves the gen; it
+        # is a preference, not a credential change.)
+        "gen": secrets.token_hex(8),
     }
     STATE_DIR.mkdir(parents=True, exist_ok=True)
     tmp = _auth_file().with_suffix(".json.tmp")
     tmp.write_text(json.dumps(cfg))
     os.chmod(tmp, 0o600)
     os.replace(tmp, _auth_file())
+
+
+def _grant_session(cfg) -> None:
+    session.permanent = True
+    session["auth_ok"] = True
+    session["auth_gen"] = cfg.get("gen")
 
 
 def _valid_new_pin(pin):
@@ -289,7 +349,9 @@ def _auth_guard():
     if path in _AUTH_EXEMPT_PATHS or not path.startswith("/api/"):
         return None
     needs_auth = request.method in _GUARDED_METHODS or cfg.get("lock_stats")
-    if not needs_auth or session.get("auth_ok"):
+    authed = (session.get("auth_ok")
+              and session.get("auth_gen") == cfg.get("gen"))
+    if not needs_auth or authed:
         return None
     return jsonify({
         "ok": False,
@@ -301,41 +363,28 @@ def _auth_guard():
 @app.route("/api/auth/status", methods=["GET"])
 def api_auth_status():
     cfg = _load_auth()
+    authed = bool(cfg is not None and session.get("auth_ok")
+                  and session.get("auth_gen") == cfg.get("gen"))
     return jsonify({
         "ok": True,
         "enabled": cfg is not None,
-        "authed": bool(session.get("auth_ok")),
+        "authed": authed,
         "lock_stats": bool(cfg.get("lock_stats")) if cfg else False,
     })
 
 
 @app.route("/api/auth/login", methods=["POST"])
 def api_auth_login():
-    global _login_failures, _login_locked_until
     cfg = _load_auth()
     if cfg is None:
         return jsonify({"ok": False, "error": "No PIN is set."}), 400
-
-    with _login_lock:
-        wait = _login_locked_until - time.time()
-        if wait > 0:
-            return jsonify({"ok": False,
-                            "error": f"Too many attempts. Try again in {int(wait) + 1}s.",
-                            "retry_in": int(wait) + 1}), 429
-
     pin = (request.get_json(silent=True) or {}).get("pin")
-    if _verify_pin(pin, cfg):
-        with _login_lock:
-            _login_failures = 0
-        session.permanent = True
-        session["auth_ok"] = True
+    ok, refused = _check_pin_with_lockout(pin, cfg)
+    if refused:
+        return refused
+    if ok:
+        _grant_session(cfg)
         return jsonify({"ok": True})
-
-    with _login_lock:
-        _login_failures += 1
-        if _login_failures >= _LOCKOUT_THRESHOLD:
-            _login_locked_until = time.time() + _LOCKOUT_SECONDS
-            _login_failures = 0
     return jsonify({"ok": False, "error": "Wrong PIN."}), 403
 
 
@@ -348,10 +397,15 @@ def api_auth_set_pin():
     body = request.get_json(silent=True) or {}
     cfg = _load_auth()
 
-    if cfg is not None and not _verify_pin(body.get("current_pin"), cfg):
-        return jsonify({"ok": False,
-                        "error": "Current PIN is required (and must be correct) "
-                                 "to change these settings."}), 403
+    if cfg is not None:
+        ok, refused = _check_pin_with_lockout(body.get("current_pin"), cfg)
+        if refused:
+            return refused  # 429: same lockout as login -- this endpoint
+            # must not be a rate-limit-free guessing oracle (0.9.5.1)
+        if not ok:
+            return jsonify({"ok": False,
+                            "error": "Current PIN is required (and must be "
+                                     "correct) to change these settings."}), 403
 
     if body.get("disable"):
         if cfg is None:
@@ -378,10 +432,10 @@ def api_auth_set_pin():
             _write_auth(new_pin, effective_lock)
         except OSError as e:
             return _server_error("Could not store the PIN.", e)
-        # Log the requester in so enabling the PIN doesn't immediately
-        # lock out the person who just enabled it.
-        session.permanent = True
-        session["auth_ok"] = True
+        # Log the requester in under the NEW generation so enabling or
+        # changing the PIN doesn't lock out the person doing it -- while
+        # every OTHER session (old generation) is revoked by this write.
+        _grant_session(_load_auth())
         return jsonify({"ok": True, "enabled": True, "lock_stats": effective_lock})
 
     if lock_stats is not None:
@@ -399,6 +453,27 @@ def api_auth_set_pin():
         return jsonify({"ok": True, "enabled": True, "lock_stats": bool(lock_stats)})
 
     return jsonify({"ok": False, "error": "Nothing to do."}), 400
+
+
+@app.after_request
+def _security_headers(resp):
+    """Baseline response hardening (0.9.5.1). Clickjacking is the one
+    that matters now that PIN sessions exist: without frame denial, a
+    malicious page could iframe the dashboard and trick a logged-in
+    user into clicking real buttons (the CSRF guard doesn't help there
+    -- framed clicks ARE same-origin requests from the real dashboard).
+    NOTE for the hardware round: if ZimaOS's UI ever embeds custom apps
+    in an iframe instead of opening a tab, these two headers will blank
+    the app inside that UI -- relax to a frame-ancestors allowlist of
+    the ZimaOS origin if so. Direct-tab use is unaffected either way."""
+    resp.headers.setdefault("X-Frame-Options", "DENY")
+    resp.headers.setdefault("Content-Security-Policy", "frame-ancestors 'none'")
+    resp.headers.setdefault("X-Content-Type-Options", "nosniff")
+    resp.headers.setdefault("Referrer-Policy", "no-referrer")
+    if request.path.startswith("/api/auth/"):
+        # Auth state and login outcomes must never come from a cache.
+        resp.headers["Cache-Control"] = "no-store"
+    return resp
 
 
 class RawSerialPort:

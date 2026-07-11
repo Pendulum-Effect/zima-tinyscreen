@@ -6,7 +6,7 @@ eventually hit context limits). It carries the current state, what's
 done, and what's next, so any session can pick up where the last left
 off. **Delete this file at the final 1.0 release.**
 
-Snapshot as of **0.9.5.0** (2026-07-11).
+Snapshot as of **0.9.5.1** (2026-07-11).
 
 ## How to get oriented fast
 
@@ -93,13 +93,37 @@ Snapshot as of **0.9.5.0** (2026-07-11).
         flag; shrinking to cgroup rules is brittle AND cosmetic -- the
         decision is documented, not deferred).
 
+- [x] **0.9.5 forgot-PIN recovery path verified on hardware**
+      (2026-07-11): deleting auth.json unlocks immediately, as documented.
+- [x] **0.9.5.1** PIN hardening patch (self-audit findings):
+  - [x] Session generations: auth.json carries a random "gen"; sessions
+        record the gen they logged in under; guard requires a match. PIN
+        set/change/disable rotates gen -> every other session revoked;
+        the changer is re-granted under the new gen; lock_stats toggle
+        deliberately preserves gen. 0.9.5.0 gen-less auth.json keeps
+        working (None == None) until the first change upgrades it.
+  - [x] Shared lockout across ALL pin verification (login + set_pin's
+        current_pin). Real 0.9.5.0 exposure, precisely stated: the auth
+        guard already blocked sessionless callers from set_pin, but a
+        HIJACKED SESSION could brute current_pin without limit -- the
+        exact takeover current_pin exists to resist.
+  - [x] Security headers on every response: X-Frame-Options DENY +
+        CSP frame-ancestors 'none' (clickjacking vs logged-in sessions),
+        nosniff, Referrer-Policy no-referrer; Cache-Control no-store on
+        /api/auth/*.
+  - [x] 5 new tests (31 total in test_auth.py); serial/updater/collector
+        suites + browser E2E re-verified with the new headers.
+
 ## Next up (suggested order)
 
-- [ ] **Hardware round for 0.9.5**: enable the PIN on the real box, make
-      sure the overlay behaves on the phone browser you actually use,
-      one flash + one settings save while locked (session cookie over
-      plain HTTP on the LAN), then the forgot-PIN recovery once
-      (delete auth.json via ZimaOS Files) to confirm the documented path.
+- [ ] **Hardware round for 0.9.5 + 0.9.5.1**: enable the PIN on the real
+      box; overlay on the phone browser you actually use; one flash +
+      one settings save while locked (session cookie over plain HTTP);
+      change the PIN and confirm a second signed-in device gets locked
+      out; IMPORTANT: confirm ZimaOS opens the app in a tab, not an
+      iframe -- the new frame-denial headers would blank the dashboard
+      inside an embedding UI (relax to a frame-ancestors allowlist of
+      the ZimaOS origin if so; see _security_headers in server.py).
 - [ ] **Placeholder metadata pass** -- `docker-compose.customapp.yml`
       x-casaos block has `author: you` / placeholder icon URL; verify an
       icon asset actually exists at the referenced path so the ZimaOS

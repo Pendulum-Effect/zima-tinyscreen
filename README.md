@@ -192,7 +192,11 @@ PIN is stored only as a salted pbkdf2-sha256 hash (600k iterations) in
 the app's state folder; login is rate-limited (5 wrong guesses -> 60s
 lockout, for everyone -- deliberate, since per-IP limits mean nothing on
 a flat LAN). Changing or removing the PIN always requires the current
-PIN, so a stolen session cookie alone can't take over the lock. Forgot
+PIN -- itself under the same guess limit -- so a stolen session cookie
+alone can't take over the lock, and rotating the PIN signs out every
+browser that was logged in under the old one. The dashboard also
+refuses to load inside a frame, so a malicious page can't overlay
+invisible buttons on a signed-in session. Forgot
 it? Delete `auth.json` from the app's state folder (AppData on your
 ZimaOS drive): physical access to the machine outranks the PIN, which is
 the right hierarchy for a home appliance.

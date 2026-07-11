@@ -2,6 +2,18 @@
   "_comment": "Human-readable changelog for the dashboard's About tab -- written for people, not commit archaeologists. The dashboard fetches this from GitHub at page load (baked copy as fallback), so add an entry here with each release and every install sees it. Newest first. Dates are YYYY-MM-DD.",
   "entries": [
     {
+      "version": "0.9.5.1",
+      "date": "2026-07-11",
+      "title": "0.9.5.1: PIN hardening patch",
+      "notes": [
+        "Changing or removing the PIN now signs out every browser that was logged in under the old one. That's the whole point of changing a PIN -- if you rotated it because some device shouldn't have access anymore, that device's saved login now dies with the old PIN. (You stay signed in on the device you made the change from.)",
+        "The guess limit (five wrong tries, one-minute lockout) now covers every place a PIN can be checked, not just the login box. Before this patch, a device that was already signed in could try current-PIN guesses without limit when attempting to change the lock's settings.",
+        "The dashboard now refuses to be embedded inside other websites, closing off clickjacking tricks against a signed-in browser, and login responses are marked never-cache.",
+        "If you set your PIN on 0.9.5.0: it keeps working unchanged; the first time you change it, the new protections apply automatically.",
+        "No firmware changes."
+      ]
+    },
+    {
       "version": "0.9.5.0",
       "date": "2026-07-11",
       "title": "0.9.5: optional dashboard PIN",
