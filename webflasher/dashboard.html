@@ -418,6 +418,33 @@
   .status-msg.err { color: var(--err); }
 
   .loading, .error-banner { color: var(--subtext); font-size: 14px; padding: 20px 0; }
+
+  /* Skeleton cards: shown inside the -loading divs while device info is
+     on its way. A soft shimmer sweep, nothing attention-hungry. */
+  .skel-card { background: #0f1e24; border: 1px solid #17313a; border-radius: 14px;
+               padding: 18px; margin-bottom: 14px; max-width: 640px; }
+  .skel { position: relative; overflow: hidden; background: #14282f; border-radius: 8px; }
+  .skel::after { content: ""; position: absolute; inset: 0;
+                 background: linear-gradient(90deg, transparent, rgba(159,214,207,0.08), transparent);
+                 animation: skel-sweep 1.2s infinite; }
+  @keyframes skel-sweep { from { transform: translateX(-100%); } to { transform: translateX(100%); } }
+  .skel-line { height: 13px; margin: 12px 0; }
+  .skel-line.w30 { width: 30%; } .skel-line.w45 { width: 45%; }
+  .skel-line.w60 { width: 60%; } .skel-line.w80 { width: 80%; }
+  .skel-block { height: 92px; margin: 14px 0; }
+  .skel-row { display: flex; gap: 12px; margin: 14px 0; }
+  .skel-thumb { width: 86px; height: 86px; border-radius: 12px; flex: none; }
+
+  /* Content entrance: a quick fade-up as each panel's real cards land,
+     lightly staggered. Short on purpose -- the app should stay snappy. */
+  [id$="-content"] > * { animation: card-in 0.2s ease-out both; }
+  [id$="-content"] > *:nth-child(2) { animation-delay: 45ms; }
+  [id$="-content"] > *:nth-child(3) { animation-delay: 90ms; }
+  [id$="-content"] > *:nth-child(n+4) { animation-delay: 130ms; }
+  @keyframes card-in { from { opacity: 0; transform: translateY(7px); } to { opacity: 1; transform: none; } }
+  @media (prefers-reduced-motion: reduce) {
+    .skel::after, [id$="-content"] > * { animation: none; }
+  }
   .error-banner { color: var(--err); }
   .error-banner a { color: var(--teal); }
 
@@ -484,7 +511,14 @@
     <section class="tab-panel active" data-panel="general">
       <div id="general-main">
       <h2>General</h2>
-      <div id="general-loading" class="loading">Loading device info…</div>
+      <div id="general-loading" class="loading">
+        <div class="skel-card">
+          <div class="skel skel-line w30"></div>
+          <div class="skel skel-block"></div>
+          <div class="skel skel-line w80"></div>
+          <div class="skel skel-line w45"></div>
+        </div>
+      </div>
       <div id="general-error" class="error-banner" style="display:none;"></div>
       <div id="general-content" style="display:none;">
 
@@ -546,7 +580,17 @@
     <!-- Layouts: the real, working tab this round -->
     <section class="tab-panel" data-panel="layouts">
       <h2>Layouts</h2>
-      <div id="layouts-loading" class="loading">Loading current settings…</div>
+      <div id="layouts-loading" class="loading">
+        <div class="skel-card">
+          <div class="skel skel-line w30"></div>
+          <div class="skel-row">
+            <div class="skel skel-thumb"></div>
+            <div class="skel skel-thumb"></div>
+            <div class="skel skel-thumb"></div>
+          </div>
+          <div class="skel skel-line w60"></div>
+        </div>
+      </div>
       <div id="layouts-error" class="error-banner" style="display:none;"></div>
       <div id="layouts-content" style="display:none;">
 
@@ -585,7 +629,14 @@
     <!-- Screen -->
     <section class="tab-panel" data-panel="screen">
       <h2>Screen</h2>
-      <div id="screen-loading" class="loading">Loading current settings…</div>
+      <div id="screen-loading" class="loading">
+        <div class="skel-card">
+          <div class="skel skel-line w30"></div>
+          <div class="skel skel-line w80"></div>
+          <div class="skel skel-line w60"></div>
+          <div class="skel skel-line w45"></div>
+        </div>
+      </div>
       <div id="screen-error" class="error-banner" style="display:none;"></div>
       <div id="screen-content" style="display:none;">
 
@@ -678,7 +729,13 @@
     <section class="tab-panel" data-panel="about">
       <div id="about-main">
         <h2>About</h2>
-        <div id="about-loading" class="loading">Loading…</div>
+        <div id="about-loading" class="loading">
+          <div class="skel-card">
+            <div class="skel skel-line w45"></div>
+            <div class="skel skel-line w80"></div>
+            <div class="skel skel-line w60"></div>
+          </div>
+        </div>
         <div id="about-content" style="display:none;"></div>
       </div>
       <div id="about-sub" class="subview">
@@ -1031,12 +1088,12 @@
     return '<svg width="' + size + '" height="' + size + '" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">' +
       '<rect width="100" height="100" fill="#08141a"/>' +
       '<text x="7" y="16" fill="#eaf6f4" font-size="11" font-weight="700" font-family="sans-serif">' + title + '</text>' +
-      // little hard drive
-      '<rect x="7" y="29" width="30" height="20" rx="2.5" fill="rgb(148,150,155)"/>' +
-      '<rect x="7" y="45" width="30" height="4" fill="rgb(58,60,66)"/>' +
-      '<circle cx="19" cy="37" r="6.2" fill="rgb(120,122,128)"/>' +
-      '<circle cx="19" cy="37" r="2" fill="rgb(180,182,188)"/>' +
-      '<rect x="25" y="32" width="9" height="1.8" fill="rgb(96,98,104)"/>' +
+      // little hard drive, portrait -- spans pill through Total
+      '<rect x="7" y="28" width="30" height="31" rx="2.5" fill="rgb(148,150,155)"/>' +
+      '<rect x="7" y="55" width="30" height="4" fill="rgb(58,60,66)"/>' +
+      '<circle cx="22" cy="41" r="9" fill="rgb(120,122,128)"/>' +
+      '<circle cx="22" cy="41" r="2.8" fill="rgb(180,182,188)"/>' +
+      '<rect x="28" y="31" width="7" height="1.8" fill="rgb(96,98,104)"/>' +
       // health pill
       '<rect x="43" y="28" width="26" height="10" rx="5" fill="none" stroke="rgb(31,189,83)" stroke-width="1.1"/>' +
       '<text x="56" y="35.5" text-anchor="middle" fill="rgb(31,189,83)" font-size="6" font-family="sans-serif">Healthy</text>' +

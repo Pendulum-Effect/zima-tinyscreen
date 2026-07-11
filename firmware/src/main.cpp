@@ -40,7 +40,7 @@
 // "Software Version" field via the get_config command below. No
 // auto-update-checking mechanism exists yet (that's a separate, not-yet
 // -built feature) -- this just answers "what's currently on my device."
-#define FIRMWARE_VERSION "1.16.0"
+#define FIRMWARE_VERSION "1.17.0"
 
 // Note: screen dimensions are NOT fixed -- board 1 (1.69") is 240x280,
 // taller than board 0's 240x240. See screenW/screenH globals, set from
@@ -922,27 +922,28 @@ void drawDriveCard(const char *title, const char *health,
   canvas->setTextColor(COL_TEXT);
   drawTextTopLeft(title, left, LY + SY(14) - LY);
 
-  // Vector hard drive: body, platter, hub, connector strip
-  int ix = left, iy = SY(70);
-  int iw = 72 * LW / 240, ih = 48 * LW / 240;
+  // Vector hard drive, portrait -- sized to span the pill, Used, and
+  // Total rows exactly (SY 68..148) so the card carries no dead space.
+  int ix = left, iy = SY(68);
+  int iw = 72 * LW / 240, ih = SY(148) - SY(68);
   uint16_t kBody   = rgb565(148, 150, 155);
   uint16_t kEdge   = rgb565(96, 98, 104);
   uint16_t kPlat   = rgb565(120, 122, 128);
   uint16_t kHub    = rgb565(180, 182, 188);
   uint16_t kStrip  = rgb565(58, 60, 66);
+  int strip = 10 * LH / 240;
   canvas->fillRoundRect(ix, iy, iw, ih, 6 * LW / 240, kBody);
-  canvas->fillRect(ix, iy + ih - 8 * LW / 240, iw, 8 * LW / 240, kStrip);
+  canvas->fillRect(ix, iy + ih - strip, iw, strip, kStrip);
   for (int p = 0; p < 6; p++) {               // connector pins
-    canvas->fillRect(ix + (10 + p * 9) * LW / 240, iy + ih - 6 * LW / 240,
+    canvas->fillRect(ix + (10 + p * 9) * LW / 240, iy + ih - strip + 3 * LH / 240,
                      4 * LW / 240, 4 * LW / 240, kEdge);
   }
-  int pcx = ix + iw * 2 / 5, pcy = iy + (ih - 8 * LW / 240) / 2;
-  int pr = 15 * LW / 240;
+  int pcx = ix + iw / 2, pcy = iy + (ih - strip) / 2;
+  int pr = 24 * LW / 240;
   canvas->fillCircle(pcx, pcy, pr, kPlat);
-  canvas->fillCircle(pcx, pcy, pr, kPlat);
-  canvas->fillCircle(pcx, pcy, 5 * LW / 240, kHub);
-  canvas->fillRect(ix + iw * 3 / 5, iy + 8 * LW / 240,
-                   iw * 3 / 10, 4 * LW / 240, kEdge);  // actuator arm hint
+  canvas->fillCircle(pcx, pcy, 7 * LW / 240, kHub);
+  canvas->fillRect(ix + iw - 16 * LW / 240, iy + 8 * LH / 240,
+                   10 * LW / 240, 4 * LH / 240, kEdge);  // actuator arm hint
 
   // Health pill, only when the collector actually knows
   int colX = left + iw + 16 * LW / 240;

@@ -2,6 +2,16 @@
   "_comment": "Human-readable changelog for the dashboard's About tab -- written for people, not commit archaeologists. The dashboard fetches this from GitHub at page load (baked copy as fallback), so add an entry here with each release and every install sees it. Newest first. Dates are YYYY-MM-DD.",
   "entries": [
     {
+      "version": "0.8.9.24",
+      "date": "2026-07-10",
+      "title": "A fuller drive card, and friendlier waiting",
+      "notes": [
+        "The ZimaOS Drive card's hard drive illustration grew to span the health pill, Used, and Total lines -- no more empty corner below it.",
+        "While the dashboard fetches device info, each tab now shows softly shimmering placeholder cards shaped like the content they're standing in for, instead of a bare line of loading text.",
+        "When the real cards arrive, they ease in with a quick staggered fade -- two-tenths of a second, because the app should feel snappy, not theatrical. (If your system asks for reduced motion, everything appears instantly instead.)"
+      ]
+    },
+    {
       "version": "0.8.9.23",
       "date": "2026-07-10",
       "title": "ZimaOS Drive: your storage card, health pill included",
