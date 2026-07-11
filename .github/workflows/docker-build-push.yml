@@ -64,6 +64,12 @@ jobs:
       - name: Serial endpoint tests (pty-pair fake device)
         run: python3 tests/test_serial_endpoints.py
 
+      - name: Serial endpoint tests (pty-pair fake device)
+        run: python3 tests/test_serial_endpoints.py
+
+      - name: Auth tests (optional PIN layer)
+        run: python3 tests/test_auth.py
+
   build-firmware:
     runs-on: ubuntu-latest
     steps:
