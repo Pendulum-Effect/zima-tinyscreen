@@ -90,6 +90,7 @@ class Arduino_GFX {
   void drawCircle(int, int, int, uint16_t) {}
   void fillRect(int, int, int, int, uint16_t) {}
   void fillRoundRect(int, int, int, int, int, uint16_t) {}
+  void drawRoundRect(int, int, int, int, int, uint16_t) {}
   void drawRect(int, int, int, int, uint16_t) {}
   void drawLine(int, int, int, int, uint16_t) {}
   void drawPixel(int, int, uint16_t) {}

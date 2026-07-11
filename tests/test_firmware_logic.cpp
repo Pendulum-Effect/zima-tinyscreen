@@ -227,6 +227,16 @@ int main() {
     CHECK(strcmp(config.layouts[0], "ring") == 0);
     CHECK(strcmp(config.layouts[1], "default") == 0);
     CHECK(strcmp(layoutForPage("ram"), "ring") == 0);
+
+    // drive: valid for mmc and nas, not net
+    JsonDocument doc9;
+    JsonArray pages9 = doc9["pages"].to<JsonArray>();
+    pages9.add("nas"); pages9.add("net");
+    doc9["layouts"]["nas"] = "drive";
+    doc9["layouts"]["net"] = "drive";                   // not for net
+    handleSetConfig(doc9);
+    CHECK(strcmp(config.layouts[0], "drive") == 0);
+    CHECK(strcmp(config.layouts[1], "default") == 0);
   }
 
   // ---- Bars layout helpers: megabit formatting + bar fill ----

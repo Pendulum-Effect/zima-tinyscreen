@@ -104,6 +104,8 @@ class Stats:
     nas_pct: float
     mmc_label: str
     nas_label: str
+    mmc_health: str
+    nas_health: str
     # Minutes since UTC midnight -- the display board has no clock of its
     # own, so night mode and the clock screensaver run on host-supplied
     # time, extrapolated between updates on the board side. UTC (not
@@ -410,6 +412,154 @@ def get_nas_pool(data_path):
 
 
 # --------------------------------------------------------------------------
+# Drive health (for the ZimaOS Drive layout)
+# --------------------------------------------------------------------------
+# Two sources, both optional and both failing soft to "" (unknown):
+#  - eMMC: JEDEC health registers the kernel exposes in sysfs -- plain
+#    file reads, no privileges needed. Covers the ZimaBlade system disk.
+#  - smartctl: real SMART for SATA/NVMe pool drives, IF the binary is in
+#    the image (it is, as of 0.8.9.23) AND the container can see the
+#    block devices. Without a compose `devices:` grant this quietly
+#    reports unknown -- the pill simply doesn't render.
+
+def interpret_emmc_health(pre_eol, lt_a, lt_b):
+    """JEDEC eMMC 5.0 health: PRE_EOL_INFO 0x01 normal / 0x02 warning
+    (80% of reserved blocks consumed) / 0x03 urgent. DEVICE_LIFE_TIME_EST
+    is 0x01..0x0A in 10% steps, 0x0B = exceeded. Returns the worst of
+    the two signals. Pure for tests."""
+    worst = ""
+    if pre_eol == 0x01:
+        worst = "healthy"
+    elif pre_eol == 0x02:
+        worst = "warning"
+    elif pre_eol == 0x03:
+        return "critical"
+    lt = max(lt_a, lt_b)
+    if lt >= 0x0B:
+        return "critical"
+    if lt >= 0x09 and worst in ("", "healthy"):
+        worst = "warning"
+    return worst
+
+
+def interpret_smart_output(text):
+    """Verdict from `smartctl -H` output. Pure for tests."""
+    if not text:
+        return ""
+    t = text.upper()
+    if "FAILED!" in t or "FAILED" in t and "SELF-ASSESSMENT" in t:
+        return "critical"
+    if "PASSED" in t or ": OK" in t:
+        return "healthy"
+    return ""
+
+
+def worst_health(values):
+    """Aggregate pool health: any critical beats warning beats healthy;
+    unknowns don't dilute a known verdict. Pure for tests."""
+    rank = {"critical": 3, "warning": 2, "healthy": 1, "": 0}
+    known = [v for v in values if v]
+    if not known:
+        return ""
+    return max(known, key=lambda v: rank[v])
+
+
+def get_emmc_health_sysfs():
+    """Read JEDEC health for any eMMC the kernel knows about."""
+    results = []
+    for dev in glob.glob("/sys/bus/mmc/devices/*"):
+        try:
+            with open(os.path.join(dev, "pre_eol_info")) as f:
+                pre = int(f.read().strip(), 16)
+            with open(os.path.join(dev, "life_time")) as f:
+                parts = f.read().split()
+                lt_a = int(parts[0], 16) if parts else 0
+                lt_b = int(parts[1], 16) if len(parts) > 1 else 0
+            results.append(interpret_emmc_health(pre, lt_a, lt_b))
+        except (FileNotFoundError, PermissionError, OSError, ValueError):
+            continue
+    return worst_health(results)
+
+
+def _parent_disk(source):
+    """/dev/sda1 -> /dev/sda, /dev/nvme0n1p2 -> /dev/nvme0n1,
+    /dev/mmcblk0p4 -> /dev/mmcblk0. Pure for tests."""
+    m = re.match(r"^(/dev/(?:nvme\d+n\d+|mmcblk\d+))p\d+$", source)
+    if m:
+        return m.group(1)
+    m = re.match(r"^(/dev/[a-z]+)\d+$", source)
+    if m:
+        return m.group(1)
+    return source if source.startswith("/dev/") else ""
+
+
+def _mount_sources(paths):
+    """Backing parent disks for the given mount paths, via /proc/mounts
+    (bind mounts show the host's source device)."""
+    disks = set()
+    try:
+        with open("/proc/mounts") as f:
+            mounts = [line.split()[:2] for line in f if line.startswith("/dev/")]
+    except OSError:
+        return []
+    for path in paths:
+        best = ("", "")
+        for src, mnt in mounts:
+            if path == mnt or (path.startswith(mnt.rstrip("/") + "/") and len(mnt) > len(best[1])):
+                best = (src, mnt)
+        disk = _parent_disk(best[0])
+        if disk:
+            disks.add(disk)
+    return sorted(disks)
+
+
+def get_smart_health(paths):
+    """Worst SMART verdict across the disks backing the given paths.
+    Soft-fails to "" when smartctl or device access is missing."""
+    import shutil
+    if not shutil.which("smartctl"):
+        return ""
+    verdicts = []
+    for disk in _mount_sources(paths):
+        if not os.path.exists(disk):
+            continue
+        try:
+            out = subprocess.run(["smartctl", "-H", disk], capture_output=True,
+                                 text=True, timeout=10)
+            verdicts.append(interpret_smart_output(out.stdout))
+        except (subprocess.SubprocessError, OSError):
+            continue
+    return worst_health(verdicts)
+
+
+class HealthCache:
+    """Drive health barely moves; poll it every 10 minutes, not every
+    second, so we never keep disks awake with SMART chatter."""
+    def __init__(self, data_path):
+        self.data_path = data_path
+        self.mmc = ""
+        self.nas = ""
+        self._next = 0.0
+
+    def refresh_if_due(self):
+        now = time.monotonic()
+        if now < self._next:
+            return
+        self._next = now + 600
+        try:
+            self.mmc = get_emmc_health_sysfs() or get_smart_health([self.data_path])
+        except Exception:
+            self.mmc = ""
+        try:
+            media = os.path.join(self.data_path, ".media")
+            pools = [os.path.join(media, n) for n in os.listdir(media)] \
+                if os.path.isdir(media) else []
+            self.nas = get_smart_health([p for p in pools if os.path.ismount(p)])
+        except Exception:
+            self.nas = ""
+
+
+# --------------------------------------------------------------------------
 # Serial link
 # --------------------------------------------------------------------------
 
@@ -582,6 +732,7 @@ def main():
 
     print("Streaming stats. Ctrl+C to stop.")
     psutil.cpu_percent(interval=None)  # prime the non-blocking cpu_percent call
+    health = HealthCache(args.data_path)
 
     try:
         while True:
@@ -592,6 +743,7 @@ def main():
                 ram_total, ram_pct = get_ram()
                 mmc_total, mmc_pct = get_mmc(args.disk_path)
                 nas_available, nas_total, nas_pct, nas_label = get_nas_pool(args.data_path)
+                health.refresh_if_due()
                 rx_mbps, tx_mbps = net_meter.sample_mbps()
             except Exception as e:
                 # Never let a single bad reading crash the whole
@@ -619,6 +771,8 @@ def main():
                 # as "ZimaOS-HD", overridable for other setups.
                 mmc_label=os.environ.get("TINYSCREEN_MMC_LABEL", "ZimaOS-HD"),
                 nas_label=nas_label,
+                mmc_health=health.mmc,
+                nas_health=health.nas,
                 utc_min=(lambda t: t.tm_hour * 60 + t.tm_min)(time.gmtime()),
                 local_min=local_minutes_now(),
             )

@@ -40,7 +40,7 @@
 // "Software Version" field via the get_config command below. No
 // auto-update-checking mechanism exists yet (that's a separate, not-yet
 // -built feature) -- this just answers "what's currently on my device."
-#define FIRMWARE_VERSION "1.15.0"
+#define FIRMWARE_VERSION "1.16.0"
 
 // Note: screen dimensions are NOT fixed -- board 1 (1.69") is 240x280,
 // taller than board 0's 240x240. See screenW/screenH globals, set from
@@ -527,6 +527,8 @@ struct SystemStats {
   float nas_pct = 0;
   String mmc_label = "";
   String nas_label = "";
+  String mmc_health = "";
+  String nas_health = "";
   unsigned long last_update_ms = 0;
 } stats;
 
@@ -907,7 +909,91 @@ void drawStorageDots(const char *title, const char *name,
   canvas->setFont();
 }
 
+// The "ZimaOS Drive" layout (firmware 1.16.0): the ZimaOS dashboard's
+// storage card -- big title, a little vector hard drive, a health pill
+// (SMART / eMMC JEDEC, rendered only when actually known), Used and
+// Total lines, and a blue usage bar along the bottom.
+void drawDriveCard(const char *title, const char *health,
+                   float totalGb, float pct) {
+  int left = LX + 16 * LW / 240;
+  int right = LX + LW - 16 * LW / 240;
+
+  canvas->setFont(&tiny_sans_bold_24);
+  canvas->setTextColor(COL_TEXT);
+  drawTextTopLeft(title, left, LY + SY(14) - LY);
+
+  // Vector hard drive: body, platter, hub, connector strip
+  int ix = left, iy = SY(70);
+  int iw = 72 * LW / 240, ih = 48 * LW / 240;
+  uint16_t kBody   = rgb565(148, 150, 155);
+  uint16_t kEdge   = rgb565(96, 98, 104);
+  uint16_t kPlat   = rgb565(120, 122, 128);
+  uint16_t kHub    = rgb565(180, 182, 188);
+  uint16_t kStrip  = rgb565(58, 60, 66);
+  canvas->fillRoundRect(ix, iy, iw, ih, 6 * LW / 240, kBody);
+  canvas->fillRect(ix, iy + ih - 8 * LW / 240, iw, 8 * LW / 240, kStrip);
+  for (int p = 0; p < 6; p++) {               // connector pins
+    canvas->fillRect(ix + (10 + p * 9) * LW / 240, iy + ih - 6 * LW / 240,
+                     4 * LW / 240, 4 * LW / 240, kEdge);
+  }
+  int pcx = ix + iw * 2 / 5, pcy = iy + (ih - 8 * LW / 240) / 2;
+  int pr = 15 * LW / 240;
+  canvas->fillCircle(pcx, pcy, pr, kPlat);
+  canvas->fillCircle(pcx, pcy, pr, kPlat);
+  canvas->fillCircle(pcx, pcy, 5 * LW / 240, kHub);
+  canvas->fillRect(ix + iw * 3 / 5, iy + 8 * LW / 240,
+                   iw * 3 / 10, 4 * LW / 240, kEdge);  // actuator arm hint
+
+  // Health pill, only when the collector actually knows
+  int colX = left + iw + 16 * LW / 240;
+  if (health && health[0]) {
+    uint16_t hc = rgb565(31, 189, 83);        // sampled from the mock
+    const char *label = "Healthy";
+    if (strcmp(health, "warning") == 0) { hc = rgb565(255, 184, 84); label = "Warning"; }
+    else if (strcmp(health, "critical") == 0) { hc = rgb565(255, 92, 74); label = "Critical"; }
+    canvas->setFont(&tiny_sans_18);
+    int16_t x1, y1; uint16_t w, h;
+    canvas->getTextBounds(label, 0, 0, &x1, &y1, &w, &h);
+    int padX = 10 * LW / 240, pillH = 26 * LH / 240;
+    int pillY = SY(68);
+    canvas->drawRoundRect(colX, pillY, (int)w + 2 * padX, pillH,
+                          pillH / 2, hc);
+    canvas->setTextColor(hc);
+    drawTextTopLeft(label, colX + padX, pillY + (pillH - (int)h) / 2);
+  }
+
+  // Used / Total, to the right of the icon. Without a pill the rows
+  // shift up into its slot -- no orphaned gap. Big values drop the
+  // decimal so "Used: 384 GB" never crowds the edge.
+  bool hasPill = health && health[0];
+  float usedGb = totalGb * pct / 100.0f;
+  char line[28];
+  canvas->setFont(&tiny_sans_18);
+  canvas->setTextColor(COL_TEXT);
+  snprintf(line, sizeof(line), usedGb < 99.95f ? "Used: %.1f GB" : "Used: %.0f GB", usedGb);
+  drawTextTopLeft(line, colX, SY(hasPill ? 104 : 78));
+  snprintf(line, sizeof(line), "Total: %.0f GB", totalGb);
+  drawTextTopLeft(line, colX, SY(hasPill ? 130 : 104));
+
+  // Usage bar along the bottom
+  uint16_t kBarBlue = rgb565(0, 77, 255);     // sampled from the mock
+  int barY = SY(198), barH = 12 * LH / 240;
+  canvas->fillRoundRect(left, barY, right - left, barH, barH / 2,
+                        rgb565(44, 45, 50));
+  int fillW = (int)((right - left) * (pct > 100 ? 100 : (pct < 0 ? 0 : pct)) / 100.0f);
+  if (fillW > 0) {
+    int r = fillW < barH ? fillW / 2 : barH / 2;
+    canvas->fillRoundRect(left, barY, fillW, barH, r, kBarBlue);
+  }
+  canvas->setFont();
+}
+
 void drawPageMMC() {
+  if (strcmp(layoutForPage("mmc"), "drive") == 0) {
+    drawDriveCard("System", stats.mmc_health.c_str(),
+                  stats.mmc_total_gb, stats.mmc_pct);
+    return;
+  }
   if (strcmp(layoutForPage("mmc"), "dots") == 0) {
     const char *name = stats.mmc_label.length() ? stats.mmc_label.c_str() : "MMC";
     drawStorageDots("System", name, stats.mmc_total_gb, stats.mmc_pct);
@@ -928,6 +1014,11 @@ void drawPageNAS() {
     canvas->getTextBounds(msg, 0, 0, &x1, &y1, &w, &h);
     canvas->setCursor(CX() - w / 2, SY(115));
     canvas->print(msg);
+    return;
+  }
+  if (strcmp(layoutForPage("nas"), "drive") == 0) {
+    drawDriveCard("Storage", stats.nas_health.c_str(),
+                  stats.nas_total_gb, stats.nas_pct);
     return;
   }
   if (strcmp(layoutForPage("nas"), "dots") == 0) {
@@ -1573,7 +1664,7 @@ void handleSetConfig(JsonDocument &doc) {
                     (strcmp(want, "bars") == 0 || strcmp(want, "graph") == 0)) ||
                    ((strcmp(config.pages[i], "mmc") == 0 ||
                      strcmp(config.pages[i], "nas") == 0) &&
-                    strcmp(want, "dots") == 0);
+                    (strcmp(want, "dots") == 0 || strcmp(want, "drive") == 0));
       strncpy(config.layouts[i], known ? want : "default", 11);
       config.layouts[i][11] = 0;
     }
@@ -1715,6 +1806,8 @@ void handleLine(const String &line) {
   stats.nas_available  = doc["nas_available"] | stats.nas_available;
   stats.mmc_label      = doc["mmc_label"] | stats.mmc_label;
   stats.nas_label      = doc["nas_label"] | stats.nas_label;
+  stats.mmc_health     = doc["mmc_health"] | stats.mmc_health;
+  stats.nas_health     = doc["nas_health"] | stats.nas_health;
   stats.nas_total_gb   = doc["nas_total_gb"] | stats.nas_total_gb;
   stats.nas_pct        = doc["nas_pct"] | stats.nas_pct;
   // Host wall-clock time (minutes since UTC midnight), for night mode and

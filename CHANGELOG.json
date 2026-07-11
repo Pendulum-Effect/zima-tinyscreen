@@ -2,6 +2,17 @@
   "_comment": "Human-readable changelog for the dashboard's About tab -- written for people, not commit archaeologists. The dashboard fetches this from GitHub at page load (baked copy as fallback), so add an entry here with each release and every install sees it. Newest first. Dates are YYYY-MM-DD.",
   "entries": [
     {
+      "version": "0.8.9.23",
+      "date": "2026-07-10",
+      "title": "ZimaOS Drive: your storage card, health pill included",
+      "notes": [
+        "New 'ZimaOS Drive' layout for the MMC and NAS pages, modeled on the ZimaOS dashboard's storage card: a little hard drive illustration, a health pill, Used and Total, and a blue usage bar along the bottom.",
+        "About that pill: the system disk's health comes from the eMMC's own JEDEC health registers (the kernel exposes them as plain files -- no special access needed). For SATA/NVMe pool drives the app now ships smartctl, but real SMART also requires the container to see the drives; without that, the pill simply doesn't appear rather than guessing.",
+        "Health goes green / amber / red for healthy, warning, and critical, checked every ten minutes so your disks aren't pestered.",
+        "When health is unknown, the card tidies itself up instead of leaving an empty spot."
+      ]
+    },
+    {
       "version": "0.8.9.22",
       "date": "2026-07-10",
       "title": "Zima App Ring, and two layouts renamed",
