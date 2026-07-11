@@ -297,6 +297,26 @@ def start_fake_daemon(sock_path):
 # Tests
 # ---------------------------------------------------------------------
 
+from flask.testing import FlaskClient
+
+
+class _GuardedClient(FlaskClient):
+    """Mirrors the dashboard: attach X-TinyScreen-Request to state-changing
+    requests unless a test explicitly overrides headers."""
+    def open(self, *args, **kwargs):
+        method = (kwargs.get("method") or "GET").upper()
+        # werkzeug lets method come positionally via EnvironBuilder too;
+        # default GET is fine since GET isn't guarded.
+        if method in {"POST", "PUT", "PATCH", "DELETE"}:
+            hdrs = kwargs.get("headers") or {}
+            has = any(str(k).lower() == "x-tinyscreen-request" for k in dict(hdrs))
+            if not has:
+                hdrs = dict(hdrs)
+                hdrs["X-TinyScreen-Request"] = "1"
+                kwargs["headers"] = hdrs
+        return super().open(*args, **kwargs)
+
+
 class UpdaterTestBase(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -462,6 +482,7 @@ class TestServerEndpoints(UpdaterTestBase):
         server.DOCKER_SOCK = self.sock_path
         server.STATE_DIR = Path(self.state_dir.name)
         server.UPDATE_STATE_FILE = Path(self.state_dir.name) / "update_state.json"
+        server.app.test_client_class = _GuardedClient
         self.app = server.app.test_client()
 
     def tearDown(self):
@@ -833,6 +854,7 @@ class TestCertEndpoints(UpdaterTestBase):
                 del sys.modules[mod]
         import server
         self.server = server
+        server.app.test_client_class = _GuardedClient
         self.app = server.app.test_client()
 
     def tearDown(self):
@@ -924,6 +946,70 @@ class TestCertEndpoints(UpdaterTestBase):
         info = self.app.get("/api/cert_info").get_json()
         self.assertTrue(info["self_signed"])
         self.assertIn("tinyscreen-dashboard", info.get("subject", ""))
+
+
+class TestCsrfGuard(UpdaterTestBase):
+    """Finding 1/5: state-changing endpoints must be same-origin or carry
+    the custom header; a forged cross-site form POST has neither."""
+
+    def setUp(self):
+        super().setUp()
+        os.environ["TINYSCREEN_DOCKER_SOCK"] = self.sock_path
+        self.state_dir = tempfile.TemporaryDirectory()
+        os.environ["TINYSCREEN_STATE_DIR"] = self.state_dir.name
+        self.cert_dir = tempfile.TemporaryDirectory()
+        os.environ["TINYSCREEN_CERT_DIR"] = self.cert_dir.name
+        for mod in ["server"]:
+            if mod in sys.modules:
+                del sys.modules[mod]
+        import server
+        self.server = server
+        # RAW client here: we control headers per request to test the guard
+        self.raw = server.app.test_client()
+
+    def tearDown(self):
+        self.state_dir.cleanup()
+        self.cert_dir.cleanup()
+        os.environ.pop("TINYSCREEN_DOCKER_SOCK", None)
+        os.environ.pop("TINYSCREEN_STATE_DIR", None)
+        os.environ.pop("TINYSCREEN_CERT_DIR", None)
+        super().tearDown()
+
+    def test_post_without_origin_or_header_is_blocked(self):
+        # simulates a cross-site form POST: no custom header, no Origin
+        r = self.raw.post("/api/reset_device")
+        self.assertEqual(r.status_code, 403)
+        self.assertIn("blocked", r.get_json()["error"].lower())
+
+    def test_post_with_custom_header_passes_guard(self):
+        # passes the guard; endpoint then fails on its own terms (no device)
+        r = self.raw.post("/api/reset_device",
+                          headers={"X-TinyScreen-Request": "1"})
+        self.assertNotEqual(r.status_code, 403)
+
+    def test_post_with_same_origin_referer_passes_guard(self):
+        r = self.raw.post("/api/reset_device",
+                          headers={"Referer": "http://localhost/dashboard.html"},
+                          base_url="http://localhost")
+        self.assertNotEqual(r.status_code, 403)
+
+    def test_post_with_foreign_origin_is_blocked(self):
+        r = self.raw.post("/api/reset_device",
+                          headers={"Origin": "http://evil.example.com"},
+                          base_url="http://localhost")
+        self.assertEqual(r.status_code, 403)
+
+    def test_get_endpoints_are_not_guarded(self):
+        r = self.raw.get("/api/status")
+        self.assertNotEqual(r.status_code, 403)
+
+    def test_oversized_body_is_rejected(self):
+        # Finding 4: global MAX_CONTENT_LENGTH (1 MiB)
+        big = "x" * (1 * 1024 * 1024 + 1024)
+        r = self.raw.post("/api/configure", data=big,
+                          headers={"X-TinyScreen-Request": "1",
+                                   "Content-Type": "application/json"})
+        self.assertEqual(r.status_code, 413)
 
 
 if __name__ == "__main__":

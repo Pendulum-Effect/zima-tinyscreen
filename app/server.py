@@ -50,6 +50,67 @@ UPDATE_STATE_FILE = STATE_DIR / "update_state.json"
 
 app = Flask(__name__, static_folder=None)
 
+# --- Finding 4: cap request bodies globally ---------------------------
+# Only /api/upload_cert previously limited its input; every other POST
+# would read an unbounded body into memory (a trivial way to OOM a small
+# ZimaBlade). 1 MiB is comfortably above any real request here -- the
+# largest is a cert+key pair, itself separately capped at 64 KiB each.
+app.config["MAX_CONTENT_LENGTH"] = 1 * 1024 * 1024
+
+# --- Finding 1 + 5: same-origin / custom-header guard -----------------
+# There is (by design, for now) no login on this LAN appliance. The real
+# exposure that creates is CSRF: a random website you visit could make
+# your browser POST to http://<zimablade>:8989/api/reset_device behind
+# your back. Browsers let a page send a "simple" cross-site POST (form
+# content-types) WITHOUT a preflight -- but they will NOT let it set a
+# custom request header cross-origin without a preflight our server
+# never answers. So we require, on every state-changing request, either:
+#   - a same-origin Origin/Referer header (normal dashboard use), or
+#   - our custom X-TinyScreen-Request header (set by our own fetch()
+#     calls, and settable by intentional non-browser clients like a
+#     certbot deploy hook curling a renewed cert in).
+# A forged cross-site form POST has neither, and is refused. This is not
+# authentication -- anyone actually on your LAN is still trusted -- it
+# only closes the drive-by-browser hole.
+CUSTOM_REQUEST_HEADER = "X-TinyScreen-Request"
+_GUARDED_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
+
+
+def _same_origin(value):
+    """True if an Origin/Referer URL points at this same host:port. Host
+    match only -- scheme/port can legitimately differ (the dashboard is
+    reached on both :8989 and :8990), and an attacker can't forge a
+    victim host's Origin from another site anyway."""
+    if not value:
+        return False
+    try:
+        from urllib.parse import urlparse
+        their = urlparse(value).hostname
+    except (ValueError, TypeError):
+        return False
+    if not their:
+        return False
+    here = urlparse("http://" + (request.host or "")).hostname
+    return their == here
+
+
+@app.before_request
+def _csrf_guard():
+    if request.method not in _GUARDED_METHODS:
+        return None
+    if request.headers.get(CUSTOM_REQUEST_HEADER):
+        return None
+    if _same_origin(request.headers.get("Origin")) or \
+       _same_origin(request.headers.get("Referer")):
+        return None
+    return jsonify({
+        "ok": False,
+        "error": ("Request blocked: cross-site or headerless request to a "
+                  "state-changing endpoint. Browser requests must come from "
+                  "the dashboard itself; scripted clients should send the "
+                  f"{CUSTOM_REQUEST_HEADER} header."),
+    }), 403
+
 
 class RawSerialPort:
     """Minimal raw-device serial port, NOT pyserial -- see the matching
@@ -336,7 +397,7 @@ def store_timezone_name(tz_name):
 
 @app.route("/api/configure", methods=["POST"])
 def api_configure():
-    cfg = request.get_json(force=True, silent=True) or {}
+    cfg = request.get_json(silent=True) or {}
     # Timezone is server-side state (see store_timezone_name) -- persist
     # it before any serial work so it lands even if the device is
     # unplugged right now.
@@ -850,7 +911,7 @@ def api_flash():
     if not port:
         return jsonify({"ok": False, "error": "No ESP32 serial device found. Is it plugged in?"}), 400
 
-    body = request.get_json(force=True, silent=True) or {}
+    body = request.get_json(silent=True) or {}
     board_id = int(body.get("board", 0))
     fw_dir = firmware_dir_for_board(board_id)
 

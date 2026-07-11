@@ -1737,7 +1737,7 @@
 
     let res, data;
     try {
-      res = await fetch('/api/update_app', { method: 'POST' });
+      res = await fetch('/api/update_app', { method: 'POST', headers: { 'X-TinyScreen-Request': '1' } });
       data = await res.json();
     } catch (e) {
       data = { ok: false, error: 'Could not reach the app: ' + e };
@@ -2239,7 +2239,7 @@
           [readText(certPick.files[0]), readText(keyPick.files[0])]);
         const r = await fetch('/api/upload_cert', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json', 'X-TinyScreen-Request': '1' },
           body: JSON.stringify({ cert, key }),
         });
         const data = await r.json();
@@ -2271,7 +2271,7 @@
       revBtn.disabled = true;
       revStatus.textContent = 'Generating\u2026';
       try {
-        const r = await fetch('/api/reset_cert', { method: 'POST' });
+        const r = await fetch('/api/reset_cert', { method: 'POST', headers: { 'X-TinyScreen-Request': '1' } });
         const data = await r.json();
         revStatus.textContent = data.ok
           ? 'Done \u2713 back on a self-signed certificate.'
@@ -2469,7 +2469,7 @@
     try {
       const res = await fetch('/api/configure', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'X-TinyScreen-Request': '1' },
         body: JSON.stringify({
           board: currentBoard,
           pages: finalPages,
@@ -2532,7 +2532,7 @@
     try {
       const res = await fetch('/api/flash', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'X-TinyScreen-Request': '1' },
         body: JSON.stringify({ board: currentBoard }),
       });
       const data = await res.json();

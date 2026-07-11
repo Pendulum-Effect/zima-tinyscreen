@@ -498,7 +498,7 @@
     try {
       const flashRes = await fetch('/api/flash', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'X-TinyScreen-Request': '1' },
         body: JSON.stringify({ board: selectedBoard }),
       });
       const flashData = await flashRes.json();
@@ -517,7 +517,7 @@
 
       const cfgRes = await fetch('/api/configure', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'X-TinyScreen-Request': '1' },
         body: JSON.stringify(defaultConfigFor(selectedBoard)),
       });
       const cfgData = await cfgRes.json();

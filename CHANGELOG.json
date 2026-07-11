@@ -2,6 +2,17 @@
   "_comment": "Human-readable changelog for the dashboard's About tab -- written for people, not commit archaeologists. The dashboard fetches this from GitHub at page load (baked copy as fallback), so add an entry here with each release and every install sees it. Newest first. Dates are YYYY-MM-DD.",
   "entries": [
     {
+      "version": "0.9.1.0",
+      "date": "2026-07-10",
+      "title": "0.9.1: hardening the web surface",
+      "notes": [
+        "Security: the dashboard's action endpoints (flash, reset, update, certificate changes) now reject cross-site and headerless requests. Previously a random website you happened to visit could have quietly told your browser to POST commands to the dashboard on your network; that hole is closed. Normal use is unaffected -- anyone actually on your LAN, using the real dashboard, still has full access (there's still no login, by design for now).",
+        "Security: added a global 1 MiB cap on request bodies, so a malformed or malicious oversized request can't exhaust memory on a small ZimaBlade. (The certificate upload keeps its own tighter per-file limit on top.)",
+        "Under the hood: stopped parsing request bodies as JSON regardless of their declared type -- a small correctness and safety tidy-up that pairs with the cross-site protection above.",
+        "No feature or visual changes; no firmware changes. This is purely a safety patch."
+      ]
+    },
+    {
       "version": "0.9.0.0",
       "date": "2026-07-10",
       "title": "0.9.0: spring cleaning",
