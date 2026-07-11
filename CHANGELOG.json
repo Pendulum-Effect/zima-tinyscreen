@@ -2,6 +2,19 @@
   "_comment": "Human-readable changelog for the dashboard's About tab -- written for people, not commit archaeologists. The dashboard fetches this from GitHub at page load (baked copy as fallback), so add an entry here with each release and every install sees it. Newest first. Dates are YYYY-MM-DD.",
   "entries": [
     {
+      "version": "0.8.9.25",
+      "date": "2026-07-10",
+      "title": "Bring your own HTTPS certificate",
+      "notes": [
+        "New in General: an HTTPS Certificate manager. Upload your own certificate and private key (Let's Encrypt or any CA, PEM format) and the browser's untrusted-certificate warning disappears -- provided you visit the dashboard by the hostname on the certificate.",
+        "Uploads are validated before they're installed (malformed files and keys that don't match the certificate are rejected with a reason), the previous pair is kept as an on-disk backup, and new connections switch to the new certificate immediately -- no restart.",
+        "Automation-friendly: a certbot deploy hook can POST renewals straight to /api/upload_cert, which matters because Let's Encrypt certificates renew every 90 days.",
+        "One-click revert generates a fresh self-signed certificate if you change your mind.",
+        "Security tightening for everyone, whether you upload or not: the private key and its folder are now locked to owner-only permissions -- previously the key was created world-readable on the host. Fixed automatically the first time the updated app starts.",
+        "If you only use plain HTTP (port 8989), nothing changes for you -- HTTPS exists mainly so the WebSerial flasher can run."
+      ]
+    },
+    {
       "version": "0.8.9.24",
       "date": "2026-07-10",
       "title": "A fuller drive card, and friendlier waiting",

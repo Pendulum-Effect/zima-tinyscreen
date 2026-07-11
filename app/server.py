@@ -25,6 +25,8 @@ import glob
 import json
 import os
 import re
+import shutil
+import ssl
 import sys
 import subprocess
 import threading
@@ -898,6 +900,185 @@ def api_flash():
 
 
 # ---------------------------------------------------------------------
+# HTTPS certificate management
+# ---------------------------------------------------------------------
+# The HTTPS listener holds a mutable SSLContext (_https_ctx below).
+# Uploading a new cert/key pair calls load_cert_chain() on that same
+# object, so NEW connections present the new certificate immediately --
+# no restart, no dropped sessions. Validation runs the exact operation
+# the server performs at startup, so what passes here is what serves.
+
+_https_ctx = None
+
+
+def cert_dir() -> Path:
+    return Path(os.environ.get("TINYSCREEN_CERT_DIR", "/opt/tinyscreen/certs"))
+
+
+def _harden_cert_perms():
+    """Private keys are secrets: 0700 dir, 0600 files. Best-effort --
+    a read-only or odd filesystem shouldn't take HTTPS down with it."""
+    d = cert_dir()
+    try:
+        os.chmod(d, 0o700)
+    except OSError:
+        pass
+    for name in ("key.pem", "cert.pem", "key.pem.bak", "cert.pem.bak"):
+        p = d / name
+        if p.exists():
+            try:
+                os.chmod(p, 0o600)
+            except OSError:
+                pass
+
+
+def _openssl_cert_info(path):
+    """Subject / issuer / expiry via the openssl binary (already in the
+    image for self-signed generation) -- avoids a cryptography-library
+    dependency for three fields."""
+    try:
+        out = subprocess.run(
+            ["openssl", "x509", "-in", str(path), "-noout",
+             "-subject", "-issuer", "-enddate"],
+            capture_output=True, text=True, timeout=10)
+        if out.returncode != 0:
+            return {}
+        info = {}
+        for line in out.stdout.splitlines():
+            if line.startswith("subject="):
+                info["subject"] = line[len("subject="):].strip()
+            elif line.startswith("issuer="):
+                info["issuer"] = line[len("issuer="):].strip()
+            elif line.startswith("notAfter="):
+                info["expires"] = line[len("notAfter="):].strip()
+        info["self_signed"] = bool(info.get("subject")) and \
+            info.get("subject") == info.get("issuer")
+        return info
+    except (subprocess.SubprocessError, OSError):
+        return {}
+
+
+def _validate_pair(cert_text, key_text):
+    """Empty string if the PEM pair loads as a working TLS identity,
+    else a human-readable reason. Catches malformed PEM and a key that
+    doesn't match the certificate in one step."""
+    import tempfile
+    with tempfile.TemporaryDirectory() as td:
+        cp, kp = Path(td) / "c.pem", Path(td) / "k.pem"
+        cp.write_text(cert_text)
+        kp.write_text(key_text)
+        try:
+            probe = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+            probe.load_cert_chain(str(cp), str(kp))
+        except ssl.SSLError as e:
+            return "OpenSSL rejected the pair: " + (getattr(e, "reason", None) or str(e))
+        except (OSError, ValueError) as e:
+            return str(e)
+    return ""
+
+
+def _reload_https_ctx():
+    """Swap the live listener onto the current on-disk pair. Returns
+    True when new connections will use it; False if the listener isn't
+    running (started without certs) or the reload failed."""
+    if _https_ctx is None:
+        return False
+    d = cert_dir()
+    try:
+        _https_ctx.load_cert_chain(str(d / "cert.pem"), str(d / "key.pem"))
+        return True
+    except (ssl.SSLError, OSError) as e:
+        print(f"WARNING: HTTPS context reload failed: {e}")
+        return False
+
+
+def _install_pair(cert_text, key_text):
+    """Atomic install with a .bak of whatever was serving before, then
+    hot-reload. Returns whether the live listener picked it up."""
+    d = cert_dir()
+    d.mkdir(parents=True, exist_ok=True)
+    for name, text in (("cert.pem", cert_text), ("key.pem", key_text)):
+        target = d / name
+        if target.exists():
+            shutil.copy2(target, d / (name + ".bak"))
+        tmp = d / (name + ".new")
+        tmp.write_text(text)
+        os.chmod(tmp, 0o600)
+        os.replace(tmp, target)
+    _harden_cert_perms()
+    return _reload_https_ctx()
+
+
+def _generate_self_signed(into_dir):
+    """Same recipe as entrypoint.sh's first-run certificate."""
+    subprocess.run(
+        ["openssl", "req", "-x509", "-nodes", "-newkey", "rsa:2048",
+         "-keyout", str(Path(into_dir) / "key.pem"),
+         "-out", str(Path(into_dir) / "cert.pem"),
+         "-days", "3650", "-subj", "/CN=tinyscreen-dashboard",
+         "-addext", "subjectAltName=DNS:localhost,IP:127.0.0.1"],
+        capture_output=True, timeout=60, check=True)
+
+
+@app.route("/api/cert_info", methods=["GET"])
+def api_cert_info():
+    d = cert_dir()
+    cp = d / "cert.pem"
+    if not cp.exists():
+        return jsonify({"ok": True, "present": False,
+                        "https_running": _https_ctx is not None})
+    return jsonify({"ok": True, "present": True,
+                    "https_running": _https_ctx is not None,
+                    "has_backup": (d / "cert.pem.bak").exists(),
+                    **_openssl_cert_info(cp)})
+
+
+@app.route("/api/upload_cert", methods=["POST"])
+def api_upload_cert():
+    # Two shapes: JSON {"cert": ..., "key": ...} from the dashboard, or
+    # multipart files named cert/key -- the latter so a certbot
+    # deploy-hook can curl renewals straight in.
+    cert_text = key_text = None
+    if request.files:
+        cf, kf = request.files.get("cert"), request.files.get("key")
+        if cf:
+            cert_text = cf.read().decode("utf-8", "replace")
+        if kf:
+            key_text = kf.read().decode("utf-8", "replace")
+    else:
+        body = request.get_json(silent=True) or {}
+        cert_text = body.get("cert")
+        key_text = body.get("key")
+    if not cert_text or not key_text:
+        return jsonify({"ok": False, "error": "Need both a certificate and a private key (PEM)."}), 400
+    if len(cert_text) > 65536 or len(key_text) > 65536:
+        return jsonify({"ok": False, "error": "That file is too large to be a PEM cert or key."}), 400
+    err = _validate_pair(cert_text, key_text)
+    if err:
+        return jsonify({"ok": False, "error": err}), 400
+    reloaded = _install_pair(cert_text, key_text)
+    return jsonify({"ok": True, "hot_reloaded": reloaded,
+                    **_openssl_cert_info(cert_dir() / "cert.pem")})
+
+
+@app.route("/api/reset_cert", methods=["POST"])
+def api_reset_cert():
+    """Back to a fresh self-signed pair (the previous pair is kept as
+    .bak, same as any other install)."""
+    import tempfile
+    try:
+        with tempfile.TemporaryDirectory() as td:
+            _generate_self_signed(td)
+            cert_text = (Path(td) / "cert.pem").read_text()
+            key_text = (Path(td) / "key.pem").read_text()
+    except (subprocess.SubprocessError, OSError) as e:
+        return jsonify({"ok": False, "error": f"openssl generation failed: {e}"}), 500
+    reloaded = _install_pair(cert_text, key_text)
+    return jsonify({"ok": True, "hot_reloaded": reloaded,
+                    **_openssl_cert_info(cert_dir() / "cert.pem")})
+
+
+# ---------------------------------------------------------------------
 # Entrypoint: run both HTTP and HTTPS listeners in one process
 # ---------------------------------------------------------------------
 
@@ -906,14 +1087,23 @@ def run_http():
 
 
 def run_https():
-    cert_dir = Path(os.environ.get("TINYSCREEN_CERT_DIR", "/opt/tinyscreen/certs"))
-    cert_path = cert_dir / "cert.pem"
-    key_path = cert_dir / "key.pem"
+    global _https_ctx
+    d = cert_dir()
+    cert_path, key_path = d / "cert.pem", d / "key.pem"
     if not (cert_path.exists() and key_path.exists()):
-        print(f"WARNING: cert/key not found at {cert_dir}; HTTPS listener (8990) not started. "
+        print(f"WARNING: cert/key not found at {d}; HTTPS listener (8990) not started. "
               f"The WebSerial flasher pages need HTTPS to work.")
         return
-    app.run(host="0.0.0.0", port=8990, ssl_context=(str(cert_path), str(key_path)),
+    _harden_cert_perms()
+    ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    try:
+        ctx.load_cert_chain(str(cert_path), str(key_path))
+    except (ssl.SSLError, OSError) as e:
+        print(f"WARNING: could not load the certificate pair ({e}); "
+              f"HTTPS listener (8990) not started.")
+        return
+    _https_ctx = ctx  # uploads hot-swap the chain on this exact object
+    app.run(host="0.0.0.0", port=8990, ssl_context=ctx,
             threaded=True, use_reloader=False)
 
 

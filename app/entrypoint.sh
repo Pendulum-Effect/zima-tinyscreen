@@ -16,6 +16,13 @@ if [ ! -f "$CERT_DIR/cert.pem" ] || [ ! -f "$CERT_DIR/key.pem" ]; then
     -subj "/CN=tinyscreen-dashboard" \
     -addext "subjectAltName=DNS:localhost,IP:127.0.0.1"
 fi
+# Private keys are secrets. Tighten every boot (not just first run) so
+# installs that generated the key under the old default umask -- which
+# left it world-readable on the host -- get fixed by updating the app.
+chmod 700 "$CERT_DIR" 2>/dev/null || true
+for f in key.pem cert.pem key.pem.bak cert.pem.bak; do
+  [ -f "$CERT_DIR/$f" ] && chmod 600 "$CERT_DIR/$f" 2>/dev/null || true
+done
 
 # --- Update-state directory ------------------------------------------------
 # Bind-mounted from AppData in a proper install (so update outcomes survive

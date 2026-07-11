@@ -560,6 +560,16 @@
         <div class="card">
           <div class="card-header">
             <div>
+              <div class="card-title">HTTPS Certificate</div>
+              <div class="card-desc" id="cert-summary">Checking…</div>
+            </div>
+            <button class="btn btn-uniform" id="cert-manage-btn">Manage</button>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <div>
               <div class="card-title">Reset Device</div>
               <div class="card-desc">Having issues? Start the first-time setup process.</div>
               <div class="card-desc" id="reset-status" style="margin-top:2px; display:none;"></div>
@@ -572,7 +582,7 @@
       </div>
       <div id="general-sub" class="subview">
         <button class="sub-back" id="general-sub-back">&larr; Back to General</button>
-        <h2>Debugging</h2>
+        <h2 id="general-sub-title">Debugging</h2>
         <div id="general-sub-body"></div>
       </div>
     </section>
@@ -2089,6 +2099,7 @@
 
   // -- Debugging view (View Logs): last flash output + raw API state --
   async function openDebugView() {
+    document.getElementById('general-sub-title').textContent = 'Debugging';
     const body = document.getElementById('general-sub-body');
     body.textContent = '';
     const el = (tag, cls, text) => {
@@ -2140,6 +2151,169 @@
     });
   }
   document.getElementById('view-logs-btn').addEventListener('click', openDebugView);
+
+  // --- HTTPS certificate management --------------------------------------
+  let certInfo = null;
+
+  function certCN(dn) {
+    const m = /CN\s*=\s*([^,\/]+)/.exec(dn || '');
+    return m ? m[1].trim() : (dn || '—');
+  }
+
+  async function loadCertInfo() {
+    const summary = document.getElementById('cert-summary');
+    try {
+      const r = await fetch('/api/cert_info');
+      certInfo = await r.json();
+      if (!certInfo.present) {
+        summary.textContent = 'No certificate — HTTPS listener is off.';
+        return;
+      }
+      const kind = certInfo.self_signed ? 'Self-signed' : 'Custom (' + certCN(certInfo.issuer) + ')';
+      summary.textContent = kind + ' · expires ' + (certInfo.expires || '—');
+    } catch (e) {
+      summary.textContent = 'Could not read certificate info.';
+    }
+  }
+
+  function openCertView() {
+    document.getElementById('general-sub-title').textContent = 'HTTPS Certificate';
+    const body = document.getElementById('general-sub-body');
+    body.textContent = '';
+    const el = (tag, cls, text) => {
+      const n = document.createElement(tag);
+      if (cls) n.className = cls;
+      if (text !== undefined) n.textContent = text;
+      return n;
+    };
+    const info = el('div', 'card');
+    info.appendChild(el('div', 'card-title', 'Current certificate'));
+    const rows = [
+      ['Subject', certCN(certInfo && certInfo.subject)],
+      ['Issuer', certCN(certInfo && certInfo.issuer)],
+      ['Expires', (certInfo && certInfo.expires) || '—'],
+      ['Type', certInfo && certInfo.self_signed ? 'Self-signed' : 'Custom'],
+    ];
+    rows.forEach(([k, v]) => {
+      const row = el('div', 'card-desc', k + ': ' + v);
+      row.style.marginTop = '6px';
+      info.appendChild(row);
+    });
+    body.appendChild(info);
+
+    const up = el('div', 'card');
+    up.appendChild(el('div', 'card-title', 'Upload your own'));
+    up.appendChild(el('div', 'card-desc',
+      'Both files in PEM format. Use the full chain as the certificate if your ' +
+      'CA provides one (Let\u2019s Encrypt: fullchain.pem + privkey.pem). The browser ' +
+      'warning only goes away when you visit the dashboard by the exact hostname ' +
+      'on the certificate \u2014 and note Let\u2019s Encrypt certs renew every 90 days, ' +
+      'so plan on re-uploading (or point a certbot deploy hook at /api/upload_cert).'));
+    const mkPick = (label) => {
+      const wrap = el('div');
+      wrap.style.marginTop = '12px';
+      wrap.appendChild(el('div', 'card-desc', label));
+      const input = document.createElement('input');
+      input.type = 'file';
+      input.accept = '.pem,.crt,.cer,.key,.txt';
+      input.style.marginTop = '6px';
+      wrap.appendChild(input);
+      up.appendChild(wrap);
+      return input;
+    };
+    const certPick = mkPick('Certificate (fullchain, PEM)');
+    const keyPick = mkPick('Private key (PEM)');
+    const status = el('div', 'card-desc', '');
+    status.style.marginTop = '12px';
+    const btnRow = el('div');
+    btnRow.style.marginTop = '14px';
+    const uploadBtn = el('button', 'btn', 'Install certificate');
+    btnRow.appendChild(uploadBtn);
+    up.appendChild(btnRow);
+    up.appendChild(status);
+    body.appendChild(up);
+
+    const readText = (file) => new Promise((res, rej) => {
+      const r = new FileReader();
+      r.onload = () => res(r.result);
+      r.onerror = () => rej(new Error('read failed'));
+      r.readAsText(file);
+    });
+
+    uploadBtn.addEventListener('click', async () => {
+      if (!certPick.files[0] || !keyPick.files[0]) {
+        status.textContent = 'Pick both files first.';
+        return;
+      }
+      uploadBtn.disabled = true;
+      status.textContent = 'Validating and installing\u2026';
+      try {
+        const [cert, key] = await Promise.all(
+          [readText(certPick.files[0]), readText(keyPick.files[0])]);
+        const r = await fetch('/api/upload_cert', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ cert, key }),
+        });
+        const data = await r.json();
+        if (!data.ok) {
+          status.textContent = 'Rejected: ' + (data.error || 'unknown error');
+        } else {
+          status.textContent = 'Installed \u2713 ' + (data.hot_reloaded
+            ? 'New connections use it immediately.'
+            : 'It will be used the next time the app starts.');
+          await loadCertInfo();
+        }
+      } catch (e) {
+        status.textContent = 'Upload failed: ' + e.message;
+      } finally {
+        uploadBtn.disabled = false;
+      }
+    });
+
+    const rev = el('div', 'card');
+    rev.appendChild(el('div', 'card-title', 'Revert to self-signed'));
+    rev.appendChild(el('div', 'card-desc',
+      'Generates a fresh self-signed certificate and switches to it. The current ' +
+      'pair is kept as a backup on disk. Browsers will show the untrusted warning again.'));
+    const revStatus = el('div', 'card-desc', '');
+    revStatus.style.marginTop = '10px';
+    const revBtn = el('button', 'btn', 'Revert');
+    revBtn.style.marginTop = '12px';
+    revBtn.addEventListener('click', async () => {
+      revBtn.disabled = true;
+      revStatus.textContent = 'Generating\u2026';
+      try {
+        const r = await fetch('/api/reset_cert', { method: 'POST' });
+        const data = await r.json();
+        revStatus.textContent = data.ok
+          ? 'Done \u2713 back on a self-signed certificate.'
+          : 'Failed: ' + (data.error || 'unknown error');
+        if (data.ok) await loadCertInfo();
+      } catch (e) {
+        revStatus.textContent = 'Failed: ' + e.message;
+      } finally {
+        revBtn.disabled = false;
+      }
+    });
+    rev.appendChild(revBtn);
+    rev.appendChild(revStatus);
+    body.appendChild(rev);
+
+    const note = el('div', 'card-desc',
+      'Tip: if you only ever use the dashboard over plain HTTP (port 8989), none of ' +
+      'this affects you \u2014 HTTPS (8990) exists mainly so the WebSerial flasher can run. ' +
+      'And do the upload itself over HTTPS if strangers share your network: a key sent ' +
+      'over plain HTTP travels unencrypted.');
+    note.style.marginTop = '14px';
+    body.appendChild(note);
+
+    document.getElementById('general-main').classList.add('view-swap-out');
+    document.getElementById('general-sub').classList.add('open');
+  }
+
+  document.getElementById('cert-manage-btn').addEventListener('click', openCertView);
+  loadCertInfo();
   document.getElementById('general-sub-back').addEventListener('click', resetSubViews);
 
   // ---------------------------------------------------------------------

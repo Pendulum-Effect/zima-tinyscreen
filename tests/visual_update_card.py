@@ -97,6 +97,13 @@ class Stub(BaseHTTPRequestHandler):
                 return self._send({"ok": True, "about": about,
                                    "changelog": changelog,
                                    "source": {"about": "github", "changelog": "github"}})
+            if route == "/api/cert_info":
+                return self._send({"ok": True, "present": True,
+                                   "https_running": True, "has_backup": False,
+                                   "subject": "CN=tinyscreen-dashboard",
+                                   "issuer": "CN=tinyscreen-dashboard",
+                                   "expires": "Jul  8 04:12:00 2036 GMT",
+                                   "self_signed": True})
             if route == "/api/last_flash":
                 return self._send({"ok": True, "flash": {
                     "at": 1783550000, "ok": True, "board": 1,

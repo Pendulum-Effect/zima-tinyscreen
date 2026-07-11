@@ -18,7 +18,9 @@ Covers:
 """
 
 import copy
+import io
 import json
+import subprocess
 import os
 import re
 import sys
@@ -447,6 +449,8 @@ class TestServerEndpoints(UpdaterTestBase):
         os.environ["TINYSCREEN_DOCKER_SOCK"] = self.sock_path
         self.state_dir = tempfile.TemporaryDirectory()
         os.environ["TINYSCREEN_STATE_DIR"] = self.state_dir.name
+        self.cert_dir = tempfile.TemporaryDirectory()
+        os.environ["TINYSCREEN_CERT_DIR"] = self.cert_dir.name
         for mod in ["server"]:
             if mod in sys.modules:
                 del sys.modules[mod]
@@ -462,8 +466,10 @@ class TestServerEndpoints(UpdaterTestBase):
 
     def tearDown(self):
         self.state_dir.cleanup()
+        self.cert_dir.cleanup()
         os.environ.pop("TINYSCREEN_DOCKER_SOCK", None)
         os.environ.pop("TINYSCREEN_STATE_DIR", None)
+        os.environ.pop("TINYSCREEN_CERT_DIR", None)
         super().tearDown()
 
     def test_update_app_spawns_helper_with_correct_spec(self):
@@ -808,6 +814,116 @@ class TestServerEndpoints(UpdaterTestBase):
                    "layouts": {"temp": "mist_anim", "cpu": "default"}})
         self.assertEqual(p["layouts"], {"temp": "mist_anim", "cpu": "default"})
         self.assertNotIn("layouts", build({"board": 1, "pages": ["temp"]}))
+
+
+class TestCertEndpoints(UpdaterTestBase):
+    """HTTPS certificate upload/reset -- validation, permissions, backups.
+    Reuses the endpoint harness; generates real pairs with the openssl
+    binary (the same tool the app itself uses)."""
+
+    def setUp(self):
+        super().setUp()
+        os.environ["TINYSCREEN_DOCKER_SOCK"] = self.sock_path
+        self.state_dir = tempfile.TemporaryDirectory()
+        os.environ["TINYSCREEN_STATE_DIR"] = self.state_dir.name
+        self.cert_dir = tempfile.TemporaryDirectory()
+        os.environ["TINYSCREEN_CERT_DIR"] = self.cert_dir.name
+        for mod in ["server"]:
+            if mod in sys.modules:
+                del sys.modules[mod]
+        import server
+        self.server = server
+        self.app = server.app.test_client()
+
+    def tearDown(self):
+        self.state_dir.cleanup()
+        self.cert_dir.cleanup()
+        os.environ.pop("TINYSCREEN_DOCKER_SOCK", None)
+        os.environ.pop("TINYSCREEN_STATE_DIR", None)
+        os.environ.pop("TINYSCREEN_CERT_DIR", None)
+        super().tearDown()
+
+    def _gen_pair(self, cn):
+        td = tempfile.mkdtemp()
+        subprocess.run(
+            ["openssl", "req", "-x509", "-nodes", "-newkey", "rsa:2048",
+             "-keyout", os.path.join(td, "key.pem"),
+             "-out", os.path.join(td, "cert.pem"),
+             "-days", "30", "-subj", f"/CN={cn}"],
+            capture_output=True, timeout=60, check=True)
+        with open(os.path.join(td, "cert.pem")) as f:
+            cert = f.read()
+        with open(os.path.join(td, "key.pem")) as f:
+            key = f.read()
+        return cert, key
+
+    def test_upload_rejects_garbage_pem(self):
+        r = self.app.post("/api/upload_cert",
+                          json={"cert": "not a cert", "key": "not a key"})
+        self.assertEqual(r.status_code, 400)
+        self.assertFalse(r.get_json()["ok"])
+
+    def test_upload_rejects_missing_key(self):
+        cert, _ = self._gen_pair("solo")
+        r = self.app.post("/api/upload_cert", json={"cert": cert})
+        self.assertEqual(r.status_code, 400)
+
+    def test_upload_rejects_mismatched_pair(self):
+        cert_a, _ = self._gen_pair("alpha")
+        _, key_b = self._gen_pair("beta")
+        r = self.app.post("/api/upload_cert", json={"cert": cert_a, "key": key_b})
+        self.assertEqual(r.status_code, 400)
+        self.assertIn("rejected", r.get_json()["error"].lower())
+
+    def test_upload_installs_valid_pair_with_tight_perms(self):
+        cert, key = self._gen_pair("mydash.example.com")
+        r = self.app.post("/api/upload_cert", json={"cert": cert, "key": key})
+        self.assertEqual(r.status_code, 200)
+        data = r.get_json()
+        self.assertTrue(data["ok"])
+        self.assertIn("mydash.example.com", data.get("subject", ""))
+        d = self.cert_dir.name
+        self.assertTrue(os.path.exists(os.path.join(d, "cert.pem")))
+        key_mode = os.stat(os.path.join(d, "key.pem")).st_mode & 0o777
+        self.assertEqual(key_mode, 0o600)
+        dir_mode = os.stat(d).st_mode & 0o777
+        self.assertEqual(dir_mode, 0o700)
+        # served pair == uploaded pair
+        with open(os.path.join(d, "cert.pem")) as f:
+            self.assertEqual(f.read(), cert)
+
+    def test_second_upload_keeps_backup_of_first(self):
+        cert1, key1 = self._gen_pair("first")
+        cert2, key2 = self._gen_pair("second")
+        self.app.post("/api/upload_cert", json={"cert": cert1, "key": key1})
+        self.app.post("/api/upload_cert", json={"cert": cert2, "key": key2})
+        d = self.cert_dir.name
+        with open(os.path.join(d, "cert.pem.bak")) as f:
+            self.assertEqual(f.read(), cert1)
+        info = self.app.get("/api/cert_info").get_json()
+        self.assertTrue(info["has_backup"])
+        self.assertIn("second", info.get("subject", ""))
+
+    def test_multipart_upload_for_deploy_hooks(self):
+        cert, key = self._gen_pair("hooked")
+        r = self.app.post("/api/upload_cert", data={
+            "cert": (io.BytesIO(cert.encode()), "fullchain.pem"),
+            "key": (io.BytesIO(key.encode()), "privkey.pem"),
+        }, content_type="multipart/form-data")
+        self.assertEqual(r.status_code, 200)
+        self.assertIn("hooked", r.get_json().get("subject", ""))
+
+    def test_reset_returns_to_self_signed(self):
+        cert, key = self._gen_pair("custom")
+        self.app.post("/api/upload_cert", json={"cert": cert, "key": key})
+        r = self.app.post("/api/reset_cert")
+        self.assertEqual(r.status_code, 200)
+        data = r.get_json()
+        self.assertTrue(data["ok"])
+        self.assertTrue(data["self_signed"])
+        info = self.app.get("/api/cert_info").get_json()
+        self.assertTrue(info["self_signed"])
+        self.assertIn("tinyscreen-dashboard", info.get("subject", ""))
 
 
 if __name__ == "__main__":
