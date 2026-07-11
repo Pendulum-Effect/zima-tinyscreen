@@ -19,11 +19,72 @@ on:
   workflow_dispatch: {}  # lets you trigger a build manually from the Actions tab
 
 jobs:
+  # Host-side checks: everything testable without hardware, now actually
+  # gating the image push (build-and-push needs this job). The playwright
+  # visual test is deliberately NOT run here (needs a browser install and
+  # checks pixels, not logic) -- it stays a local/manual tool.
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v4
+
+      # The Arduino IDE sketch tree must stay byte-identical to
+      # firmware/src (same code, two packagings -- see README). Nothing
+      # enforced that until now except discipline; this fails the build
+      # on any drift, so an edit to one copy can't ship without the
+      # other.
+      - name: Guard against firmware copy drift
+        run: |
+          diff -u firmware/src/main.cpp firmware_arduino/zima_tinyscreen/zima_tinyscreen.ino \
+            || { echo "::error::firmware/src/main.cpp and the Arduino sketch have drifted -- re-sync them."; exit 1; }
+          diff -u firmware/src/tiny_fonts.h firmware_arduino/zima_tinyscreen/tiny_fonts.h \
+            || { echo "::error::tiny_fonts.h differs between the two firmware trees -- re-sync them."; exit 1; }
+          echo "firmware/ and firmware_arduino/ are in sync."
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install test dependencies (same pins as the image)
+        run: pip install -r app/requirements.txt -r collector/requirements.txt
+
+      - name: Firmware logic tests (compiled against stub headers)
+        run: |
+          g++ -std=c++17 -I tests/firmware_stubs -o /tmp/fw_test tests/test_firmware_logic.cpp
+          /tmp/fw_test
+
+      - name: Collector health tests
+        run: python3 tests/test_collector_health.py
+
+      - name: Updater tests (fake Docker daemon)
+        run: python3 tests/test_updater.py
+
+      - name: Serial endpoint tests (pty-pair fake device)
+        run: python3 tests/test_serial_endpoints.py
+
   build-firmware:
     runs-on: ubuntu-latest
     steps:
       - name: Check out repo
         uses: actions/checkout@v4
+
+      # Fail the whole build early if VERSION and CHANGELOG.json disagree
+      # -- the classic "bumped one, forgot the other" release mistake.
+      # With versioned image tags (see the push job) the VERSION string
+      # now names a real Docker Hub artifact, so it has to be right.
+      - name: Check VERSION matches newest CHANGELOG entry
+        run: |
+          python3 - << 'EOF'
+          import json, sys
+          v = open("VERSION").read().strip()
+          top = json.load(open("CHANGELOG.json"))["entries"][0]["version"]
+          if v != top:
+              sys.exit(f"VERSION file says {v} but the newest CHANGELOG.json "
+                       f"entry is {top} -- bump whichever one was forgotten.")
+          print(f"VERSION {v} matches the newest CHANGELOG entry.")
+          EOF
 
       - name: Set up Python (for PlatformIO)
         uses: actions/setup-python@v5
@@ -64,7 +125,7 @@ jobs:
           path: webflasher/firmware/
 
   build-and-push:
-    needs: build-firmware
+    needs: [build-firmware, checks]
     runs-on: ubuntu-latest
     steps:
       - name: Check out repo
@@ -85,6 +146,22 @@ jobs:
       - name: Set up Buildx
         uses: docker/setup-buildx-action@v3
 
+      # Stage the pinned esp-web-tools self-host bundle into the build
+      # context, so wizard.html loads it from THIS app instead of unpkg
+      # (works offline, version can't float, no CDN in the supply chain).
+      # dist/web/ is the package's official "locally host the JavaScript"
+      # bundle; the whole directory is copied because install-button.js
+      # lazy-loads sibling chunks from it. Keep this version in lockstep
+      # with the pinned CDN fallback in webflasher/wizard.html.
+      - name: Vendor esp-web-tools into webflasher/
+        run: |
+          npm pack esp-web-tools@10.2.1
+          tar -xzf esp-web-tools-10.2.1.tgz
+          mkdir -p webflasher/vendor/esp-web-tools
+          cp -r package/dist/web/. webflasher/vendor/esp-web-tools/
+          rm -rf package esp-web-tools-10.2.1.tgz
+          ls webflasher/vendor/esp-web-tools/
+
       - name: Stamp app version
         run: |
           # Unlike a Docker image digest (which can't be known until AFTER
@@ -102,6 +179,7 @@ jobs:
           # keys off the commit SHA below, which can't be forgotten the
           # way a manual bump can.
           APP_VERSION=$(tr -d '[:space:]' < VERSION 2>/dev/null || echo "unknown")
+          echo "APP_VERSION=${APP_VERSION}" >> "$GITHUB_ENV"
           cat > webflasher/app_version.json << EOF
           {"version": "${APP_VERSION}", "commit": "${{ github.sha }}", "branch": "${{ github.ref_name }}", "repo": "${{ github.repository }}"}
           EOF
@@ -114,5 +192,13 @@ jobs:
           file: app/Dockerfile
           platforms: linux/amd64   # ZimaBoard/ZimaBlade are x86
           push: true
-          tags: ${{ secrets.DOCKERHUB_USERNAME }}/tinyscreen-dashboard:latest
-
+          # :latest is what installs and the self-updater track; the
+          # version tag makes every release an addressable, pinnable
+          # artifact -- so a CHANGELOG entry now names a real image you
+          # can roll back to by editing the compose file, and "what
+          # exactly is running" has a stable answer beyond a mutable
+          # :latest. The CI check in the firmware job guarantees this
+          # tag agrees with the newest CHANGELOG entry.
+          tags: |
+            ${{ secrets.DOCKERHUB_USERNAME }}/tinyscreen-dashboard:latest
+            ${{ secrets.DOCKERHUB_USERNAME }}/tinyscreen-dashboard:${{ env.APP_VERSION }}
