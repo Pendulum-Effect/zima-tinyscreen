@@ -1181,8 +1181,28 @@ def api_reset_cert():
 # Entrypoint: run both HTTP and HTTPS listeners in one process
 # ---------------------------------------------------------------------
 
+# --- Production WSGI server (0.9.3) -----------------------------------
+# Both listeners used to run on Flask's built-in development server
+# (app.run / Werkzeug), which Werkzeug's own docs say not to deploy: no
+# request timeouts, weaker connection handling, and a "this is a
+# development server" warning on every boot. cheroot (the production
+# server underneath CherryPy) replaces it on both ports. cheroot was
+# picked over the more common waitress for exactly one reason: it
+# terminates TLS natively via a pluggable ssl.SSLContext, which preserves
+# the certificate hot-swap trick -- _reload_https_ctx() calls
+# load_cert_chain() on the very SSLContext object the listener wraps new
+# connections with, so an uploaded certificate takes effect immediately,
+# no restart. waitress has no TLS support at all.
+#
+# cheroot is imported lazily inside these functions (not at module top)
+# so the test suite -- which imports this module for its Flask routes but
+# never starts a real listener -- keeps working in environments where
+# only Flask is installed.
+
 def run_http():
-    app.run(host="0.0.0.0", port=8989, threaded=True, use_reloader=False)
+    from cheroot import wsgi
+    server = wsgi.Server(("0.0.0.0", 8989), app, server_name="tinyscreen")
+    server.start()
 
 
 def run_https():
@@ -1202,8 +1222,20 @@ def run_https():
               f"HTTPS listener (8990) not started.")
         return
     _https_ctx = ctx  # uploads hot-swap the chain on this exact object
-    app.run(host="0.0.0.0", port=8990, ssl_context=ctx,
-            threaded=True, use_reloader=False)
+
+    from cheroot import wsgi
+    from cheroot.ssl.builtin import BuiltinSSLAdapter
+    server = wsgi.Server(("0.0.0.0", 8990), app, server_name="tinyscreen")
+    # BuiltinSSLAdapter builds its own context from the file paths; we
+    # immediately replace it with OUR context object so the existing
+    # hot-swap path (_reload_https_ctx -> _https_ctx.load_cert_chain)
+    # keeps affecting live connections exactly as before. The adapter
+    # also makes cheroot set wsgi.url_scheme = "https", which
+    # _request_is_https() relies on.
+    adapter = BuiltinSSLAdapter(str(cert_path), str(key_path))
+    adapter.context = ctx
+    server.ssl_adapter = adapter
+    server.start()
 
 
 if __name__ == "__main__":

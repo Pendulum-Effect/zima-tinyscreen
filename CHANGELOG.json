@@ -2,6 +2,18 @@
   "_comment": "Human-readable changelog for the dashboard's About tab -- written for people, not commit archaeologists. The dashboard fetches this from GitHub at page load (baked copy as fallback), so add an entry here with each release and every install sees it. Newest first. Dates are YYYY-MM-DD.",
   "entries": [
     {
+      "version": "0.9.3.0",
+      "date": "2026-07-11",
+      "title": "0.9.3: infrastructure hardening",
+      "notes": [
+        "The web server underneath the dashboard grew up: both the HTTP and HTTPS listeners now run on cheroot, a production-grade server, instead of Flask's built-in development server (which its own makers say not to deploy). Certificate uploads still take effect instantly, no restart needed.",
+        "The setup wizard no longer loads its flashing component from a CDN on the internet -- it's now bundled into the app itself, pinned to an exact version. The wizard now works on a ZimaBlade with no internet access, and a compromised or changed CDN copy can't affect your flasher.",
+        "Every Python library the app uses is now pinned to an exact, verified version, so two builds of the same code can't quietly ship different library behavior.",
+        "Releases now get their own Docker image tag (like :0.9.3.0) alongside :latest, so any version in this changelog is a real image you can pin or roll back to. A new build-time check also refuses to ship if the version number and changelog ever disagree.",
+        "No firmware, feature, or visual changes."
+      ]
+    },
+    {
       "version": "0.9.2.0",
       "date": "2026-07-10",
       "title": "0.9.2: more security tidying",

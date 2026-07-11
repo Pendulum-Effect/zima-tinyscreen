@@ -6,7 +6,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends openssl bash sm
     && rm -rf /var/lib/apt/lists/*
 
 COPY collector/requirements.txt collector/requirements.txt
-RUN pip install --no-cache-dir -r collector/requirements.txt flask esptool tzdata
+COPY app/requirements.txt app/requirements.txt
+# Everything pinned exactly (see the comments in the two requirements
+# files): the self-updater always re-pulls, so unpinned deps meant two
+# builds of the same code could differ.
+RUN pip install --no-cache-dir -r collector/requirements.txt -r app/requirements.txt
 
 COPY collector/ collector/
 COPY webflasher/ webflasher/

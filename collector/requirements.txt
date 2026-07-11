@@ -1,1 +1,3 @@
-psutil>=5.9
+# Pinned exactly as of 0.9.3 (see app/requirements.txt for why).
+# Verified against PyPI on 2026-07-11.
+psutil==7.0.0

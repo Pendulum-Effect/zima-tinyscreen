@@ -1,0 +1,19 @@
+# Server-side dependencies, pinned EXACTLY (0.9.3). The self-updater
+# always re-pulls the image, so unpinned installs meant two builds of
+# identical repo code could ship different library versions -- an
+# upstream release could change behavior (or break the flash path)
+# with no corresponding change here. Bump these deliberately, one line
+# per release note.
+#
+# Versions verified against PyPI on 2026-07-11.
+flask==3.1.3
+# Production WSGI server for both listeners. Chosen over waitress
+# because it terminates TLS natively via a pluggable ssl.SSLContext,
+# which the certificate hot-swap in server.py depends on.
+cheroot==11.1.2
+# The server invokes the esptool CLI with v5-style dashed commands
+# ("write-flash") -- keep this on 5.x.
+esptool==5.3.0
+# IANA zone database for zoneinfo (the slim base image ships none);
+# used by the collector's DST-corrected local_min field.
+tzdata==2025.2

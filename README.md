@@ -72,6 +72,8 @@ zima-tinyscreen/
 ├── webflasher/           wizard.html + dashboard.html + firmware binaries
 ├── about.json            Content for the dashboard's About tab
 ├── CHANGELOG.json        Version history shown in the dashboard
+├── ROADMAP.md            Working handover doc on the road to 1.0
+│                         (state, done, next up -- removed at release)
 └── VERSION               Project version (firmware has its own, in main.cpp)
 ```
 

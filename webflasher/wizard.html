@@ -5,7 +5,26 @@
 <meta name="theme-color" content="#0b1418">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Tiny Screen Setup</title>
-<script type="module" src="https://unpkg.com/esp-web-tools@10/dist/web/install-button.js?module"></script>
+<!-- esp-web-tools (the <esp-web-install-button> element): served from
+     THIS app, not a CDN. CI vendors the pinned package's official
+     self-host bundle (dist/web/) into webflasher/vendor/esp-web-tools/
+     at image build time -- see .github/workflows/docker-build-push.yml.
+     That fixes three problems with the old unpkg <script src> in one go:
+     the wizard now works on a ZimaBlade with no internet access, the
+     version can't silently float (the old URL pinned only the major,
+     @10), and a CDN compromise can't inject code into the flasher.
+     The CDN import below is a FALLBACK ONLY, for dev checkouts of the
+     repo where the CI vendoring step hasn't produced vendor/ -- and even
+     the fallback is pinned to the exact same version. -->
+<script type="module">
+  try {
+    await import("./vendor/esp-web-tools/install-button.js");
+  } catch (e) {
+    console.warn("[wizard] vendored esp-web-tools not found (dev checkout?), " +
+                 "falling back to pinned CDN copy:", e);
+    await import("https://unpkg.com/esp-web-tools@10.2.1/dist/web/install-button.js?module");
+  }
+</script>
 <style>
   :root {
     --bg: #0b1418;
