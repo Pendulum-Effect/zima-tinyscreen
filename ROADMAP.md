@@ -6,7 +6,7 @@ eventually hit context limits). It carries the current state, what's
 done, and what's next, so any session can pick up where the last left
 off. **Delete this file at the final 1.0 release.**
 
-Snapshot as of **0.9.3.0** (2026-07-11).
+Snapshot as of **0.9.4.0** (2026-07-11).
 
 ## How to get oriented fast
 
@@ -32,6 +32,10 @@ Snapshot as of **0.9.3.0** (2026-07-11).
 - [x] **NAS pool detection verified accurate against a real
       ZimaOS-created storage pool** (hardware-validated 2026-07-11; was
       the biggest known unknown).
+- [x] **0.9.3 hardware verification round passed** (2026-07-11):
+      cheroot on both ports, WebSerial flash from :8990 with the
+      vendored esp-web-tools bundle, cert-upload hot-swap, self-update
+      cycle -- all confirmed on the real box.
 - [x] **0.9.3** Infrastructure hardening:
   - [x] Production WSGI server (cheroot) on both listeners, replacing
         Flask's dev server; cert hot-swap preserved (same SSLContext
@@ -45,27 +49,31 @@ Snapshot as of **0.9.3.0** (2026-07-11).
   - [x] Versioned Docker image tags (`:0.9.3.0` alongside `:latest`) +
         CI check that VERSION matches the newest CHANGELOG entry.
 
+- [x] **0.9.4** Testing infrastructure:
+  - [x] `tests/test_serial_endpoints.py`: 19 tests for `/api/flash`,
+        `/api/configure`, `/api/reset_device` against a pty-pair fake
+        device (server runs its REAL stty/raw-fd path on the pty slave)
+        and a fake `esptool` on PATH. Covers the exact esptool v5
+        invocation contract, board 0/1 variant selection, failure ->
+        BOOT-button hint, last_flash persistence, ack/no-ack/garbage
+        replies, timezone validation on the wire, CSRF coverage of all
+        three endpoints, and -- via an ordering log all fakes append to
+        -- the pause -> serial work -> resume choreography on every
+        path including failures. Learned in the making: ack matching is
+        an exact substring match on ArduinoJson's COMPACT serialization
+        (no spaces); any fake device must reply byte-compatibly.
+  - [x] CI `checks` job now gates the image push: all four host-side
+        suites run on every build (previously CI never ran tests).
+  - [x] CI guard against firmware copy drift (byte-diff of both trees).
+
 ## Next up (suggested order)
 
-- [ ] **Hardware round for 0.9.3 verification** (nothing here is
-      testable without the real box):
-  - cheroot serving both ports on the ZimaBlade; WebSerial still happy
-    on :8990; cert upload hot-swap still instant.
-  - Wizard flashing with the vendored esp-web-tools bundle, ideally with
-    the box's internet unplugged to prove the CDN is truly gone.
-  - One full self-update cycle (old image -> 0.9.3.0) to confirm the
-    pinned-deps image behaves; check `esptool` v5 flash via `/api/flash`.
-- [ ] **Test the `/api/flash` and `/api/configure` serial paths** --
-      the two endpoints that pause/resume the collector around exclusive
-      serial access have no coverage. A pty-pair fake serial device
-      (same philosophy as the existing fake-dockerd tests) could cover
-      the pause/resume choreography, esptool failure -> hint path, and
-      configure-ack handling.
-- [ ] **CI guard against firmware copy drift** -- `firmware/src/` and
-      `firmware_arduino/` are byte-identical today but only by
-      discipline. Add a workflow step that diffs them and fails on drift
-      (or generate the .ino tree in CI and stop committing it).
-- [ ] **Security posture decision for 1.0** -- the app is deliberately
+- [ ] **Hardware round for 0.9.4** (small): one real flash + one real
+      settings save through the dashboard, just to confirm nothing in
+      the (unchanged) app behavior regressed. Nothing else in 0.9.4
+      touches runtime code paths.
+- [ ] **Security posture decision for 1.0 (proposed 0.9.5, needs a
+      design discussion first, not just implementation)** -- the app is deliberately
       unauthenticated on the LAN while being a privileged container with
       the Docker socket. Either add an optional dashboard PIN/token, or
       write the trust model down explicitly (short THREAT_MODEL section

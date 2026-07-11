@@ -176,13 +176,20 @@ g++ -std=c++17 -I tests/firmware_stubs -o /tmp/fw_test tests/test_firmware_logic
 python3 tests/test_updater.py
 python3 tests/test_collector_health.py
 
+# exclusive-serial endpoints (/api/flash, /api/configure, /api/reset_device)
+# against a pty-pair fake device + fake esptool -- covers the collector
+# pause/resume choreography and the real wire protocol
+python3 tests/test_serial_endpoints.py
+
 # dashboard visual states (needs playwright + chromium)
 python3 tests/visual_update_card.py
 ```
 
 What still needs real hardware each round: how things look on the actual
-glass (panel gamma differs from any simulation) and anything involving
-the physical serial link.
+glass (panel gamma differs from any simulation), and physical-USB
+behavior (enumeration, bootloader entry, a board actually surviving a
+flash) -- the serial *protocol* and the collector pause/resume
+choreography around it are now covered by the pty-pair suite above.
 
 ## Customizing the look
 

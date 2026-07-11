@@ -2,6 +2,17 @@
   "_comment": "Human-readable changelog for the dashboard's About tab -- written for people, not commit archaeologists. The dashboard fetches this from GitHub at page load (baked copy as fallback), so add an entry here with each release and every install sees it. Newest first. Dates are YYYY-MM-DD.",
   "entries": [
     {
+      "version": "0.9.4.0",
+      "date": "2026-07-11",
+      "title": "0.9.4: the flash path gets a test rig",
+      "notes": [
+        "The three operations that take exclusive control of the display's serial connection -- flashing firmware, sending settings, and factory reset -- now have a full automated test suite. A simulated device on a real serial channel answers exactly like the board's firmware does, and a scripted stand-in for the flashing tool lets every success and failure path run without hardware. 19 new tests cover the whole dance, including making sure the stats collector always pauses before, and resumes after, every one of these operations -- even when they fail.",
+        "Those tests (and all the existing ones) now run automatically on every build, and a failing test blocks the release from publishing. Previously the test suite only ran when someone remembered to run it.",
+        "A new build check guarantees the two copies of the firmware source (the PlatformIO tree and the Arduino IDE sketch) are byte-for-byte identical, so an edit to one can never ship without the other.",
+        "No firmware, feature, or visual changes -- and no changes to the app's behavior at all; this release is entirely about catching future mistakes before they reach you."
+      ]
+    },
+    {
       "version": "0.9.3.0",
       "date": "2026-07-11",
       "title": "0.9.3: infrastructure hardening",
