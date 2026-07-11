@@ -2,6 +2,17 @@
   "_comment": "Human-readable changelog for the dashboard's About tab -- written for people, not commit archaeologists. The dashboard fetches this from GitHub at page load (baked copy as fallback), so add an entry here with each release and every install sees it. Newest first. Dates are YYYY-MM-DD.",
   "entries": [
     {
+      "version": "0.9.0.0",
+      "date": "2026-07-10",
+      "title": "0.9.0: spring cleaning",
+      "notes": [
+        "No new features this round -- instead, the whole project got tidied for the road to 1.0.",
+        "The README was rewritten to describe the app as it actually is today: all seven screen layouts, the settings dashboard, drive health, the certificate manager, the real protocol fields (including the RAM-is-GiB / disks-are-decimal-GB distinction), and how to run the test suite.",
+        "Two real firmware bugs fell out of a full compiler-warnings pass: the NAS gauge's color was written as a 24-bit value that silently truncated (the on-screen lavender was an accident), and the screensaver clock's text buffer was one bad value away from truncating. Both fixed.",
+        "Duplicated code consolidated (the dashboard had four identical copies of one small helper), stale comments corrected, Python bytecode caches removed from the repo, and a .gitignore added so they stay out."
+      ]
+    },
+    {
       "version": "0.8.9.25",
       "date": "2026-07-10",
       "title": "Bring your own HTTPS certificate",

@@ -179,6 +179,11 @@ class JsonVariantStub {
   void operator=(const String &x) { v->kind = JsonValue::STR; v->s = x.s; }
 
   // reads with ArduinoJson's `value | fallback` idiom
+  // NOTE: this implicit int conversion makes chained subscripts like
+  // doc["a"]["b"] emit a -Wall "ambiguous with built-in int[pointer]"
+  // warning. That's a stub-only quirk (real ArduinoJson uses constrained
+  // templates); it can't be `explicit` because real firmware code uses
+  // `int x = doc["k"];`, which is idiomatic ArduinoJson. Benign -- leave it.
   operator int() const { return (int)(v->kind == JsonValue::INT ? v->i : (long)v->f); }
   operator const char *() const { return v->kind == JsonValue::STR ? v->s.c_str() : nullptr; }
   friend String operator|(const JsonVariantStub &a, const String &d) {

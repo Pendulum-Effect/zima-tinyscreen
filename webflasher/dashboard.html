@@ -1846,12 +1846,6 @@
     }
     aboutData = data;
 
-    const el = (tag, cls, text) => {
-      const n = document.createElement(tag);
-      if (cls) n.className = cls;
-      if (text !== undefined) n.textContent = text;
-      return n;
-    };
     const link = (href, text) => {
       const a = document.createElement('a');
       a.href = href; a.target = '_blank'; a.rel = 'noopener';
@@ -2034,6 +2028,17 @@
   // changelog, full acknowledgements, debug logs). Back or any nav click
   // returns to the mains.
   // ---------------------------------------------------------------------
+  // Tiny DOM helper used by every dynamically-built view (About,
+  // Debugging, HTTPS Certificate): make an element, optionally with a
+  // class and text. One shared copy -- it used to be pasted into each
+  // view builder.
+  const el = (tag, cls, text) => {
+    const n = document.createElement(tag);
+    if (cls) n.className = cls;
+    if (text !== undefined) n.textContent = text;
+    return n;
+  };
+
   function resetSubViews() {
     document.querySelectorAll('.subview').forEach(s => s.classList.remove('open'));
     ['about-main', 'general-main'].forEach(id => {
@@ -2043,12 +2048,6 @@
   }
 
   function openAboutSub(kind) {
-    const el = (tag, cls, text) => {
-      const n = document.createElement(tag);
-      if (cls) n.className = cls;
-      if (text !== undefined) n.textContent = text;
-      return n;
-    };
     const body = document.getElementById('about-sub-body');
     body.textContent = '';
     if (kind === 'changelog') {
@@ -2102,12 +2101,6 @@
     document.getElementById('general-sub-title').textContent = 'Debugging';
     const body = document.getElementById('general-sub-body');
     body.textContent = '';
-    const el = (tag, cls, text) => {
-      const n = document.createElement(tag);
-      if (cls) n.className = cls;
-      if (text !== undefined) n.textContent = text;
-      return n;
-    };
     const section = (title) => {
       const c = el('div', 'card');
       c.appendChild(el('div', 'card-title', title));
@@ -2180,12 +2173,6 @@
     document.getElementById('general-sub-title').textContent = 'HTTPS Certificate';
     const body = document.getElementById('general-sub-body');
     body.textContent = '';
-    const el = (tag, cls, text) => {
-      const n = document.createElement(tag);
-      if (cls) n.className = cls;
-      if (text !== undefined) n.textContent = text;
-      return n;
-    };
     const info = el('div', 'card');
     info.appendChild(el('div', 'card-title', 'Current certificate'));
     const rows = [

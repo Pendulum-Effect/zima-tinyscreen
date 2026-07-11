@@ -16,8 +16,9 @@
 // board 0. This is a build-time setting per physical board you're
 // currently flashing, not something this source file controls.
 //
-// See webflasher/settings.html for the browser-side configurator that
-// sends this command right after flashing.
+// See webflasher/wizard.html (first-time setup + flashing) and
+// webflasher/dashboard.html (everyday settings) for the browser side
+// that sends this command.
 //
 // Libraries (install via PlatformIO, see platformio.ini, or Arduino
 // Library Manager if using the firmware_arduino/ sketch):
@@ -40,7 +41,7 @@
 // "Software Version" field via the get_config command below. No
 // auto-update-checking mechanism exists yet (that's a separate, not-yet
 // -built feature) -- this just answers "what's currently on my device."
-#define FIRMWARE_VERSION "1.17.0"
+#define FIRMWARE_VERSION "1.18.0"
 
 // Note: screen dimensions are NOT fixed -- board 1 (1.69") is 240x280,
 // taller than board 0's 240x240. See screenW/screenH globals, set from
@@ -1030,7 +1031,10 @@ void drawPageNAS() {
   char big[16], total[24];
   snprintf(big, sizeof(big), "%d%%", (int)round(stats.nas_pct));
   snprintf(total, sizeof(total), "%.0f GB", stats.nas_total_gb);
-  drawRingGauge("NAS USAGE", stats.nas_pct, 0x9F7BC0, big, total);
+  // Lavender accent. (This was once written as 24-bit 0x9F7BC0, which
+  // silently truncated in the uint16_t RGB565 parameter -- the on-screen
+  // color was an accident of the low bits. rgb565() says what we mean.)
+  drawRingGauge("NAS USAGE", stats.nas_pct, rgb565(159, 123, 192), big, total);
 }
 
 // --- ZimaOS Graph layout: rolling rate history ------------------------
@@ -1563,7 +1567,7 @@ void drawScreensaver() {
   canvas->fillScreen(COL_BG);
   int nowLocal = localNowMin();
   if (nowLocal >= 0) {
-    char timeStr[6];
+    char timeStr[12];  // "23:59" needs 6; extra room so snprintf never truncates
     snprintf(timeStr, sizeof(timeStr), "%d:%02d", nowLocal / 60, nowLocal % 60);
     canvas->setTextColor(COL_SUBTEXT);
     canvas->setTextSize(3);
@@ -1896,7 +1900,7 @@ void loop() {
 
   if (!config.configured) {
     // Nothing to draw yet -- just keep listening on Serial for the first
-    // set_config command from webflasher/settings.html.
+    // set_config command from the dashboard (or wizard, on first setup).
     return;
   }
 

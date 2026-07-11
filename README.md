@@ -1,325 +1,193 @@
 # Tiny Screen
 
-A tiny external status display for a ZimaBlade / ZimaBoard: a Python script
-collects vital stats and streams them over USB to an ESP32-S3, which draws
-them on a small display. Packaged as a one-click ZimaOS app that also hosts
-a browser-based settings page + WebSerial firmware flasher — no toolchain
-required to set up the ESP32-S3.
+A tiny external status display for a ZimaBlade / ZimaBoard: a Python
+collector reads vital stats and streams them over USB serial to an
+ESP32-S3, which draws them on a small LCD. Packaged as a one-click ZimaOS
+app that also hosts a browser settings dashboard and a WebSerial firmware
+flasher -- no toolchain needed to set up the ESP32-S3.
 
-**One firmware build supports two boards**, chosen at runtime via a
-settings page rather than at compile time:
-- **Board 0 — Waveshare ESP32-S3-LCD-1.3**: square 240x240, ST7789V2,
-  QMI8658 6-axis IMU, **no touchscreen**. Since there's no touch input,
-  navigation is auto-cycle-on-a-timer or a single static page.
-- **Board 1 — Waveshare ESP32-S3-Touch-LCD-1.69**: 240x280 (taller, not
-  square), ST7789V2, CST816T touch. Swipe left/right between pages,
-  optionally combined with auto-cycle too.
-  **Important build difference:** this board uses the ESP32-S3's native USB
-  peripheral directly (no separate CH343P-style UART bridge chip like
-  board 0 has), so it needs **USB CDC On Boot: Enabled** in Arduino IDE
-  (or `ARDUINO_USB_CDC_ON_BOOT=1` in PlatformIO) — the *opposite* setting
-  from board 0. This is a per-physical-board build setting, not something
-  the firmware itself branches on.
+## Hardware: one firmware, two boards
 
-Which pages to show (CPU load/wattage, RAM, MMC storage, network, temperature),
-cycling behavior, and brightness are all configured through
-`webflasher/wizard.html` and pushed to the device over WebSerial right
-after flashing — see "Configure and flash from the browser" below.
+The same firmware supports both boards; which one you have is chosen in
+the settings, not at compile time:
 
-Pin mappings for both boards were extracted from Waveshare's schematic
-PDFs / wiki and cross-checked against known ESP32-S3 hardware facts. Both
-boards have been flash-tested against physical hardware and confirmed
-working end-to-end (live ZimaBlade data, multi-page carousel, auto-cycle,
-brightness, and — for board 1 — touch swipe navigation), including via
-the fully server-side wizard flow (`wizard.html`) with no computer involved.
+- **Board 0 -- Waveshare ESP32-S3-LCD-1.3**: square 240x240, ST7789V2,
+  no touchscreen. Pages auto-cycle on a timer (or show a single page).
+- **Board 1 -- Waveshare ESP32-S3-Touch-LCD-1.69**: 240x280 (taller than
+  wide), ST7789V2, CST816T touch. Swipe between pages, with optional
+  auto-cycle on top.
+
+**One build setting differs**: board 1 uses the ESP32-S3's native USB
+(no UART bridge chip), so it needs **USB CDC On Boot: Enabled** in
+Arduino IDE -- the opposite of board 0. This is compile-time, which is
+why CI builds two binaries (see `firmware/platformio.ini`); everything
+else is runtime config.
+
+## The two web pages
+
+- **`wizard.html`** -- first-time setup: pick your board, flash the
+  firmware, send the initial settings. Works two ways: through your
+  browser via WebSerial (board plugged into your computer, use the
+  HTTPS port), or fully server-side (board plugged into the
+  ZimaBlade itself, plain HTTP is fine).
+- **`dashboard.html`** -- the daily driver: General (device status, app
+  updates, debugging, HTTPS certificate), Layouts (choose each page's
+  look with live previews), Screen (brightness, rotation, night mode,
+  screensaver), and About.
+
+## Screen layouts
+
+Every stat page has a default look plus alternates, picked per-page in
+the dashboard's Layouts tab:
+
+| Page        | Layouts                                                |
+| ----------- | ------------------------------------------------------ |
+| Temperature | TinyScreen default, Zima App Mist (+ animated)          |
+| CPU         | default, ZimaOS Dial, Zima App Ring                     |
+| RAM         | default, ZimaOS Dial, Zima App Ring                     |
+| Network     | default, Zima App Bars, ZimaOS Graph (rolling history)  |
+| System disk | default, Zima App Dots, ZimaOS Drive (with health pill) |
+| NAS pool    | default, Zima App Dots, ZimaOS Drive (with health pill) |
+
+The ZimaOS Drive layout shows real drive health: the system eMMC via the
+kernel's JEDEC health registers, and SATA/NVMe pool drives via
+`smartctl` (bundled in the app image). Health is polled every ten
+minutes; when it can't be determined, the pill simply isn't shown.
+
+## Repo map
 
 ```
 zima-tinyscreen/
-├── collector/            Python stats collector (runs on the ZimaBlade/ZimaBoard)
-├── firmware/              ESP32-S3 firmware (PlatformIO, C++) -- supports both boards
-├── firmware_arduino/      Same firmware as an Arduino IDE sketch folder
-├── webflasher/            wizard.html (setup) + dashboard.html (settings dashboard)
-├── app/                   ZimaOS/Docker packaging (serves webflasher on :8989 / :8990)
-└── README.md
+├── app/                  ZimaOS/Docker packaging: Flask server (HTTP :8989,
+│                         HTTPS :8990), collector lifecycle, self-updater,
+│                         HTTPS certificate manager
+├── collector/            Python stats collector (runs inside the container)
+├── firmware/             ESP32-S3 firmware (PlatformIO, C++), incl. generated
+│                         fonts in src/tiny_fonts.h
+├── firmware_arduino/     Same firmware as an Arduino IDE sketch folder
+│                         (kept in sync -- edit firmware/src, then copy)
+├── tests/                Host-side test suite (no hardware needed) -- see
+│                         "Testing" below
+├── tools/genfont.py      Regenerates tiny_fonts.h from DejaVu TTFs
+├── webflasher/           wizard.html + dashboard.html + firmware binaries
+├── about.json            Content for the dashboard's About tab
+├── CHANGELOG.json        Version history shown in the dashboard
+└── VERSION               Project version (firmware has its own, in main.cpp)
 ```
 
-## 1. Build the firmware
+## Install as a ZimaOS app
 
-**Using Arduino IDE?** Skip to the walkthrough below — use the
-`firmware_arduino/zima_tinyscreen/` folder (Arduino requires the sketch
-folder name to match the `.ino` filename). The `firmware/` folder
-described in this section is the PlatformIO version instead.
+The GitHub Actions workflow (`.github/workflows/docker-build-push.yml`)
+builds the image -- including both firmware variants -- and pushes it to
+Docker Hub on every push to `master`. On the ZimaOS box: **App Store → +
+→ Install a Custom App → Docker Compose tab**, paste
+`app/docker-compose.customapp.yml` (with your Docker Hub username filled
+in), Install. Later updates are one click inside the dashboard itself
+(General → Software Version), which pulls the new image and swaps the
+container via a helper.
 
-**Flashing board 1 (1.69")?** Set **USB CDC On Boot: Enabled** in Arduino
-IDE's Tools menu before flashing — board 0 needs this **Disabled**.
-See the note at the top of `main.cpp` for why.
+For local development: `cd app && docker compose up -d --build`.
 
-```bash
+## Flashing and configuring
+
+Plugged into your computer: open `https://<zima-ip>:8990/wizard.html`
+(HTTPS matters -- browsers only allow WebSerial on secure origins).
+Plugged into the ZimaBlade itself: `http://<zima-ip>:8989/wizard.html`,
+which flashes over the server's own serial connection using `esptool` --
+no browser APIs involved. Either way, settings changes afterwards happen
+in `dashboard.html`.
+
+About that HTTPS warning: the app generates a self-signed certificate on
+first start (persisted in AppData so the warning only appears once per
+browser). If you'd rather have no warning at all, the dashboard's
+**General → HTTPS Certificate** card accepts your own cert (Let's
+Encrypt or any CA, PEM). New connections switch to it immediately, and
+`/api/upload_cert` also accepts multipart POSTs so a certbot deploy hook
+can push renewals automatically. Reverting to self-signed is one click.
+
+## Building the firmware yourself
+
+Arduino IDE: open `firmware_arduino/zima_tinyscreen/` (folder name must
+match the .ino). Remember the CDC-on-boot setting for your board (above).
+
+PlatformIO:
+
+```
 cd firmware
-pip install platformio        # if you don't have it
-pio run                        # builds BOTH environments (bridge + native)
+pip install platformio
+pio run                 # builds both board variants
 ```
 
-This produces two sets of binaries:
+Binaries land in `.pio/build/<env>/`; the webflasher manifests expect
+them under `webflasher/firmware/{bridge,native}/`. CI does all of this
+automatically -- building locally is only needed for firmware
+development.
+
+Fonts: the smooth text comes from GFX fonts generated out of DejaVu Sans
+by `tools/genfont.py` into `firmware/src/tiny_fonts.h`. Add sizes or
+characters there, rerun it, and copy the header into the Arduino sketch
+folder too.
+
+## The protocol
+
+The collector sends one JSON line per second over USB serial (115200
+baud). Current fields:
+
 ```
-.pio/build/esp32-s3-tinyscreen-bridge/{bootloader,partitions,firmware}.bin   # board 0
-.pio/build/esp32-s3-tinyscreen-native/{bootloader,partitions,firmware}.bin   # board 1
-```
-
-Copy each set into its matching `webflasher/firmware/` subfolder (create
-them) — that's what `webflasher/manifest-bridge.json` and
-`webflasher/manifest-native.json` point at:
-
-```bash
-mkdir -p ../webflasher/firmware/bridge ../webflasher/firmware/native
-cp .pio/build/esp32-s3-tinyscreen-bridge/{bootloader,partitions,firmware}.bin ../webflasher/firmware/bridge/
-cp .pio/build/esp32-s3-tinyscreen-native/{bootloader,partitions,firmware}.bin ../webflasher/firmware/native/
-```
-
-You can also flash directly from PlatformIO during development (pick
-whichever environment matches your board):
-```bash
-pio run -e esp32-s3-tinyscreen-bridge -t upload -t monitor
-pio run -e esp32-s3-tinyscreen-native -t upload -t monitor
-```
-
-## 2. Configure and flash — two ways
-
-There are two completely separate paths depending on where the board is
-physically plugged in. Pick whichever matches your situation.
-
-### 2a. Board plugged into your computer (browser + WebSerial)
-
-**Use `https://<zima-ip>:8990/wizard.html`** as the starting point (not
-port 8989 — since the settings page hands off to the flasher page via a
-relative link, staying on HTTPS the whole way through matters, or
-WebSerial will break on the second page). You'll get an "untrusted
-certificate" warning the first time; click through it once (see the
-"WebSerial flasher access" section below for why).
-
-The flow:
-1. **`wizard.html`** — pick your board model and connection, then flash;
-   static vs auto-cycle (with interval), and brightness. Click **Continue
-   to Flasher**.
-2. **`dashboard.html`** — pick your stat pages, brightness, night mode, and more,
-   usual with **Connect & Flash** ([ESP Web Tools](https://esphome.github.io/esp-web-tools/)
-   under the hood, via WebSerial).
-3. Once flashing finishes, click **Send Settings to Device** — this opens
-   a second WebSerial connection and sends your chosen config as a JSON
-   command, which the firmware saves to flash (NVS) and applies
-   immediately. If you picked a different board model than what's
-   currently configured, the device restarts itself once to apply the new
-   pin/display setup.
-
-### 2b. Board plugged directly into the ZimaBlade/ZimaBoard (no computer needed)
-
-**Use `http://<zima-ip>:8989/wizard.html`** (plain HTTP is fine here —
-this page doesn't use WebSerial at all, it talks to the board through the
-app's own server-side endpoints instead, which have direct USB access to
-whatever's plugged into the ZimaBlade itself).
-
-The flow is the same two steps (flash, then configure), just both handled
-server-side:
-1. **Flash Firmware** — pushes the bundled firmware over serial using
-   `esptool`, running inside the container. Boards with a USB-UART bridge
-   chip (like board 0) flash with a single click. Boards using the
-   ESP32-S3's native USB directly (board 1) may need you to hold that
-   board's BOOT button while this starts — same underlying reason you'd
-   need to for Arduino IDE, just surfaced as an on-page hint if flashing
-   fails for that reason.
-2. **Send Settings to Device** — same config JSON, same NVS persistence,
-   just sent over a direct serial connection the server opens itself
-   instead of through a browser.
-
-Since the stats collector script and any flash/configure operation both
-need exclusive access to the same USB port, `server.py`'s
-`CollectorManager` pauses the collector for the few seconds a flash or
-configure takes, then resumes it automatically afterward.
-
-### Either way
-
-**Two firmware builds, not one.** Which *page/pages, cycling, and
-brightness* to use is chosen at runtime from saved config (all boards
-share this) — see `firmware/src/main.cpp`'s `BOARD_PROFILES` table if you
-want to add another board later. But which *build* to flash is not
-runtime-configurable: `ARDUINO_USB_CDC_ON_BOOT` (does this board have a
-USB-UART bridge chip, or native USB?) is a compile-time flag, so board 1
-needs an entirely separate compiled binary from board 0. GitHub Actions
-compiles **both** variants (`firmware/platformio.ini` defines two
-environments) on every push, and bakes both into the Docker image — see
-`.github/workflows/docker-build-push.yml`. Both the browser flasher
-(`wizard.html`, via `manifest-bridge.json`/`manifest-native.json`) and the
-on-device flasher (also `wizard.html`, via `/api/flash`'s `board` parameter)
-pick the correct variant based on which board you selected.
-
-## 3. Run the collector
-
-On the ZimaBlade/ZimaBoard itself:
-
-```bash
-cd collector
-pip install -r requirements.txt
-python3 stats_collector.py --port /dev/ttyACM0   # omit --port to auto-detect
+{"cpu_name":"Intel(R) Celeron(R) N5105","cpu_pct":12.3,"cpu_temp_c":45.2,
+ "cpu_watts":6.1,"ram_total_gb":15.5,"ram_pct":34.5,
+ "mmc_total_gb":28.0,"mmc_pct":61.2,"mmc_label":"ZimaOS-HD","mmc_health":"healthy",
+ "nas_available":true,"nas_total_gb":268.0,"nas_pct":5.3,"nas_label":"SSD",
+ "nas_health":"healthy","net_rx_mbps":12.4,"net_tx_mbps":3.1,"net_iface":"eth0",
+ "utc_min":857,"local_min":557}
 ```
 
-Notes:
-- **CPU wattage** is read from Intel RAPL (`/sys/class/powercap/intel-rapl:0`),
-  which is what ZimaBoard/ZimaBlade's Celeron N-series SoCs expose. If your
-  kernel/permissions don't expose it, this reports `-1` (unknown) — the
-  firmware just shows whatever is sent, so you can swap in another power
-  source (e.g. a smart PDU/UPS API) if you have one.
-- **CPU temperature** uses `psutil.sensors_temperatures()`, picking the
-  package/CPU sensor if labeled; falls back to the first sensor found.
-- Run as root or with a udev rule granting access to the RAPL energy
-  counters and serial device if you hit permission errors.
+Units worth knowing: **RAM is GiB** (÷1024³ -- matching how operating
+systems report memory, so a 16 GB stick shows as the same 15.5 your OS
+says), while **disk capacities are decimal GB** (÷10⁹ -- matching how
+ZimaOS and drive vendors label disks). `cpu_watts` comes from Intel RAPL
+and is -1 when unavailable; health fields are "healthy" / "warning" /
+"critical" / "" (unknown). `local_min` is minutes-since-midnight in the
+dashboard-configured time zone, DST-corrected by the collector.
 
-## WebSerial flasher access (HTTPS)
+Commands share the same channel -- any line with a `"cmd"` field is a
+command, not stats:
 
-Browsers only allow the Web Serial API (used by the flasher page) on
-**HTTPS or `localhost`** — a plain `http://<ip>:8989` origin is blocked.
-The packaged app runs two listeners:
-
-- **`http://<zima-ip>:8989`** — plain HTTP, fine for `/api/status` and
-  anything that isn't the flasher page
-- **`https://<zima-ip>:8990`** — HTTPS with a self-signed cert, generated
-  automatically on first container start and persisted at
-  `/DATA/AppData/tinyscreen-dashboard/certs` (so it survives restarts and
-  won't nag you with a fresh warning every reboot)
-
-**Use the flasher at `https://<zima-ip>:8990`.** Your browser will show an
-"untrusted certificate" warning the first time — click **Advanced → Proceed
-to `<ip>` (unsafe)**. This is expected and normal for a self-signed cert on
-a home-LAN admin tool (same pattern most self-hosted dashboards use); once
-accepted, Chrome/Edge treat the page as a secure context and Web Serial
-works. You'll typically only see this warning once per browser.
-
-## 4. Package as a ZimaOS app
-
-### Option A: Publish to Docker Hub via GitHub Actions (no Docker install anywhere)
-
-This project includes `.github/workflows/docker-build-push.yml`, which
-builds the image on GitHub's own servers and pushes it to Docker Hub. You
-never install Docker locally — you just need free GitHub and Docker Hub
-accounts.
-
-1. **Create a GitHub repo** and push this project to it (via GitHub's web
-   "upload files" UI if you don't want to use git locally, or `git push`
-   if you do).
-2. **Create a Docker Hub access token**: Docker Hub → your avatar →
-   **Account Settings → Personal access tokens → Generate new token**.
-   Give it Read/Write access and copy the token (you won't see it again).
-3. **Add two secrets to the GitHub repo**: repo → **Settings → Secrets and
-   variables → Actions → New repository secret**:
-   - `DOCKERHUB_USERNAME` = your Docker Hub username
-   - `DOCKERHUB_TOKEN` = the access token from step 2
-4. **Push to the `main` branch** (or go to the repo's **Actions** tab and
-   run the workflow manually). GitHub builds the image and pushes
-   `YOUR_DOCKERHUB_USERNAME/tinyscreen-dashboard:latest` to Docker Hub —
-   watch progress under the Actions tab.
-5. This makes the image **public** on Docker Hub (free tier doesn't
-   include private repos on most plans) — fine here since there's nothing
-   sensitive in it, but worth knowing.
-6. Once the workflow finishes, entirely from the ZimaOS web UI:
-   - Edit `app/docker-compose.customapp.yml` and replace
-     `YOUR_DOCKERHUB_USERNAME` with your actual Docker Hub username.
-   - **App Store → + → Install a Custom App → Docker Compose tab** → paste
-     the file's contents → **Install**.
-   - ZimaOS pulls the image itself. It'll show up in your app list with
-     normal start/stop/logs controls, at `http://<zima-ip>:8989`.
-
-To ship an update later: push new code to `main`, the workflow rebuilds and
-re-pushes the same tag automatically, then hit **Update** on the app in
-ZimaOS (or reinstall) to pull the new image.
-
-### Option B: Build locally on the ZimaOS box over SSH
-
-If you'd rather not publish anything publicly, or don't want to set up
-GitHub Actions:
-
-1. **Enable SSH / open the Web Terminal** on ZimaOS (Settings → Advanced →
-   SSH, or use the built-in Web Terminal app).
-2. **Copy this whole project** onto the ZimaOS device, e.g.:
-   ```bash
-   scp -r zima-tinyscreen your-user@<zima-ip>:/DATA/AppData/tinyscreen-src
-   ssh your-user@<zima-ip>
-   ```
-3. **Build and tag the image locally on the box:**
-   ```bash
-   cd /DATA/AppData/tinyscreen-src
-   docker build -t tinyscreen-dashboard:latest -f app/Dockerfile .
-   ```
-4. Open the ZimaOS web UI → App Store → **+** → **Install a Custom App** →
-   Docker Compose tab, and paste a version of
-   `app/docker-compose.customapp.yml` with the `image:` line changed back
-   to `tinyscreen-dashboard:latest` (no Docker Hub username) — since the
-   image already exists locally, Compose won't try to pull it.
-5. Click **Install**.
-
-If the ESP32-S3 shows up on a specific device node instead of the whole USB
-bus, edit the `devices:` line before pasting (e.g. swap
-`/dev/bus/usb:/dev/bus/usb` for `/dev/ttyACM0:/dev/ttyACM0` and drop
-`privileged: true`) — narrower and preferred if it works reliably across
-replugs on your setup.
-
-### Local dev: plain `docker compose up`
-
-```bash
-cd app
-docker compose build
-docker compose up -d
+```
+{"cmd":"set_config","board":1,"pages":["cpu","temp"],"layouts":{"cpu":"ring"},
+ "cycle_mode":"auto","cycle_seconds":10,"brightness":80}
 ```
 
+The firmware acks with `{"ack":"set_config","ok":true}` and persists to
+NVS. The dashboard (WebSerial) and `server.py`'s `/api/configure`
+(direct serial) both speak this same protocol.
 
+## Testing
 
+Everything testable without hardware is tested without hardware:
 
-The container runs one Python process (`server.py`) that:
-- serves plain HTTP on **8989** and HTTPS on **8990** (in separate threads)
-- manages the stats collector's lifecycle itself — spawning it, restarting
-  it if it dies, and pausing/resuming it around `/api/flash` and
-  `/api/configure` calls, which need the USB port to themselves
+```
+# firmware logic (compiles main.cpp against stub Arduino/GFX/JSON headers)
+g++ -std=c++17 -I tests/firmware_stubs -o /tmp/fw_test tests/test_firmware_logic.cpp && /tmp/fw_test
 
-## Protocol
+# server endpoints (updater, cert manager) and collector health logic
+python3 tests/test_updater.py
+python3 tests/test_collector_health.py
 
-The collector sends one line of JSON per second over USB serial (115200
-baud):
-
-```json
-{"cpu_name":"Intel(R) Celeron(R) N5105","cpu_pct":12.3,"cpu_temp_c":45.2,"cpu_watts":6.1,"ram_total_gb":16.0,"ram_pct":34.5,"mmc_total_gb":512.0,"mmc_pct":61.2,"net_rx_mbps":12.4,"net_tx_mbps":3.1}
+# dashboard visual states (needs playwright + chromium)
+python3 tests/visual_update_card.py
 ```
 
-Storage capacity fields (`ram_total_gb`, `mmc_total_gb`) are decimal GB
-(÷1,000,000,000), matching how ZimaOS's own dashboard displays capacity —
-not binary GiB (÷1024³), which reports a smaller, confusingly mismatched
-number for the same physical disk.
-
-The firmware parses each line with ArduinoJson and keeps the latest values
-in memory; screens redraw on a timer independent of serial arrival, and
-show a "waiting for host / no data" hint if nothing's arrived recently.
-
-A separate command shares the same line-based JSON channel — anything with
-a `"cmd"` field is treated as a command rather than a stats update:
-
-```json
-{"cmd":"set_config","board":1,"pages":["cpu","temp"],"cycle_mode":"auto","cycle_seconds":10,"brightness":80}
-```
-
-The firmware acks with `{"ack":"set_config","ok":true}` and persists the
-config to NVS. Both `webflasher/wizard.html` (via WebSerial) and
-`server.py`'s `/api/configure` (via direct serial, for on-device setup)
-send this same command — they're just two different transports for the
-same protocol.
-
-`server.py` also exposes:
-- `GET /api/status` — latest stats + whether the collector is currently running
-- `POST /api/configure` — body is the same fields as the `set_config`
-  command above (minus the `cmd` wrapper); used by `wizard.html`
-- `POST /api/flash` — flashes the bundled firmware via `esptool`; used by
-  `wizard.html`
+What still needs real hardware each round: how things look on the actual
+glass (panel gamma differs from any simulation) and anything involving
+the physical serial link.
 
 ## Customizing the look
 
-`firmware/src/main.cpp` has a small color palette at the top
-(`COL_BG`, `COL_TEAL`, etc.) and one `drawRingGauge()` helper used by most
-screens — tweak colors, fonts (swap in an Adafruit GFX font), or layout
-there. If you have reference screenshots/mockups for the exact visual style
-you want, send them over and I can match the layout more precisely.
+Colors live at the top of `firmware/src/main.cpp` (`COL_BG`, `COL_TEAL`,
+pure helpers like `rgb565()` / `lerpColor565()`), and each layout is a
+self-contained `draw*()` function -- the easiest path to a new look is
+copying the closest existing layout, registering it in the layout
+whitelist (`handleSetConfig`) and the dashboard's `PAGE_LAYOUTS`, and
+drawing. The panel is RGB565 (16-bit); smooth gradients need dithering
+-- see the mist layout for the pattern.
