@@ -2,6 +2,17 @@
   "_comment": "Human-readable changelog for the dashboard's About tab -- written for people, not commit archaeologists. The dashboard fetches this from GitHub at page load (baked copy as fallback), so add an entry here with each release and every install sees it. Newest first. Dates are YYYY-MM-DD.",
   "entries": [
     {
+      "version": "0.9.2.0",
+      "date": "2026-07-10",
+      "title": "0.9.2: more security tidying",
+      "notes": [
+        "Certificate uploads are now accepted only over HTTPS (port 8990), so your private key is never sent across the network unencrypted. If you open the certificate manager over plain HTTP, it now tells you and offers a one-click link to the secure address instead of failing after you've picked files.",
+        "Error messages returned to the browser are now generic ('Flashing failed unexpectedly.') while the real details go to the app's logs -- so internal paths and diagnostics aren't handed out to anyone poking at the API.",
+        "Tightened the timezone validation to accept only real IANA zone names (like America/Chicago), as an extra layer of defense before that value is ever used.",
+        "No firmware, feature, or visual changes -- another safety-only patch."
+      ]
+    },
+    {
       "version": "0.9.1.0",
       "date": "2026-07-10",
       "title": "0.9.1: hardening the web surface",

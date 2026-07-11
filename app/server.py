@@ -57,6 +57,25 @@ app = Flask(__name__, static_folder=None)
 # largest is a cert+key pair, itself separately capped at 64 KiB each.
 app.config["MAX_CONTENT_LENGTH"] = 1 * 1024 * 1024
 
+
+def _request_is_https():
+    """True when the request came in on the TLS listener (port 8990).
+    Derived from the server-side WSGI environ, not any client-supplied
+    header, so it can't be spoofed by the caller."""
+    env = request.environ
+    if env.get("wsgi.url_scheme") == "https":
+        return True
+    return str(env.get("SERVER_PORT", "")) == "8990"
+
+
+def _server_error(user_message, exc):
+    """Return a stable, generic error to the client while logging the
+    real exception server-side. Raw str(exception) can carry internal
+    filesystem paths or details handy for probing, so the client gets a
+    fixed sentence and the operator gets the specifics in the logs."""
+    print(f"[server] {user_message}: {exc!r}", file=sys.stderr)
+    return jsonify({"ok": False, "error": user_message}), 500
+
 # --- Finding 1 + 5: same-origin / custom-header guard -----------------
 # There is (by design, for now) no login on this LAN appliance. The real
 # exposure that creates is CSRF: a random website you visit could make
@@ -372,7 +391,13 @@ def build_set_config_payload(cfg):
     return payload
 
 
-_TZ_NAME_RE = re.compile(r"^[A-Za-z0-9_+\-/]{1,64}$")
+# IANA zone names look like "America/Chicago", "Europe/Paris",
+# "Etc/GMT+5", or a bare "UTC". Require that shape rather than any
+# slash-bearing string: the previous pattern already blocked traversal
+# (no "." allowed), this narrows it further to real zone syntax as
+# defense-in-depth before the name ever reaches ZoneInfo().
+_TZ_NAME_RE = re.compile(r"^(UTC|[A-Za-z][A-Za-z0-9_+-]{0,30}"
+                         r"(/[A-Za-z0-9_+-]{1,30}){0,2})$")
 
 
 def store_timezone_name(tz_name):
@@ -428,7 +453,7 @@ def api_configure():
 
         return jsonify({"ok": True, "acked": acked})
     except Exception as e:
-        return jsonify({"ok": False, "error": str(e)}), 500
+        return _server_error("Failed to send settings to the device.", e)
     finally:
         if ser:
             try:
@@ -471,7 +496,7 @@ def api_reset_device():
 
         return jsonify({"ok": True, "acked": acked})
     except Exception as e:
-        return jsonify({"ok": False, "error": str(e)}), 500
+        return _server_error("Failed to reset the device.", e)
     finally:
         if ser:
             try:
@@ -879,7 +904,7 @@ def api_current_config():
             pass
         return jsonify({"ok": True, "config": result})
     except Exception as e:
-        return jsonify({"ok": False, "error": str(e)}), 500
+        return _server_error("Failed to read the device configuration.", e)
     finally:
         if ser:
             try:
@@ -955,7 +980,7 @@ def api_flash():
     except subprocess.TimeoutExpired:
         return jsonify({"ok": False, "error": "Flash timed out after 180s"}), 500
     except Exception as e:
-        return jsonify({"ok": False, "error": str(e)}), 500
+        return _server_error("Flashing failed unexpectedly.", e)
     finally:
         collector.resume()
 
@@ -1096,6 +1121,19 @@ def api_cert_info():
 
 @app.route("/api/upload_cert", methods=["POST"])
 def api_upload_cert():
+    # Finding 6: a private key sent over plain HTTP (8989) travels the LAN
+    # unencrypted. Only accept uploads on the HTTPS listener (8990), where
+    # the key is protected in transit -- which is also where the dashboard
+    # naturally lives once you're managing certs. certbot hooks should
+    # target https://host:8990/api/upload_cert for the same reason.
+    if not _request_is_https():
+        return jsonify({
+            "ok": False,
+            "error": ("For your key's safety, certificate upload is only "
+                      "accepted over HTTPS (port 8990), so the private key "
+                      "isn't sent across your network in the clear. Reopen "
+                      "the dashboard at https://<this-host>:8990 and retry."),
+        }), 403
     # Two shapes: JSON {"cert": ..., "key": ...} from the dashboard, or
     # multipart files named cert/key -- the latter so a certbot
     # deploy-hook can curl renewals straight in.

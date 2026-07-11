@@ -2218,6 +2218,24 @@
     btnRow.appendChild(uploadBtn);
     up.appendChild(btnRow);
     up.appendChild(status);
+
+    // Finding 6: key upload is only accepted over HTTPS. If we're on
+    // plain http, say so before they pick files and offer the switch.
+    const onHttps = location.protocol === 'https:';
+    if (!onHttps) {
+      uploadBtn.disabled = true;
+      const httpsUrl = 'https://' + location.hostname + ':8990' + location.pathname;
+      const warn = el('div', 'card-desc');
+      warn.style.marginTop = '10px';
+      warn.style.color = 'var(--err)';
+      warn.appendChild(document.createTextNode(
+        'You\u2019re on plain HTTP, so uploads are disabled to keep your private ' +
+        'key off the wire. Open this dashboard over HTTPS to upload: '));
+      const a = el('a', null, httpsUrl);
+      a.href = httpsUrl;
+      warn.appendChild(a);
+      up.appendChild(warn);
+    }
     body.appendChild(up);
 
     const readText = (file) => new Promise((res, rej) => {

@@ -317,6 +317,17 @@ class _GuardedClient(FlaskClient):
         return super().open(*args, **kwargs)
 
 
+class _HttpsGuardedClient(_GuardedClient):
+    """Like _GuardedClient but presents requests as arriving on the TLS
+    listener -- cert management only happens over HTTPS (8990), so cert
+    tests exercise that path. Sets SERVER_PORT=8990 and https scheme."""
+    def open(self, *args, **kwargs):
+        # base_url with an https:// scheme makes werkzeug populate
+        # wsgi.url_scheme=https and SERVER_PORT=8990 for us.
+        kwargs.setdefault("base_url", "https://localhost:8990")
+        return super().open(*args, **kwargs)
+
+
 class UpdaterTestBase(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -854,7 +865,7 @@ class TestCertEndpoints(UpdaterTestBase):
                 del sys.modules[mod]
         import server
         self.server = server
-        server.app.test_client_class = _GuardedClient
+        server.app.test_client_class = _HttpsGuardedClient
         self.app = server.app.test_client()
 
     def tearDown(self):
@@ -934,6 +945,18 @@ class TestCertEndpoints(UpdaterTestBase):
         }, content_type="multipart/form-data")
         self.assertEqual(r.status_code, 200)
         self.assertIn("hooked", r.get_json().get("subject", ""))
+
+    def test_upload_over_plain_http_is_refused(self):
+        # Finding 6: same valid pair, but presented as an HTTP request --
+        # must be refused so the key never crosses the LAN in cleartext.
+        cert, key = self._gen_pair("plainhttp")
+        # force a genuine http:// request (the class default is https here)
+        r = self.app.post("/api/upload_cert",
+                          base_url="http://localhost:8989",
+                          json={"cert": cert, "key": key},
+                          headers={"X-TinyScreen-Request": "1"})
+        self.assertEqual(r.status_code, 403)
+        self.assertIn("https", r.get_json()["error"].lower())
 
     def test_reset_returns_to_self_signed(self):
         cert, key = self._gen_pair("custom")
