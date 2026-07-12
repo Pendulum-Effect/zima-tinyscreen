@@ -5,6 +5,13 @@
 <meta name="theme-color" content="#0b1418">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Tiny Screen Settings</title>
+<link rel="icon" href="favicon.ico" sizes="32x32">
+<link rel="icon" type="image/png" sizes="16x16" href="favicon-16.png">
+<link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png">
+<link rel="icon" type="image/png" sizes="192x192" href="favicon-192.png">
+<link rel="icon" type="image/png" sizes="512x512" href="favicon-512.png">
+<link rel="apple-touch-icon" href="favicon-180.png">
+
 <style>
   :root {
     --bg: #0b1418;
@@ -68,6 +75,7 @@
     flex-direction: column;
   }
   .sidebar h1 { font-size: 20px; margin: 0 0 42px; padding-left: 8px; }
+  .sidebar h1 img { height: 58px; width: auto; display: block; }
   .nav-item {
     display: flex; align-items: center; gap: 10px;
     padding: 11px 14px; border-radius: 8px; cursor: pointer;
@@ -118,6 +126,7 @@
       padding: 10px 12px;
     }
     .sidebar h1 { margin: 0 10px 0 4px; font-size: 17px; white-space: nowrap; }
+    .sidebar h1 img { height: 30px; }
     /* Icons carry the navigation on small screens -- labels hide so the
        bar never needs to scroll sideways. */
     .nav-item { margin-bottom: 0; flex: 1; justify-content: center; padding: 10px 6px; }
@@ -393,13 +402,7 @@
   .ack-strip a:hover { text-decoration: underline; }
   .ack-strip img, .about-avatar { width: 20px; height: 20px; border-radius: 50%; }
   .ack-sep { color: var(--border); }
-  .logo-slot {
-    width: 54px; height: 54px; border-radius: 12px; flex-shrink: 0;
-    border: 1.5px dashed var(--border); color: var(--subtext);
-    display: flex; align-items: center; justify-content: center;
-    font-size: 9px; letter-spacing: 0.06em; text-transform: uppercase;
-  }
-  .about-logo { height: 44px; width: auto; max-width: 100%; display: block; }
+  .about-icon { width: 72px; height: 72px; border-radius: 16px; flex-shrink: 0; }
   .ai-spark { width: 20px; height: 20px; color: var(--teal); flex-shrink: 0; }
   .save-banner .banner-msg { font-size: 13.5px; }
   .banner-discard {
@@ -491,7 +494,7 @@
     <button class="btn" id="banner-save" style="padding: 8px 18px; font-size: 13.5px;">Save changes</button>
   </div>
   <div class="sidebar">
-    <h1>TinyScreen</h1>
+    <h1><img src="branding/TinyScreen_Logo.png" alt="TinyScreen"></h1>
     <div class="nav-item active" data-tab="general">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg>
       <span class="nav-label">General</span>
@@ -586,7 +589,6 @@
             <div>
               <div class="card-title">Reset Device</div>
               <div class="card-desc">Having issues? Start the first-time setup process.</div>
-              <div class="card-desc" id="reset-status" style="margin-top:2px; display:none;"></div>
             </div>
             <button class="btn btn-uniform" id="reset-device-btn">Reset</button>
           </div>
@@ -1894,39 +1896,26 @@
       const head = el('div');
       head.style.display = 'flex';
       head.style.gap = '16px';
-      head.style.alignItems = 'center';
-      // The wordmark IS the title when we have one -- it already says
-      // "Tiny Screen", so repeating the name as text would read twice.
-      // Falls back to the dashed placeholder + text title until
-      // project.logo_url appears in about.json.
-      if (p.logo_url) {
-        const img = document.createElement('img');
-        img.className = 'about-logo';
-        img.src = p.logo_url; img.alt = (p.name || 'TinyScreen') + ' logo';
-        const titleWrap = el('div');
-        titleWrap.appendChild(img);
-        if (p.tagline) {
-          const tg = el('div', 'card-desc', p.tagline);
-          tg.style.marginTop = '8px';
-          titleWrap.appendChild(tg);
-        }
-        head.appendChild(titleWrap);
-      } else {
-        const slot = el('div', 'logo-slot');
-        slot.textContent = 'logo';
-        slot.title = 'Reserved for the TinyScreen logo';
-        head.appendChild(slot);
-        const titleWrap = el('div');
-        titleWrap.appendChild(el('div', 'card-title', p.name || 'TinyScreen'));
-        if (p.tagline) titleWrap.appendChild(el('div', 'card-desc', p.tagline));
-        head.appendChild(titleWrap);
-      }
-      c.appendChild(head);
+      head.style.alignItems = 'flex-start';
+      // The app icon ships INSIDE the app (0.9.5.4) -- same reasoning as
+      // vendoring esp-web-tools: branding shouldn't depend on a remote
+      // fetch. Name, tagline, and description all live in the right
+      // column so the text wraps beside the icon.
+      const img = document.createElement('img');
+      img.className = 'about-icon';
+      img.src = 'branding/TinyScreen_Icon.png';
+      img.alt = 'TinyScreen icon';
+      head.appendChild(img);
+      const titleWrap = el('div');
+      titleWrap.appendChild(el('div', 'card-title', p.name || 'TinyScreen'));
+      if (p.tagline) titleWrap.appendChild(el('div', 'card-desc', p.tagline));
       if (p.description) {
-        const d = el('div', 'card-desc', p.description);
-        d.style.marginTop = '12px';
-        c.appendChild(d);
+        const desc = el('div', 'card-desc', p.description);
+        desc.style.marginTop = '8px';
+        titleWrap.appendChild(desc);
       }
+      head.appendChild(titleWrap);
+      c.appendChild(head);
       const meta = el('div', 'card-desc');
       meta.style.marginTop = '10px';
       meta.style.display = 'flex';
@@ -2448,49 +2437,35 @@
       off.appendChild(el('div', 'card-desc',
         'Removes the PIN entirely; the dashboard goes back to trusting every ' +
         'device on your network.'));
-      const offStatus = el('div', 'card-desc', '');
-      offStatus.style.marginTop = '10px';
-      // The 0.9.5.0..0.9.5.2 bug behind "Turn off does nothing": this
-      // element was written to on every click but never appended, so
-      // ALL feedback (errors, progress, lockout notices) rendered into
-      // a detached node. Append it or the whole card is a black hole.
-      off.appendChild(offStatus);
       const offBtn = el('button', 'btn', 'Turn off');
       offBtn.style.marginTop = '12px';
-      offBtn.addEventListener('click', async () => {
-        // Checked here, before any request: an empty field must give
-        // instant, local feedback (and never reach the server, where it
-        // would read as a PIN attempt).
-        if (!current || !current.value) {
-          offStatus.style.color = 'var(--err)';
-          offStatus.textContent = 'Fill in the Current PIN field above first, then press Turn off.';
-          current && current.focus();
-          return;
-        }
-        offBtn.disabled = true;
-        offStatus.style.color = '';
-        offStatus.textContent = 'Removing\u2026';
-        try {
-          const r = await fetch('/api/auth/set_pin', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'X-TinyScreen-Request': '1' },
-            body: JSON.stringify({ disable: true, current_pin: current.value }),
-          });
-          const data = await r.json();
-          if (data.ok) {
-            offStatus.textContent = 'PIN removed.';
-            await loadPinSummary();
-            openPinView();
-          } else {
-            offStatus.style.color = 'var(--err)';
-            offStatus.textContent = data.error || 'Failed.';
-          }
-        } catch (e) {
-          offStatus.style.color = 'var(--err)';
-          offStatus.textContent = 'Failed: ' + e.message;
-        } finally {
-          offBtn.disabled = false;
-        }
+      // Confirmation happens in a modal that collects the PIN itself
+      // (0.9.5.4) -- no more pointing people at a field in a different
+      // card, and an empty submission never leaves the modal.
+      offBtn.addEventListener('click', () => {
+        confirmModal({
+          title: 'Turn off the PIN?',
+          text: 'The dashboard will go back to trusting every device on your ' +
+                'network. Enter the current PIN to confirm.',
+          confirmLabel: 'Turn off',
+          withPin: true,
+          onConfirm: async (pinValue) => {
+            try {
+              const r = await fetch('/api/auth/set_pin', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-TinyScreen-Request': '1' },
+                body: JSON.stringify({ disable: true, current_pin: pinValue }),
+              });
+              const data = await r.json();
+              if (!data.ok) return { ok: false, error: data.error || 'Failed.' };
+              await loadPinSummary();
+              openPinView();
+              return { ok: true };
+            } catch (e) {
+              return { ok: false, error: 'Failed: ' + e.message };
+            }
+          },
+        });
       });
       off.appendChild(offBtn);
       body.appendChild(off);
@@ -2514,64 +2489,31 @@
   document.getElementById('pin-manage-btn').addEventListener('click', openPinView);
   loadPinSummary();
 
-  // --- Reset Device (0.9.5.3) ---------------------------------------------
-  // This button existed since the card was designed but was never wired
-  // to anything -- a dead button that three hardware rounds walked past
-  // until someone finally pressed it. Two-step arm/fire instead of a
-  // confirm() dialog (stays in the page's visual language, and a second
-  // deliberate click is a better guard for a destructive action).
-  {
-    const btn = document.getElementById('reset-device-btn');
-    const status = document.getElementById('reset-status');
-    let armed = false;
-    let disarmTimer = null;
-    const disarm = () => {
-      armed = false;
-      btn.textContent = 'Reset';
-      status.style.display = 'none';
-      status.textContent = '';
-    };
-    btn.addEventListener('click', async () => {
-      if (!armed) {
-        armed = true;
-        btn.textContent = 'Really reset?';
-        status.style.display = 'block';
-        status.style.color = '';
-        status.textContent = 'This wipes the display\u2019s saved settings and returns it to ' +
-          'first-time setup. Click again to confirm; anything else cancels.';
-        clearTimeout(disarmTimer);
-        disarmTimer = setTimeout(disarm, 8000);  // quietly stand down
-        return;
-      }
-      clearTimeout(disarmTimer);
-      armed = false;
-      btn.disabled = true;
-      btn.textContent = 'Resetting\u2026';
-      status.textContent = 'Sending the reset command over the serial connection\u2026';
-      try {
-        const r = await fetch('/api/reset_device', {
-          method: 'POST', headers: { 'X-TinyScreen-Request': '1' },
-        });
-        const data = await r.json();
-        if (data.ok) {
-          status.textContent = (data.acked
-            ? 'Done \u2713 the display confirmed the reset.'
-            : 'Reset sent. The display didn\u2019t confirm \u2014 if it\u2019s still showing ' +
-              'stats, check the cable and try again.') +
-            ' To set it up fresh, open the setup wizard from the top of this page.';
-        } else {
-          status.style.color = 'var(--err)';
-          status.textContent = data.error || 'Reset failed.';
+  // --- Reset Device (0.9.5.4) ---------------------------------------------
+  // Confirmation modal (matching the update flow), then straight into
+  // the setup wizard on success -- the previous outcome text pointed at
+  // a "wizard at the top of this page" that doesn't exist.
+  document.getElementById('reset-device-btn').addEventListener('click', () => {
+    confirmModal({
+      title: 'Reset the display?',
+      text: 'This wipes the display\u2019s saved settings and returns it to first-time ' +
+            'setup. Afterwards you\u2019ll be taken to the setup wizard to configure it fresh.',
+      confirmLabel: 'Reset & re-setup',
+      onConfirm: async () => {
+        try {
+          const r = await fetch('/api/reset_device', {
+            method: 'POST', headers: { 'X-TinyScreen-Request': '1' },
+          });
+          const data = await r.json();
+          if (!data.ok) return { ok: false, error: data.error || 'Reset failed.' };
+          window.location.href = 'wizard.html';
+          return { ok: true, keepOpen: true };  // navigating away
+        } catch (e) {
+          return { ok: false, error: 'Reset failed: ' + e.message };
         }
-      } catch (e) {
-        status.style.color = 'var(--err)';
-        status.textContent = 'Reset failed: ' + e.message;
-      } finally {
-        btn.disabled = false;
-        btn.textContent = 'Reset';
-      }
+      },
     });
-  }
+  });
 
   document.getElementById('general-sub-back').addEventListener('click', resetSubViews);
 
@@ -2661,6 +2603,76 @@
   function closeUpdateModal() {
     document.getElementById('update-modal').classList.remove('open');
     document.querySelector('.app-window').classList.remove('shrunk');
+  }
+
+  // Generic confirmation modal (0.9.5.4) in the update modal's visual
+  // language, for destructive or PIN-guarded actions. onConfirm runs
+  // with the modal held open in a busy state; return {ok:true} to close
+  // (or {ok:true, keepOpen:true} when navigating away), or {ok:false,
+  // error} to show the error and let the person retry or cancel.
+  function confirmModal({ title, text, confirmLabel, withPin = false, onConfirm }) {
+    const ov = document.createElement('div');
+    ov.className = 'modal-overlay open';
+    const box = el('div', 'modal');
+    box.appendChild(el('div', 'card-title', title));
+    const body = el('div', 'card-desc', text);
+    body.style.marginTop = '10px';
+    box.appendChild(body);
+    let pin = null;
+    if (withPin) {
+      pin = document.createElement('input');
+      pin.type = 'password';
+      pin.className = 'pin-input';
+      pin.placeholder = 'Current PIN';
+      pin.autocomplete = 'current-password';
+      pin.style.marginTop = '14px';
+      box.appendChild(pin);
+    }
+    const err = el('div', 'card-desc', '');
+    err.style.marginTop = '10px';
+    box.appendChild(err);
+    const actions = el('div', 'modal-actions');
+    const cancelBtn = el('button', 'banner-discard', 'Cancel');
+    const okBtn = el('button', 'btn btn-uniform', confirmLabel);
+    actions.appendChild(cancelBtn);
+    actions.appendChild(okBtn);
+    box.appendChild(actions);
+    ov.appendChild(box);
+    document.body.appendChild(ov);
+    document.querySelector('.app-window').classList.add('shrunk');
+    if (pin) pin.focus();
+
+    const close = () => {
+      ov.remove();
+      document.querySelector('.app-window').classList.remove('shrunk');
+    };
+    cancelBtn.addEventListener('click', close);
+    ov.addEventListener('click', (e) => { if (e.target === ov && !okBtn.disabled) close(); });
+
+    const attempt = async () => {
+      if (pin && !pin.value) {
+        err.style.color = 'var(--err)';
+        err.textContent = 'Enter the PIN first.';
+        pin.focus();
+        return;
+      }
+      okBtn.disabled = true;
+      cancelBtn.disabled = true;
+      err.style.color = '';
+      err.textContent = 'Working\u2026';
+      const res = await onConfirm(pin ? pin.value : null);
+      if (res && res.ok) {
+        if (!res.keepOpen) close();
+        return;  // keepOpen: navigation in flight, stay busy
+      }
+      err.style.color = 'var(--err)';
+      err.textContent = (res && res.error) || 'Failed.';
+      okBtn.disabled = false;
+      cancelBtn.disabled = false;
+      if (pin) { pin.value = ''; pin.focus(); }
+    };
+    okBtn.addEventListener('click', attempt);
+    if (pin) pin.addEventListener('keydown', (e) => { if (e.key === 'Enter') attempt(); });
   }
 
   async function loadPatchNotes(d) {

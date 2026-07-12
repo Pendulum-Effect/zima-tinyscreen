@@ -6,7 +6,7 @@ eventually hit context limits). It carries the current state, what's
 done, and what's next, so any session can pick up where the last left
 off. **Delete this file at the final 1.0 release.**
 
-Snapshot as of **0.9.5.3** (2026-07-12).
+Snapshot as of **0.9.5.4** (2026-07-12).
 
 ## How to get oriented fast
 
@@ -158,6 +158,24 @@ None are worth a dedicated round; fold them into other work or skip.
         bouncing each button off the guard mid-action.
   - [x] Cache-Control: no-cache on .html/.js (ETag revalidation) so app
         updates can't leave browsers on a stale page.
+
+- [x] **0.9.5.4** Confirmation modals + branding (hardware-round feedback):
+  - [x] Generic confirmModal() helper in the update modal's visual
+        language (promise-less onConfirm contract: {ok} closes,
+        {ok, keepOpen} for navigation, {ok:false, error} stays open for
+        retry). Reset and PIN-off both use it.
+  - [x] Reset Device: confirm -> POST /api/reset_device -> straight to
+        wizard.html (the old outcome text referenced a wizard link that
+        doesn't exist on the dashboard).
+  - [x] Turn off PIN: modal collects the PIN itself; decoupled from the
+        change-card's Current PIN field.
+  - [x] Branding: favicons (all sizes + .ico) at webflasher root with
+        link tags in dashboard + wizard; sidebar wordmark
+        (branding/TinyScreen_Logo.png, 58px/30px mobile); About leads
+        with branding/TinyScreen_Icon.png, text wrapping beside it
+        (shipped in-app, same no-remote-fetch reasoning as the vendored
+        flasher JS; about.json's logo_url is now ignored). logo-slot
+        placeholder CSS retired.
 
 ## Next up (suggested order)
 

@@ -2,6 +2,17 @@
   "_comment": "Human-readable changelog for the dashboard's About tab -- written for people, not commit archaeologists. The dashboard fetches this from GitHub at page load (baked copy as fallback), so add an entry here with each release and every install sees it. Newest first. Dates are YYYY-MM-DD.",
   "entries": [
     {
+      "version": "0.9.5.4",
+      "date": "2026-07-12",
+      "title": "0.9.5.4: proper confirmations, and a face for the app",
+      "notes": [
+        "Reset Device now works the way you'd expect: a confirmation window (like the update one) asks if you're sure, and confirming resets the display and takes you straight to the setup wizard. No more instructions pointing at a wizard link that didn't exist.",
+        "Turning the PIN off also gets a proper confirmation window that asks for the PIN right there -- no more hunting for a field in a different card.",
+        "TinyScreen has a face now: the app icon shows up in your browser tabs and bookmarks, the sidebar wears the TinyScreen wordmark instead of plain text, and the About page leads with the app icon.",
+        "No firmware changes."
+      ]
+    },
+    {
       "version": "0.9.5.3",
       "date": "2026-07-12",
       "title": "0.9.5.3: two dead buttons come alive",
