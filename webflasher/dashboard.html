@@ -66,6 +66,7 @@
   }
 
   .sidebar {
+    position: relative;  /* anchors .nav-indicator (0.9.7) */
     width: 200px; flex-shrink: 0;
     background: var(--panel);
     border: 1px solid var(--border);
@@ -496,6 +497,81 @@
     .device-card .device-meta .btn { margin-left: auto; margin-right: auto; }
     .device-card { min-height: 0; }
   }
+
+  /* -------------------------------------------------------------------
+     Interaction polish (0.9.7): the selection pill physically TRAVELS
+     between nav items instead of teleporting, and buttons acknowledge
+     the cursor. All of it sits at the end of the stylesheet so it wins
+     source-order against the base rules above; all of it collapses to
+     instant changes under prefers-reduced-motion. */
+
+  /* The traveling pill. Position via transform (compositor-friendly);
+     width/height transition too since the horizontal phone bar and the
+     vertical desktop rail have differently-sized items. */
+  .nav-indicator {
+    position: absolute; left: 0; top: 0; z-index: 0;
+    width: 0; height: 0;
+    background: var(--panel-raised);
+    border-radius: 8px;
+    will-change: transform;
+    pointer-events: none;
+  }
+  .nav-indicator.animate {
+    transition: transform .34s cubic-bezier(.3, 1.25, .4, 1),
+                width .34s cubic-bezier(.3, 1.25, .4, 1),
+                height .34s cubic-bezier(.3, 1.25, .4, 1);
+  }
+  /* Items ride above the pill; the pill now OWNS the active background
+     (the base .nav-item.active background would double up under it). */
+  .nav-item { position: relative; z-index: 1;
+              transition: color .18s ease, background-color .18s ease; }
+  .nav-item.active { background: transparent; }
+  .nav-item:hover:not(.active) { background: rgba(79, 209, 197, 0.06); }
+  .nav-item svg { transition: transform .22s cubic-bezier(.34, 1.56, .64, 1); }
+  .nav-item:hover svg { transform: translateX(2px) scale(1.1); }
+  .nav-item.active svg { transform: none; }
+
+  /* Buttons: a small lift and teal glow on hover, press back down on
+     click. Filled buttons only -- quiet controls stay quiet. */
+  .btn {
+    transition: background-color .16s ease, transform .16s ease,
+                box-shadow .2s ease;
+  }
+  .btn:hover:not(:disabled) {
+    transform: translateY(-1.5px);
+    box-shadow: 0 5px 16px rgba(79, 209, 197, 0.28);
+  }
+  .btn:active:not(:disabled) {
+    transform: translateY(0);
+    box-shadow: 0 2px 6px rgba(79, 209, 197, 0.18);
+  }
+
+  /* Choice chips: border warms toward selection on hover. */
+  .radio-btn, .interval-btn {
+    transition: border-color .16s ease, color .16s ease,
+                background-color .16s ease, transform .16s ease;
+  }
+  .radio-btn:hover:not(.active), .interval-btn:hover:not(.active) {
+    border-color: rgba(79, 209, 197, 0.55);
+    color: var(--text);
+    transform: translateY(-1px);
+  }
+
+  /* Toggles: a soft ring says "I'm clickable" before you commit. */
+  .toggle { transition: background 0.15s, box-shadow .18s ease; }
+  .toggle:hover { box-shadow: 0 0 0 4px rgba(79, 209, 197, 0.12); }
+
+  .banner-discard { transition: color .16s ease; }
+  .banner-discard:hover { color: var(--text); }
+
+  @media (prefers-reduced-motion: reduce) {
+    .nav-indicator.animate, .nav-item, .nav-item svg,
+    .btn, .radio-btn, .interval-btn, .toggle { transition: none; }
+    .btn:hover:not(:disabled), .nav-item:hover svg,
+    .radio-btn:hover:not(.active), .interval-btn:hover:not(.active) {
+      transform: none;
+    }
+  }
 </style>
 </head>
 <body>
@@ -814,12 +890,40 @@
   // ---------------------------------------------------------------------
   // Tab switching
   // ---------------------------------------------------------------------
+  // The traveling selection pill (0.9.7): one absolutely-positioned
+  // element that slides to whichever nav item is active, instead of
+  // each item painting its own background. Geometry is re-derived from
+  // the live DOM on every move, so the same code handles the vertical
+  // desktop rail and the horizontal phone bar (and the layout shift
+  // when the wordmark image finishes loading).
+  const navIndicator = document.createElement('div');
+  navIndicator.className = 'nav-indicator';
+  document.querySelector('.sidebar').prepend(navIndicator);
+  function moveNavIndicator(animate = true) {
+    const active = document.querySelector('.nav-item.active');
+    if (!active) return;
+    navIndicator.classList.toggle('animate',
+      animate && !window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+    navIndicator.style.width = active.offsetWidth + 'px';
+    navIndicator.style.height = active.offsetHeight + 'px';
+    navIndicator.style.transform =
+      'translate(' + active.offsetLeft + 'px, ' + active.offsetTop + 'px)';
+  }
+  requestAnimationFrame(() => moveNavIndicator(false));
+  window.addEventListener('load', () => moveNavIndicator(false));
+  window.addEventListener('resize', () => moveNavIndicator(false));
+  const brandImg = document.querySelector('.sidebar h1 img');
+  if (brandImg && !brandImg.complete) {
+    brandImg.addEventListener('load', () => moveNavIndicator(false));
+  }
+
   document.querySelectorAll('.nav-item').forEach(item => {
     item.addEventListener('click', () => {
       document.querySelectorAll('.nav-item').forEach(i => i.classList.remove('active'));
       document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
       item.classList.add('active');
       document.querySelector(`.tab-panel[data-panel="${item.dataset.tab}"]`).classList.add('active');
+      moveNavIndicator();
       resetSubViews();  // side nav always returns to a panel's main view
     });
   });

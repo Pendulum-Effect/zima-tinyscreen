@@ -6,7 +6,7 @@ eventually hit context limits). It carries the current state, what's
 done, and what's next, so any session can pick up where the last left
 off. **Delete this file at the final 1.0 release.**
 
-Snapshot as of **0.9.6.1** (2026-07-12).
+Snapshot as of **0.9.7.0** (2026-07-12).
 
 ## How to get oriented fast
 
@@ -231,6 +231,25 @@ None are worth a dedicated round; fold them into other work or skip.
   - [x] Mobile General: "health" row was missing from the phone grid
         template, so the pill auto-placed into an implicit column OFF
         the card. Row added + pill wraps centered.
+
+- [x] **0.9.7.0** Interaction polish:
+  - [x] Traveling nav pill: one absolutely-positioned .nav-indicator
+        slides (transform + width/height, springy cubic-bezier) to the
+        active item; geometry re-derived from the live DOM per move so
+        desktop rail and phone bar share the code. Re-syncs on load,
+        resize, and wordmark image load (the img changes sidebar
+        layout). Base .nav-item.active background removed -- the pill
+        owns it now.
+  - [x] Hover language: .btn lift + teal glow (+press state), chips
+        warm borders, toggle focus ring, nav icon nudge. All in one
+        end-of-stylesheet block; everything guarded by
+        prefers-reduced-motion.
+  - [x] New TinyScreen_Logo.png (1491x800 recrop).
+  - [x] E2E: pill alignment asserted at rest on BOTH form factors,
+        caught mid-flight during travel, hover glow computed-style
+        asserted; screenshots reviewed.
+  - NOTE for hardware round: sidebar hover/travel is worth one quick
+    look on a real phone (no hover there; travel should still glide).
 
 ## Next up (suggested order)
 

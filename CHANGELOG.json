@@ -2,6 +2,18 @@
   "_comment": "Human-readable changelog for the dashboard's About tab -- written for people, not commit archaeologists. The dashboard fetches this from GitHub at page load (baked copy as fallback), so add an entry here with each release and every install sees it. Newest first. Dates are YYYY-MM-DD.",
   "entries": [
     {
+      "version": "0.9.7.0",
+      "date": "2026-07-12",
+      "title": "0.9.7: the dashboard learns some moves",
+      "notes": [
+        "The sidebar selection now physically glides to whatever you click instead of teleporting -- a small thing that makes the whole app feel more alive.",
+        "Buttons and controls acknowledge your cursor: filled buttons lift with a soft teal glow, choice chips warm toward their selected look, toggles show a ring before you commit, and sidebar icons give a little nudge.",
+        "All motion respects your system's reduced-motion preference -- everything falls back to instant changes.",
+        "The sidebar wears a slightly refined TinyScreen wordmark.",
+        "No firmware changes."
+      ]
+    },
+    {
       "version": "0.9.6.1",
       "date": "2026-07-12",
       "title": "0.9.6.1: screensaver upgrades and layout polish (firmware 1.19)",
