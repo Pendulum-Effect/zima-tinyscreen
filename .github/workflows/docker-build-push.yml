@@ -50,6 +50,17 @@ jobs:
       - name: Install test dependencies (same pins as the image)
         run: pip install -r app/requirements.txt -r collector/requirements.txt
 
+      # Advisory-only dependency audit (0.9.5.2): surfaces known CVEs in
+      # the pinned dependency set on every build. Deliberately
+      # non-blocking -- a brand-new advisory shouldn't be able to wedge
+      # an unrelated release -- but it shows up red in the step list, so
+      # a vulnerable pin gets noticed and bumped deliberately.
+      - name: Dependency audit (advisory, non-blocking)
+        continue-on-error: true
+        run: |
+          pip install pip-audit
+          pip-audit -r app/requirements.txt -r collector/requirements.txt
+
       - name: Firmware logic tests (compiled against stub headers)
         run: |
           g++ -std=c++17 -I tests/firmware_stubs -o /tmp/fw_test tests/test_firmware_logic.cpp
@@ -60,9 +71,6 @@ jobs:
 
       - name: Updater tests (fake Docker daemon)
         run: python3 tests/test_updater.py
-
-      - name: Serial endpoint tests (pty-pair fake device)
-        run: python3 tests/test_serial_endpoints.py
 
       - name: Serial endpoint tests (pty-pair fake device)
         run: python3 tests/test_serial_endpoints.py
