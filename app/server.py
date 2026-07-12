@@ -1484,8 +1484,27 @@ def _openssl_cert_info(path):
 
 def _validate_pair(cert_text, key_text):
     """Empty string if the PEM pair loads as a working TLS identity,
-    else a human-readable reason. Catches malformed PEM and a key that
-    doesn't match the certificate in one step."""
+    else a human-readable reason. Checks the cheap, common mistakes
+    with SPECIFIC messages before handing anything to OpenSSL, whose
+    own errors (KEY_VALUES_MISMATCH, PEM_LIB...) read like line noise
+    to anyone who isn't OpenSSL (0.9.7.1, from a confused real user)."""
+    if "PRIVATE KEY" in cert_text and "BEGIN CERTIFICATE" in key_text:
+        return ("These files look swapped: the private key was chosen as the "
+                "certificate and the certificate as the key. Swap the two and "
+                "try again.")
+    if "BEGIN CERTIFICATE" not in cert_text:
+        return ("The certificate file doesn't look like a PEM certificate -- "
+                "expected a '-----BEGIN CERTIFICATE-----' block. If your CA "
+                "gave you several files, the one to pick here is the full "
+                "chain (Let's Encrypt calls it fullchain.pem).")
+    if "ENCRYPTED" in key_text:
+        return ("That private key is password-protected, which the server "
+                "can't use unattended. Export an unencrypted PEM key "
+                "(certbot's privkey.pem already is one) and try again.")
+    if "PRIVATE KEY" not in key_text:
+        return ("The key file doesn't look like a PEM private key -- expected "
+                "a '-----BEGIN PRIVATE KEY-----' (or RSA/EC PRIVATE KEY) "
+                "block. Let's Encrypt calls this file privkey.pem.")
     import tempfile
     with tempfile.TemporaryDirectory() as td:
         cp, kp = Path(td) / "c.pem", Path(td) / "k.pem"
@@ -1495,7 +1514,14 @@ def _validate_pair(cert_text, key_text):
             probe = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
             probe.load_cert_chain(str(cp), str(kp))
         except ssl.SSLError as e:
-            return "OpenSSL rejected the pair: " + (getattr(e, "reason", None) or str(e))
+            reason = getattr(e, "reason", None) or ""
+            if reason == "KEY_VALUES_MISMATCH":
+                return ("The key doesn't match the certificate -- they aren't "
+                        "a pair. Both files must come from the same issuance; "
+                        "a certificate that was later renewed needs the "
+                        "renewed key alongside it.")
+            return ("The files are PEM, but OpenSSL couldn't load them as a "
+                    "working pair" + (f" ({reason})" if reason else f": {e}") + ".")
         except (OSError, ValueError) as e:
             return str(e)
     return ""

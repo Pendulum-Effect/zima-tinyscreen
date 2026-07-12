@@ -463,6 +463,51 @@ class TestEmptyCurrentPin(AuthTestBase):
         self.assertEqual(r.get_json(), {"ok": True, "enabled": False})
 
 
+class TestCertPairMessages(unittest.TestCase):
+    """_validate_pair's rejection text is user-facing (it lands verbatim
+    in the upload modal), so the common mistakes must produce SPECIFIC
+    plain-language messages, not OpenSSL constants (0.9.7.1). Lives in
+    the auth suite as part of the HTTPS/security surface."""
+
+    CERT = KEY = None
+
+    @classmethod
+    def setUpClass(cls):
+        import subprocess as sp, tempfile
+        cls._td = tempfile.TemporaryDirectory()
+        c, k = cls._td.name + "/c.pem", cls._td.name + "/k.pem"
+        sp.run(["openssl", "req", "-x509", "-newkey", "rsa:2048", "-keyout", k,
+                "-out", c, "-days", "2", "-nodes", "-subj", "/CN=t"],
+               check=True, capture_output=True)
+        cls.CERT, cls.KEY = open(c).read(), open(k).read()
+        c2, k2 = cls._td.name + "/c2.pem", cls._td.name + "/k2.pem"
+        sp.run(["openssl", "req", "-x509", "-newkey", "rsa:2048", "-keyout", k2,
+                "-out", c2, "-days", "2", "-nodes", "-subj", "/CN=t2"],
+               check=True, capture_output=True)
+        cls.OTHER_KEY = open(k2).read()
+
+    @classmethod
+    def tearDownClass(cls):
+        cls._td.cleanup()
+
+    def test_valid_pair_passes(self):
+        self.assertEqual(server._validate_pair(self.CERT, self.KEY), "")
+
+    def test_swapped_files_named_explicitly(self):
+        self.assertIn("look swapped", server._validate_pair(self.KEY, self.CERT))
+
+    def test_not_a_certificate(self):
+        self.assertIn("fullchain", server._validate_pair("hello", self.KEY))
+
+    def test_not_a_key(self):
+        self.assertIn("privkey.pem", server._validate_pair(self.CERT, "hello"))
+
+    def test_mismatched_pair_plain_language(self):
+        msg = server._validate_pair(self.CERT, self.OTHER_KEY)
+        self.assertIn("aren't a pair", msg)
+        self.assertNotIn("KEY_VALUES_MISMATCH", msg)
+
+
 class TestSecurityHeaders(AuthTestBase):
     def test_frame_denial_and_sniffing_headers_everywhere(self):
         for path in ("/dashboard.html", "/wizard.html", "/api/last_flash"):

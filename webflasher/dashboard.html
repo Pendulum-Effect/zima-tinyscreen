@@ -564,10 +564,27 @@
   .banner-discard { transition: color .16s ease; }
   .banner-discard:hover { color: var(--text); }
 
+  /* Ghost buttons + file rows for the certificate popup (0.9.7.1). */
+  .btn-ghost {
+    background: transparent; color: var(--teal);
+    border: 1px solid rgba(79, 209, 197, 0.45);
+    padding: 10px 18px; border-radius: 10px;
+    font-weight: 600; font-size: 13.5px; cursor: pointer;
+    transition: border-color .16s ease, background-color .16s ease, transform .16s ease;
+    white-space: nowrap;
+  }
+  .btn-ghost:hover { border-color: var(--teal); background: rgba(79, 209, 197, 0.08); transform: translateY(-1px); }
+  .file-row { display: flex; align-items: center; gap: 12px; margin-top: 12px; min-width: 0; }
+  .file-name { color: var(--subtext); font-size: 13px; min-width: 0;
+               overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .file-name.picked { color: var(--text); }
+  .info-card { display: flex; gap: 12px; align-items: flex-start; }
+  .info-card svg { width: 18px; height: 18px; flex-shrink: 0; color: var(--teal); margin-top: 2px; }
+
   @media (prefers-reduced-motion: reduce) {
     .nav-indicator.animate, .nav-item, .nav-item svg,
-    .btn, .radio-btn, .interval-btn, .toggle { transition: none; }
-    .btn:hover:not(:disabled), .nav-item:hover svg,
+    .btn, .radio-btn, .interval-btn, .toggle, .btn-ghost { transition: none; }
+    .btn:hover:not(:disabled), .nav-item:hover svg, .btn-ghost:hover,
     .radio-btn:hover:not(.active), .interval-btn:hover:not(.active) {
       transform: none;
     }
@@ -2398,7 +2415,7 @@
         'connection (expect the self-signed certificate warning).');
       warn.style.marginTop = '8px';
       up.appendChild(warn);
-      const go = el('button', 'btn', 'Open the HTTPS dashboard');
+      const go = el('button', 'btn btn-uniform', 'Open the HTTPS dashboard');
       go.style.marginTop = '14px';
       go.addEventListener('click', () => { window.location.href = httpsUrl; });
       up.appendChild(go);
@@ -2411,28 +2428,9 @@
       'warning only goes away when you visit the dashboard by the exact hostname ' +
       'on the certificate \u2014 and note Let\u2019s Encrypt certs renew every 90 days, ' +
       'so plan on re-uploading (or point a certbot deploy hook at /api/upload_cert).'));
-    const mkPick = (label) => {
-      const wrap = el('div');
-      wrap.style.marginTop = '12px';
-      wrap.appendChild(el('div', 'card-desc', label));
-      const input = document.createElement('input');
-      input.type = 'file';
-      input.accept = '.pem,.crt,.cer,.key,.txt';
-      input.style.marginTop = '6px';
-      wrap.appendChild(input);
-      up.appendChild(wrap);
-      return input;
-    };
-    const certPick = mkPick('Certificate (fullchain, PEM)');
-    const keyPick = mkPick('Private key (PEM)');
-    const status = el('div', 'card-desc', '');
-    status.style.marginTop = '12px';
-    const btnRow = el('div');
-    btnRow.style.marginTop = '14px';
-    const uploadBtn = el('button', 'btn', 'Install certificate');
-    btnRow.appendChild(uploadBtn);
-    up.appendChild(btnRow);
-    up.appendChild(status);
+    const uploadBtn = el('button', 'btn btn-uniform', 'Upload Certificate');
+    uploadBtn.style.marginTop = '14px';
+    up.appendChild(uploadBtn);
     body.appendChild(up);
 
     const readText = (file) => new Promise((res, rej) => {
@@ -2443,30 +2441,55 @@
     });
 
     uploadBtn.addEventListener('click', () => {
-      if (!certPick.files[0] || !keyPick.files[0]) {
-        status.style.color = 'var(--err)';
-        status.textContent = 'Pick both files first.';
-        return;
-      }
-      status.textContent = '';
+      // File choosing lives INSIDE the popup (0.9.7.1): two picker rows,
+      // and the Install button stays disabled until both files are
+      // chosen -- the old "Pick both files first" scolding can no
+      // longer happen because the invalid state isn't clickable.
+      let certFile = null;
+      let keyFile = null;
       confirmModal({
-        title: 'Install this certificate?',
-        text: 'Replaces the certificate the HTTPS dashboard and flasher use. New ' +
-              'connections switch to it immediately; the current pair is kept as ' +
-              'a backup on disk. If the new certificate is invalid or the pair ' +
-              'doesn\u2019t match, it\u2019s rejected and nothing changes.',
-        confirmLabel: 'Install',
+        title: 'Install a certificate',
+        text: 'Choose the certificate (full chain) and its private key. New ' +
+              'connections switch to it immediately; the current pair is kept ' +
+              'as a backup on disk. An invalid or mismatched pair is rejected ' +
+              'and nothing changes.',
+        confirmLabel: 'Install Certificate',
+        buildBody: (holder, ctx) => {
+          ctx.setConfirmEnabled(false);
+          const mkPickRow = (label, accept, onPick) => {
+            const row = el('div', 'file-row');
+            const input = document.createElement('input');
+            input.type = 'file';
+            input.accept = accept;
+            input.style.display = 'none';
+            const btn = el('button', 'btn-ghost', label);
+            const name = el('span', 'file-name', 'No file chosen');
+            btn.addEventListener('click', () => input.click());
+            input.addEventListener('change', () => {
+              const f = input.files[0] || null;
+              name.textContent = f ? f.name : 'No file chosen';
+              name.classList.toggle('picked', !!f);
+              onPick(f);
+              ctx.setConfirmEnabled(!!(certFile && keyFile));
+            });
+            row.appendChild(btn);
+            row.appendChild(name);
+            row.appendChild(input);
+            holder.appendChild(row);
+          };
+          mkPickRow('Choose certificate\u2026', '.pem,.crt,.cer,.txt', (f) => { certFile = f; });
+          mkPickRow('Choose private key\u2026', '.pem,.key,.txt', (f) => { keyFile = f; });
+        },
         onConfirm: async () => {
           try {
-            const [cert, key] = await Promise.all(
-              [readText(certPick.files[0]), readText(keyPick.files[0])]);
+            const [cert, key] = await Promise.all([readText(certFile), readText(keyFile)]);
             const r = await fetch('/api/upload_cert', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json', 'X-TinyScreen-Request': '1' },
               body: JSON.stringify({ cert, key }),
             });
             const data = await r.json();
-            if (!data.ok) return { ok: false, error: 'Rejected: ' + (data.error || 'unknown error') };
+            if (!data.ok) return { ok: false, error: data.error || 'Rejected for an unknown reason.' };
             await loadCertInfo();
             openCertView();  // refresh the Current certificate card
             return { ok: true };
@@ -2483,7 +2506,7 @@
     rev.appendChild(el('div', 'card-desc',
       'Generates a fresh self-signed certificate and switches to it. The current ' +
       'pair is kept as a backup on disk. Browsers will show the untrusted warning again.'));
-    const revBtn = el('button', 'btn', 'Revert');
+    const revBtn = el('button', 'btn btn-uniform', 'Revert');
     revBtn.style.marginTop = '12px';
     revBtn.addEventListener('click', () => {
       confirmModal({
@@ -2510,9 +2533,14 @@
     rev.appendChild(revBtn);
     body.appendChild(rev);
 
-    const note = el('div', 'card-desc',
-      'Tip: if you only ever use the dashboard over plain HTTP (port 8989), none of ' +
-      'this affects you \u2014 HTTPS (8990) exists mainly so the WebSerial flasher can run.');
+    const note = el('div', 'card info-card');
+    note.innerHTML =
+      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" ' +
+      'stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/>' +
+      '<line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>' +
+      '<div class="card-desc">If you only ever use the dashboard over plain HTTP ' +
+      '(port 8989), none of this affects you \u2014 HTTPS (8990) exists mainly so the ' +
+      'WebSerial flasher can run.</div>';
     note.style.marginTop = '14px';
     body.appendChild(note);
 
@@ -2554,64 +2582,7 @@
     body.textContent = '';
     const enabled = authStatus && authStatus.enabled;
 
-    const c = el('div', 'card');
-    c.appendChild(el('div', 'card-title', enabled ? 'Change or remove the PIN' : 'Set a PIN'));
-    c.appendChild(el('div', 'card-desc',
-      'When a PIN is set, changing anything from this dashboard (flashing, ' +
-      'settings, updates, certificates) requires it once per browser. ' +
-      'Viewing stays open unless you also lock it below.'));
-
-    const mkInput = (ph, top) => {
-      const i = document.createElement('input');
-      i.type = 'password';
-      i.placeholder = ph;
-      i.className = 'pin-input';
-      i.style.marginTop = top;
-      c.appendChild(i);
-      return i;
-    };
-    const current = enabled ? mkInput('Current PIN', '14px') : null;
-    const fresh = mkInput(enabled ? 'New PIN (leave empty to keep)' : 'New PIN (4+ characters)', enabled ? '10px' : '14px');
-    const confirm = mkInput('Repeat new PIN', '10px');
-
-    const lockRow = el('label', 'card-desc');
-    lockRow.style.cssText = 'display:flex; align-items:center; gap:8px; margin-top:14px; cursor:pointer;';
-    const lockBox = document.createElement('input');
-    lockBox.type = 'checkbox';
-    lockBox.checked = !!(authStatus && authStatus.lock_stats);
-    lockRow.appendChild(lockBox);
-    lockRow.appendChild(document.createTextNode('Also require the PIN just to view stats'));
-    c.appendChild(lockRow);
-
-    const status = el('div', 'card-desc', '');
-    status.style.marginTop = '12px';
-    c.appendChild(status);
-
-    const save = el('button', 'btn', enabled ? 'Save changes' : 'Turn on PIN');
-    save.style.marginTop = '12px';
-    save.addEventListener('click', async () => {
-      const payload = {};
-      if (enabled) {
-        if (!current.value) {
-          status.style.color = 'var(--err)';
-          status.textContent = 'Enter the current PIN first.';
-          current.focus();
-          return;
-        }
-        payload.current_pin = current.value;
-      }
-      if (fresh.value || !enabled) {
-        if (fresh.value !== confirm.value) {
-          status.style.color = 'var(--err)';
-          status.textContent = 'The two PIN fields don\u2019t match.';
-          return;
-        }
-        payload.new_pin = fresh.value;
-      }
-      status.style.color = '';
-      payload.lock_stats = lockBox.checked;
-      save.disabled = true;
-      status.textContent = 'Saving\u2026';
+    const postPin = async (payload) => {
       try {
         const r = await fetch('/api/auth/set_pin', {
           method: 'POST',
@@ -2619,63 +2590,154 @@
           body: JSON.stringify(payload),
         });
         const data = await r.json();
-        status.textContent = data.ok ? 'Saved \u2713' : (data.error || 'Failed.');
-        if (data.ok) { await loadPinSummary(); openPinView(); }
+        if (!data.ok) return { ok: false, error: data.error || 'Failed.' };
+        await loadPinSummary();
+        openPinView();
+        return { ok: true };
       } catch (e) {
-        status.textContent = 'Failed: ' + e.message;
-      } finally {
-        save.disabled = false;
+        return { ok: false, error: 'Failed: ' + e.message };
       }
-    });
-    c.appendChild(save);
-    body.appendChild(c);
+    };
 
-    if (enabled) {
+    if (!enabled) {
+      // First-time setup stays inline: two fields and a checkbox,
+      // nothing worth a popup yet.
+      const c = el('div', 'card');
+      c.appendChild(el('div', 'card-title', 'Set a PIN'));
+      c.appendChild(el('div', 'card-desc',
+        'When a PIN is set, changing anything from this dashboard (flashing, ' +
+        'settings, updates, certificates) requires it once per browser. ' +
+        'Viewing stays open unless you also lock it below.'));
+      const mkInput = (ph, top) => {
+        const i = document.createElement('input');
+        i.type = 'password';
+        i.placeholder = ph;
+        i.className = 'pin-input';
+        i.style.marginTop = top;
+        c.appendChild(i);
+        return i;
+      };
+      const fresh = mkInput('New PIN (4+ characters)', '14px');
+      const confirm = mkInput('Repeat new PIN', '10px');
+      const lockRow = el('label', 'card-desc');
+      lockRow.style.cssText = 'display:flex; align-items:center; gap:8px; margin-top:14px; cursor:pointer;';
+      const lockBox = document.createElement('input');
+      lockBox.type = 'checkbox';
+      lockRow.appendChild(lockBox);
+      lockRow.appendChild(document.createTextNode('Also require the PIN just to view stats'));
+      c.appendChild(lockRow);
+      const status = el('div', 'card-desc', '');
+      status.style.marginTop = '12px';
+      c.appendChild(status);
+      const save = el('button', 'btn btn-uniform', 'Turn on PIN');
+      save.style.marginTop = '12px';
+      save.addEventListener('click', async () => {
+        if (!fresh.value) {
+          status.style.color = 'var(--err)';
+          status.textContent = 'Choose a PIN first.';
+          fresh.focus();
+          return;
+        }
+        if (fresh.value !== confirm.value) {
+          status.style.color = 'var(--err)';
+          status.textContent = 'The two PIN fields don\u2019t match.';
+          return;
+        }
+        status.style.color = '';
+        status.textContent = 'Saving\u2026';
+        save.disabled = true;
+        const res = await postPin({ new_pin: fresh.value, lock_stats: lockBox.checked });
+        save.disabled = false;
+        if (!res.ok) {
+          status.style.color = 'var(--err)';
+          status.textContent = res.error;
+        }
+      });
+      c.appendChild(save);
+      body.appendChild(c);
+    } else {
+      // Enabled: every action is one uniform button opening its own
+      // popup (0.9.7.1) -- no field soup in the cards themselves.
+      const change = el('div', 'card');
+      change.appendChild(el('div', 'card-title', 'Change the PIN'));
+      change.appendChild(el('div', 'card-desc',
+        'Pick a new PIN. Every other browser gets signed out; this one stays in.'));
+      const changeBtn = el('button', 'btn btn-uniform', 'Change PIN');
+      changeBtn.style.marginTop = '12px';
+      changeBtn.addEventListener('click', () => {
+        confirmModal({
+          title: 'Change the PIN',
+          text: 'Enter the current PIN, then the new one twice.',
+          confirmLabel: 'Change PIN',
+          inputs: [
+            { placeholder: 'Current PIN', autocomplete: 'current-password' },
+            { placeholder: 'New PIN (4+ characters)', autocomplete: 'new-password' },
+            { placeholder: 'Repeat new PIN', autocomplete: 'new-password' },
+          ],
+          onConfirm: async ([currentPin, newPin, repeatPin]) => {
+            if (newPin !== repeatPin) {
+              return { ok: false, error: 'The two new-PIN fields don\u2019t match.' };
+            }
+            return postPin({ current_pin: currentPin, new_pin: newPin });
+          },
+        });
+      });
+      change.appendChild(changeBtn);
+      body.appendChild(change);
+
+      const lock = el('div', 'card');
+      lock.appendChild(el('div', 'card-title', 'Lock stats viewing'));
+      const lockDesc = el('div', 'card-desc',
+        authStatus.lock_stats
+          ? 'On \u2014 the PIN is needed just to SEE the dashboard, not only to change things.'
+          : 'Off \u2014 anyone on your network can view stats; the PIN only guards changes.');
+      lock.appendChild(lockDesc);
+      const lockBtn = el('button', 'btn btn-uniform', authStatus.lock_stats ? 'Unlock viewing' : 'Lock viewing');
+      lockBtn.style.marginTop = '12px';
+      lockBtn.addEventListener('click', () => {
+        const turningOn = !authStatus.lock_stats;
+        confirmModal({
+          title: turningOn ? 'Lock stats viewing?' : 'Unlock stats viewing?',
+          text: (turningOn
+            ? 'The dashboard will ask for the PIN before showing anything at all.'
+            : 'Stats become visible to anyone on your network again; the PIN still guards changes.') +
+            ' Enter the current PIN to confirm.',
+          confirmLabel: turningOn ? 'Lock viewing' : 'Unlock viewing',
+          withPin: true,
+          onConfirm: (pinValue) => postPin({ lock_stats: turningOn, current_pin: pinValue }),
+        });
+      });
+      lock.appendChild(lockBtn);
+      body.appendChild(lock);
+
       const off = el('div', 'card');
       off.appendChild(el('div', 'card-title', 'Turn the PIN off'));
       off.appendChild(el('div', 'card-desc',
         'Removes the PIN entirely; the dashboard goes back to trusting every ' +
         'device on your network.'));
-      const offBtn = el('button', 'btn', 'Turn off');
+      const offBtn = el('button', 'btn btn-uniform', 'Disable PIN');
       offBtn.style.marginTop = '12px';
-      // Confirmation happens in a modal that collects the PIN itself
-      // (0.9.5.4) -- no more pointing people at a field in a different
-      // card, and an empty submission never leaves the modal.
       offBtn.addEventListener('click', () => {
         confirmModal({
           title: 'Turn off the PIN?',
           text: 'The dashboard will go back to trusting every device on your ' +
                 'network. Enter the current PIN to confirm.',
-          confirmLabel: 'Turn off',
+          confirmLabel: 'Disable PIN',
           withPin: true,
-          onConfirm: async (pinValue) => {
-            try {
-              const r = await fetch('/api/auth/set_pin', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'X-TinyScreen-Request': '1' },
-                body: JSON.stringify({ disable: true, current_pin: pinValue }),
-              });
-              const data = await r.json();
-              if (!data.ok) return { ok: false, error: data.error || 'Failed.' };
-              await loadPinSummary();
-              openPinView();
-              return { ok: true };
-            } catch (e) {
-              return { ok: false, error: 'Failed: ' + e.message };
-            }
-          },
+          onConfirm: (pinValue) => postPin({ disable: true, current_pin: pinValue }),
         });
       });
       off.appendChild(offBtn);
       body.appendChild(off);
     }
 
-    const note = el('div', 'card-desc',
-      'Forgot the PIN? Delete the file auth.json from this app\u2019s state folder ' +
+    const forgot = el('div', 'card');
+    forgot.appendChild(el('div', 'card-title', 'Forgot PIN?'));
+    forgot.appendChild(el('div', 'card-desc',
+      'Delete the file auth.json from this app\u2019s state folder ' +
       '(AppData on your ZimaOS drive) and the dashboard unlocks immediately \u2014 ' +
-      'someone with access to the machine itself always outranks the PIN.');
-    note.style.marginTop = '14px';
-    body.appendChild(note);
+      'someone with access to the machine itself always outranks the PIN.'));
+    body.appendChild(forgot);
 
     document.getElementById('general-main').classList.add('view-swap-out');
     const sub = document.getElementById('general-sub');
@@ -2809,7 +2871,11 @@
   // with the modal held open in a busy state; return {ok:true} to close
   // (or {ok:true, keepOpen:true} when navigating away), or {ok:false,
   // error} to show the error and let the person retry or cancel.
-  function confirmModal({ title, text, confirmLabel, withPin = false, onConfirm }) {
+  function confirmModal({ title, text, confirmLabel, withPin = false,
+                          inputs = null, buildBody = null, onConfirm }) {
+    let okBtnEnabledByBody = true;
+    let pendingBuildBody = null;
+    let syncOk = () => {};
     const ov = document.createElement('div');
     ov.className = 'modal-overlay open';
     const box = el('div', 'modal');
@@ -2817,15 +2883,29 @@
     const body = el('div', 'card-desc', text);
     body.style.marginTop = '10px';
     box.appendChild(body);
-    let pin = null;
-    if (withPin) {
-      pin = document.createElement('input');
-      pin.type = 'password';
-      pin.className = 'pin-input';
-      pin.placeholder = 'Current PIN';
-      pin.autocomplete = 'current-password';
-      pin.style.marginTop = '14px';
-      box.appendChild(pin);
+    // withPin is sugar for a single current-PIN field (older callers get
+    // a scalar in onConfirm); inputs[] builds a stack of labeled fields
+    // (onConfirm gets an array); buildBody lets a caller render anything
+    // and gate the confirm button itself via ctx.setConfirmEnabled.
+    if (withPin) inputs = [{ placeholder: 'Current PIN', autocomplete: 'current-password' }];
+    const fields = (inputs || []).map((spec, i) => {
+      const f = document.createElement('input');
+      f.type = 'password';
+      f.className = 'pin-input';
+      f.placeholder = spec.placeholder;
+      if (spec.autocomplete) f.autocomplete = spec.autocomplete;
+      f.style.marginTop = i === 0 ? '14px' : '10px';
+      box.appendChild(f);
+      return f;
+    });
+    const pin = fields[0] || null;
+    let bodyCtx = null;
+    if (buildBody) {
+      const holder = el('div');
+      holder.style.marginTop = '14px';
+      box.appendChild(holder);
+      bodyCtx = { setConfirmEnabled: (on) => { okBtnEnabledByBody = !!on; syncOk(); } };
+      pendingBuildBody = () => buildBody(holder, bodyCtx);
     }
     const err = el('div', 'card-desc', '');
     err.style.marginTop = '10px';
@@ -2837,6 +2917,8 @@
     actions.appendChild(okBtn);
     box.appendChild(actions);
     ov.appendChild(box);
+    syncOk = () => { okBtn.disabled = !okBtnEnabledByBody; };
+    if (pendingBuildBody) { pendingBuildBody(); syncOk(); }
     document.body.appendChild(ov);
     document.querySelector('.app-window').classList.add('shrunk');
     if (pin) pin.focus();
@@ -2849,29 +2931,31 @@
     ov.addEventListener('click', (e) => { if (e.target === ov && !okBtn.disabled) close(); });
 
     const attempt = async () => {
-      if (pin && !pin.value) {
+      const empty = fields.find((f) => !f.value);
+      if (empty) {
         err.style.color = 'var(--err)';
-        err.textContent = 'Enter the PIN first.';
-        pin.focus();
+        err.textContent = fields.length > 1 ? 'Fill in every field first.' : 'Enter the PIN first.';
+        empty.focus();
         return;
       }
       okBtn.disabled = true;
       cancelBtn.disabled = true;
       err.style.color = '';
       err.textContent = 'Working\u2026';
-      const res = await onConfirm(pin ? pin.value : null);
+      const res = await onConfirm(
+        fields.length > 1 ? fields.map((f) => f.value) : (pin ? pin.value : null));
       if (res && res.ok) {
         if (!res.keepOpen) close();
         return;  // keepOpen: navigation in flight, stay busy
       }
       err.style.color = 'var(--err)';
       err.textContent = (res && res.error) || 'Failed.';
-      okBtn.disabled = false;
+      okBtn.disabled = !okBtnEnabledByBody;
       cancelBtn.disabled = false;
-      if (pin) { pin.value = ''; pin.focus(); }
+      if (fields.length === 1) { pin.value = ''; pin.focus(); }
     };
     okBtn.addEventListener('click', attempt);
-    if (pin) pin.addEventListener('keydown', (e) => { if (e.key === 'Enter') attempt(); });
+    fields.forEach((f) => f.addEventListener('keydown', (e) => { if (e.key === 'Enter') attempt(); }));
   }
 
   async function loadPatchNotes(d) {

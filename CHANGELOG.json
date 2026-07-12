@@ -2,6 +2,19 @@
   "_comment": "Human-readable changelog for the dashboard's About tab -- written for people, not commit archaeologists. The dashboard fetches this from GitHub at page load (baked copy as fallback), so add an entry here with each release and every install sees it. Newest first. Dates are YYYY-MM-DD.",
   "entries": [
     {
+      "version": "0.9.7.1",
+      "date": "2026-07-12",
+      "title": "0.9.7.1: cleaner PIN and certificate pages",
+      "notes": [
+        "The Dashboard PIN page is now a tidy stack of matching cards -- Change the PIN, Lock stats viewing, Turn the PIN off (button now says Disable PIN), and a new Forgot PIN? card -- each with one uniform button that opens its own confirmation window instead of showing a pile of fields.",
+        "Changing the PIN happens in a popup with Current, New, and Repeat fields, with mistakes (mismatched PINs, wrong current PIN) explained right in the window so you can fix and retry.",
+        "Uploading a certificate also moved into a popup: two clean file-picker buttons, and Install Certificate stays disabled until both files are chosen.",
+        "Certificate rejections now say what's actually wrong in plain language -- including the classic mistakes: swapped files, a password-protected key, the wrong file entirely, or a key that doesn't match the certificate. No more raw OpenSSL error codes.",
+        "The HTTPS tip text sits in its own card with an information icon.",
+        "No firmware changes."
+      ]
+    },
+    {
       "version": "0.9.7.0",
       "date": "2026-07-12",
       "title": "0.9.7: the dashboard learns some moves",

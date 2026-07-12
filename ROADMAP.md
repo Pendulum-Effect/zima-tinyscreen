@@ -6,7 +6,7 @@ eventually hit context limits). It carries the current state, what's
 done, and what's next, so any session can pick up where the last left
 off. **Delete this file at the final 1.0 release.**
 
-Snapshot as of **0.9.7.0** (2026-07-12).
+Snapshot as of **0.9.7.1** (2026-07-12).
 
 ## How to get oriented fast
 
@@ -250,6 +250,26 @@ None are worth a dedicated round; fold them into other work or skip.
         asserted; screenshots reviewed.
   - NOTE for hardware round: sidebar hover/travel is worth one quick
     look on a real phone (no hover there; travel should still glide).
+
+- [x] **0.9.7.1** PIN + certificate page restructure:
+  - [x] confirmModal grew inputs[] (stacked fields -> onConfirm gets an
+        array; withPin stays scalar for old callers) and buildBody(
+        holder, ctx) with ctx.setConfirmEnabled for arbitrary content.
+  - [x] PIN view: modal-first cards (Change the PIN / Lock stats
+        viewing / Turn the PIN off -> Disable PIN) + Forgot PIN? card;
+        all buttons btn-uniform. lock_stats moved out of the old
+        save-everything form into its own PIN-confirmed toggle card.
+        First-time Set a PIN stays inline (two fields + checkbox).
+  - [x] Cert upload: popup with ghost file-picker buttons; Install
+        Certificate disabled until both files picked (the "Pick both
+        files first" scolding is structurally impossible now).
+  - [x] _validate_pair rejections rewritten for humans, with SPECIFIC
+        detection of: swapped cert/key, non-PEM files, encrypted keys,
+        and KEY_VALUES_MISMATCH -> "they aren't a pair" (this was the
+        confusing pictured error; raw OpenSSL constants no longer
+        surface). TestCertPairMessages pins all five messages.
+  - [x] Tip text -> .info-card with icon; HTTP-gate + Revert buttons
+        uniform.
 
 ## Next up (suggested order)
 

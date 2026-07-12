@@ -906,7 +906,11 @@ class TestCertEndpoints(UpdaterTestBase):
         _, key_b = self._gen_pair("beta")
         r = self.app.post("/api/upload_cert", json={"cert": cert_a, "key": key_b})
         self.assertEqual(r.status_code, 400)
-        self.assertIn("rejected", r.get_json()["error"].lower())
+        # 0.9.7.1: rejections are plain language now ("they aren't a
+        # pair"), never raw OpenSSL constants.
+        msg = r.get_json()["error"]
+        self.assertIn("aren't a pair", msg)
+        self.assertNotIn("KEY_VALUES_MISMATCH", msg)
 
     def test_upload_installs_valid_pair_with_tight_perms(self):
         cert, key = self._gen_pair("mydash.example.com")
