@@ -303,6 +303,45 @@ int main() {
   CHECK(utilColorFor(95) == utilColorFor(100));          // flat red zone
   CHECK(utilColorFor(80) != utilColorFor(95));
 
+  // ---- 1.19 screensaver: brightness field + temp style + backlight policy ----
+  {
+    JsonDocument doc;
+    doc["cmd"] = "set_config";
+    doc["saver_enabled"] = true;
+    doc["saver_style"] = "temp";        // new style must be accepted
+    doc["saver_brightness"] = 250;      // clamps to 100
+    handleSetConfig(doc);
+    CHECK(config.saverEnabled);
+    CHECK(strcmp(config.saverStyle, "temp") == 0);
+    CHECK(config.saverBrightness == 100);
+
+    JsonDocument doc2;
+    doc2["cmd"] = "set_config";
+    doc2["saver_style"] = "matrix";     // junk style: whitelist holds
+    doc2["saver_brightness"] = -5;      // clamps to 0
+    handleSetConfig(doc2);
+    CHECK(strcmp(config.saverStyle, "temp") == 0);
+    CHECK(config.saverBrightness == 0);
+
+    // Backlight policy: a drawing saver only ever DIMS -- min(effective,
+    // saver) -- and blank always cuts to zero. Night mode must win when
+    // it is darker than the saver setting.
+    config.brightness = 80;
+    config.nightEnabled = false;
+    config.saverBrightness = 30;
+    saverActive = false;
+    CHECK(wantedBacklightPct() == 80);              // saver idle: day level
+    saverActive = true;
+    CHECK(wantedBacklightPct() == 30);              // temp saver: capped
+    config.saverBrightness = 100;
+    CHECK(wantedBacklightPct() == 80);              // never brightens past day
+    strcpy(config.saverStyle, "blank");
+    CHECK(wantedBacklightPct() == 0);               // blank: backlight off
+    strcpy(config.saverStyle, "temp");
+    config.saverBrightness = 30;
+    saverActive = false;
+  }
+
   // ---- generated fonts: sane ranges, degree glyph present, digits real ----
   CHECK(tiny_sans_18.first == 32 && tiny_sans_18.last == 176);
   CHECK(tiny_sans_bold_64.first == 32 && tiny_sans_bold_64.last == 176);

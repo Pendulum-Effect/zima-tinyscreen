@@ -431,8 +431,12 @@
 
   /* Skeleton cards: shown inside the -loading divs while device info is
      on its way. A soft shimmer sweep, nothing attention-hungry. */
+  /* Skeletons wear the same box as the .card they stand in for -- same
+     padding, same margins, full width -- so nothing jumps when the real
+     content arrives (0.9.6.1: the old 640px cap made desktop skeletons
+     visibly narrower than the cards that replaced them). */
   .skel-card { background: #0f1e24; border: 1px solid #17313a; border-radius: 14px;
-               padding: 18px; margin-bottom: 14px; max-width: 640px; }
+               padding: 22px 24px; margin-bottom: 18px; }
   .skel { position: relative; overflow: hidden; background: #14282f; border-radius: 8px; }
   .skel::after { content: ""; position: absolute; inset: 0;
                  background: linear-gradient(90deg, transparent, rgba(159,214,207,0.08), transparent);
@@ -465,10 +469,15 @@
      cards stack full-width text over their button. */
   @media (max-width: 860px) {
     .device-card {
-      grid-template-areas: "name" "preview" "meta";
+      /* "health" was MISSING here (0.9.6.1): with no named row, the
+         pill auto-placed into an implicit column to the RIGHT of the
+         whole grid -- the "hanging off the card edge" bug on phones. */
+      grid-template-areas: "name" "preview" "health" "meta";
       grid-template-columns: 1fr;
       row-gap: 14px;
     }
+    .device-card #health-status { justify-self: center; max-width: 100%; }
+    .device-card .pill { flex-wrap: wrap; justify-content: center; row-gap: 0; }
     .device-preview { justify-self: center; width: 140px; }
     .device-preview.tall { height: 163px; }
     .device-preview.square { height: 140px; }
@@ -682,6 +691,43 @@
         <div class="card">
           <div class="card-header">
             <div>
+              <div class="card-title">Screensaver</div>
+              <div class="card-desc" id="saver-desc">If the screen hasn't been touched for a while, show a screensaver.</div>
+            </div>
+            <div class="toggle" id="saver-enabled"><div class="knob"></div></div>
+          </div>
+          <div id="saver-controls" style="display:none; margin-top:12px;">
+            <div class="card-desc">Style</div>
+            <div class="radio-row" style="margin-top:6px;">
+              <button class="radio-btn" data-saver-style="clock">Drifting clock</button>
+              <button class="radio-btn" data-saver-style="temp">Temperature</button>
+              <button class="radio-btn" data-saver-style="blank">Screen off</button>
+            </div>
+            <div id="saver-brightness-row">
+              <div class="card-desc" style="margin-top:10px;">Brightness while active</div>
+              <div class="brightness-row" style="margin-top:6px;">
+                <input type="range" id="saver-brightness-slider" min="0" max="100" value="30" class="brightness-slider">
+                <span class="brightness-value" id="saver-brightness-value">30%</span>
+              </div>
+              <div class="info-note"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg><span>Only ever dims: if Night Mode is set darker, the darker value wins.</span></div>
+            </div>
+            <div class="card-desc" style="margin-top:10px;">Start after</div>
+            <div class="radio-row" style="margin-top:6px;">
+              <button class="interval-btn" data-saver-min="1">1 min</button>
+              <button class="interval-btn" data-saver-min="5">5 min</button>
+              <button class="interval-btn" data-saver-min="10">10 min</button>
+              <button class="interval-btn" data-saver-min="15">15 min</button>
+              <button class="interval-btn" data-saver-min="30">30 min</button>
+            </div>
+            <div class="card-desc" style="margin-top:8px; font-size:0.85em;">
+              Any touch wakes the screen back up.
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <div>
               <div class="card-title">Night Mode</div>
               <div class="card-desc">Dim the screen (or turn it off) on a schedule.</div>
             </div>
@@ -721,34 +767,6 @@
             <button class="radio-btn" data-aspect="square">Square (1:1)</button>
           </div>
           <div class="info-note"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg><span>The screen restarts for a moment when this changes.</span></div>
-        </div>
-
-        <div class="card">
-          <div class="card-header">
-            <div>
-              <div class="card-title">Screensaver</div>
-              <div class="card-desc" id="saver-desc">If the screen hasn't been touched for a while, show a screensaver.</div>
-            </div>
-            <div class="toggle" id="saver-enabled"><div class="knob"></div></div>
-          </div>
-          <div id="saver-controls" style="display:none; margin-top:12px;">
-            <div class="card-desc">Style</div>
-            <div class="radio-row" style="margin-top:6px;">
-              <button class="radio-btn" data-saver-style="clock">Drifting clock</button>
-              <button class="radio-btn" data-saver-style="blank">Screen off</button>
-            </div>
-            <div class="card-desc" style="margin-top:10px;">Start after</div>
-            <div class="radio-row" style="margin-top:6px;">
-              <button class="interval-btn" data-saver-min="1">1 min</button>
-              <button class="interval-btn" data-saver-min="5">5 min</button>
-              <button class="interval-btn" data-saver-min="10">10 min</button>
-              <button class="interval-btn" data-saver-min="15">15 min</button>
-              <button class="interval-btn" data-saver-min="30">30 min</button>
-            </div>
-            <div class="card-desc" style="margin-top:8px; font-size:0.85em;">
-              Any touch wakes the screen back up.
-            </div>
-          </div>
         </div>
 
       </div>
@@ -1202,7 +1220,7 @@
   let currentBrightness = 100; // preserved untouched -- Screen tab will own this later
   // Night mode / screensaver (firmware 1.1.0)
   let nightEnabled = false, nightStartMin = 1320, nightEndMin = 420, nightBrightness = 10;
-  let saverEnabled = false, saverMinutes = 5, saverStyle = 'clock';
+  let saverEnabled = false, saverMinutes = 5, saverStyle = 'clock', saverBrightness = 30;
   let rotation = 0, squareFit = false;
 
   // Keep the custom track's filled portion in sync with the value, and
@@ -1438,6 +1456,11 @@
     syncSlider(this, document.getElementById('night-brightness-value'), nightBrightness);
     markDirty();
   });
+  document.getElementById('saver-brightness-slider').addEventListener('input', function () {
+    saverBrightness = parseInt(this.value, 10);
+    syncSlider(this, document.getElementById('saver-brightness-value'), saverBrightness);
+    markDirty();
+  });
   document.getElementById('saver-enabled').addEventListener('click', function () {
     if (this.classList.contains('disabled')) return;
     saverEnabled = !saverEnabled;
@@ -1464,6 +1487,10 @@
   document.querySelectorAll('.radio-btn[data-saver-style]').forEach(btn => {
     btn.addEventListener('click', () => {
       saverStyle = btn.dataset.saverStyle;
+      // "Screen off" cuts the backlight entirely -- a brightness slider
+      // under it would be a lie, so it hides.
+      document.getElementById('saver-brightness-row').style.display =
+        saverStyle === 'blank' ? 'none' : 'block';
       document.querySelectorAll('.radio-btn[data-saver-style]').forEach(b =>
         b.classList.toggle('active', b === btn));
       markDirty();
@@ -1748,7 +1775,13 @@
       nightBrightness = Number.isInteger(cfg.night_brightness) ? cfg.night_brightness : 10;
       saverEnabled = !!cfg.saver_enabled;
       saverMinutes = Number.isInteger(cfg.saver_minutes) ? cfg.saver_minutes : 5;
-      saverStyle = cfg.saver_style === 'blank' ? 'blank' : 'clock';
+      saverStyle = ['clock', 'blank', 'temp'].includes(cfg.saver_style) ? cfg.saver_style : 'clock';
+      saverBrightness = Number.isInteger(cfg.saver_brightness) ? cfg.saver_brightness : 30;
+      const sbSlider = document.getElementById('saver-brightness-slider');
+      sbSlider.value = saverBrightness;
+      syncSlider(sbSlider, document.getElementById('saver-brightness-value'), saverBrightness);
+      document.getElementById('saver-brightness-row').style.display =
+        saverStyle === 'blank' ? 'none' : 'block';
       const hasTouch = ('has_touch' in cfg) ? !!cfg.has_touch : cfg.board === 1;
 
       const minToTime = m => String(Math.floor(m / 60)).padStart(2, '0') + ':' + String(m % 60).padStart(2, '0');
@@ -2160,6 +2193,16 @@
     sub.classList.add('open');
     document.querySelector('.main').scrollTop = 0;
 
+    // Skeletons while the four endpoints answer (0.9.6.1): this view
+    // takes a beat or two, and a blank pane reads as broken.
+    for (let i = 0; i < 3; i++) {
+      const sk = el('div', 'skel-card');
+      sk.innerHTML = '<div class="skel skel-line w30"></div>' +
+                     '<div class="skel skel-block"></div>' +
+                     '<div class="skel skel-line w60"></div>';
+      body.appendChild(sk);
+    }
+
     const fetchJson = async (url) => {
       try { return await (await fetch(url)).json(); }
       catch (e) { return { error: 'unreachable: ' + e.message }; }
@@ -2169,6 +2212,7 @@
       fetchJson('/api/app_version'), fetchJson('/api/update_state'),
     ]);
 
+    body.textContent = '';  // skeletons out, real cards in
     const fc = section('Last firmware update');
     if (flash && flash.flash) {
       const meta = el('div', 'card-desc',
@@ -2830,6 +2874,7 @@
           saver_enabled: saverEnabled,
           saver_minutes: saverMinutes,
           saver_style: saverStyle,
+          saver_brightness: saverBrightness,
         }),
       });
       const data = await res.json();

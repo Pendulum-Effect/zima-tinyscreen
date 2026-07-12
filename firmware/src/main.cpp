@@ -41,7 +41,7 @@
 // "Software Version" field via the get_config command below. No
 // auto-update-checking mechanism exists yet (that's a separate, not-yet
 // -built feature) -- this just answers "what's currently on my device."
-#define FIRMWARE_VERSION "1.18.0"
+#define FIRMWARE_VERSION "1.19"  // two-part scheme as of 1.19 (was x.y.z)
 
 // Note: screen dimensions are NOT fixed -- board 1 (1.69") is 240x280,
 // taller than board 0's 240x240. See screenW/screenH globals, set from
@@ -122,7 +122,14 @@ struct Config {
   // meaningful on boards with a touch panel; ignored otherwise.
   bool saverEnabled = false;
   int saverMinutes = 5;
-  char saverStyle[8] = "clock"; // "clock" (drifting time) or "blank" (screen off)
+  char saverStyle[8] = "clock"; // "clock" (drifting time), "blank" (screen off),
+                                // or "temp" (big CPU temperature, 1.19)
+  int saverBrightness = 30;     // backlight % while a drawing saver is active
+                                // (1.19). Only ever DIMS: the effective value
+                                // is min(day/night brightness, this) so an
+                                // active saver can't brighten a room that
+                                // night mode darkened. Ignored by "blank",
+                                // which always cuts the backlight to 0.
 
   // Display orientation in degrees (0/90/180/270) for sideways or
   // upside-down mounting, and square-fit: render everything into a
@@ -159,6 +166,7 @@ void loadConfig() {
   config.tzOffsetMin = prefs.getInt("tzOffset", 0);
   config.saverEnabled = prefs.getBool("saverEn", false);
   config.saverMinutes = prefs.getInt("saverMin", 5);
+  config.saverBrightness = prefs.getInt("saverBri", 30);
   String saverStyle = prefs.getString("saverStyle", "clock");
   saverStyle.toCharArray(config.saverStyle, 8);
   config.rotation = prefs.getInt("rotation", 0);
@@ -228,6 +236,7 @@ void saveConfig() {
   prefs.putInt("tzOffset", config.tzOffsetMin);
   prefs.putBool("saverEn", config.saverEnabled);
   prefs.putInt("saverMin", config.saverMinutes);
+  prefs.putInt("saverBri", config.saverBrightness);
   prefs.putString("saverStyle", config.saverStyle);
   prefs.putInt("rotation", config.rotation);
   prefs.putBool("squareFit", config.squareFit);
@@ -441,13 +450,25 @@ void initDisplay() {
   }
 }
 
-void applyBrightness() {
-  // Night mode aware: what actually reaches the backlight is the
-  // effective brightness (night window may substitute a dimmer value),
-  // and a blank-style active screensaver forces the backlight off
-  // entirely regardless of everything else.
+int wantedBacklightPct() {
+  // The one place backlight policy lives (1.19) -- applyBrightness and
+  // the once-a-second change check both call this, so they can never
+  // disagree again. Night mode aware: the effective brightness already
+  // reflects the night window. An active screensaver then only ever
+  // DIMS further: "blank" cuts the backlight entirely, and the drawing
+  // styles cap at saverBrightness without ever raising past the
+  // day/night level (a saver must not brighten a room night mode
+  // darkened).
   int pct = effectiveBrightnessPct();
-  if (saverActive && strcmp(config.saverStyle, "blank") == 0) pct = 0;
+  if (saverActive) {
+    if (strcmp(config.saverStyle, "blank") == 0) return 0;
+    if (config.saverBrightness < pct) pct = config.saverBrightness;
+  }
+  return pct;
+}
+
+void applyBrightness() {
+  int pct = wantedBacklightPct();
   pwmWriteBacklight(BOARD_PROFILES[config.boardId].lcd_bl, map(pct, 0, 100, 0, 255));
   lastAppliedBrightness = pct;
 }
@@ -1587,6 +1608,23 @@ void drawScreensaver() {
   canvas->flush();
 }
 
+void drawSaverTemp() {
+  // "temp" screensaver (1.19): nothing but the CPU temperature, big and
+  // centered, in the same green->amber->red ramp the temperature page
+  // uses -- glanceable across the room, and the color carries the
+  // signal even when the digits are too far to read.
+  canvas->fillScreen(COL_BG);
+  char t[8];
+  snprintf(t, sizeof(t), "%d", (int)(stats.cpu_temp_c + 0.5f));
+  canvas->setTextColor(tempColorFor(stats.cpu_temp_c));
+  canvas->setTextSize(9);
+  int16_t x1, y1; uint16_t w, h;
+  canvas->getTextBounds(t, 0, 0, &x1, &y1, &w, &h);
+  canvas->setCursor(LX + (LW - (int)w) / 2, LY + (LH - (int)h) / 2 + (int)h);
+  canvas->print(t);
+  canvas->flush();
+}
+
 // ---------------------------------------------------------------------
 // Serial protocol: stats updates AND config commands share one line-based
 // JSON stream. A line with a "cmd" field is a command; otherwise it's
@@ -1647,9 +1685,11 @@ void handleSetConfig(JsonDocument &doc) {
   if (doc["tz_offset_min"].is<int>())    config.tzOffsetMin = constrain((int)doc["tz_offset_min"], -840, 840);
   if (doc["saver_enabled"].is<bool>())   config.saverEnabled = doc["saver_enabled"];
   if (doc["saver_minutes"].is<int>())    config.saverMinutes = constrain((int)doc["saver_minutes"], 1, 240);
+  if (doc["saver_brightness"].is<int>()) config.saverBrightness = constrain((int)doc["saver_brightness"], 0, 100);
   if (doc["saver_style"].is<const char *>()) {
     const char *s = doc["saver_style"];
-    if (strcmp(s, "clock") == 0 || strcmp(s, "blank") == 0) strcpy(config.saverStyle, s);
+    if (strcmp(s, "clock") == 0 || strcmp(s, "blank") == 0 || strcmp(s, "temp") == 0)
+      strcpy(config.saverStyle, s);
   }
   // Per-page layout selections: {"temp": "mist", ...}. Applied against
   // the page list as it now stands (the pages field, if present, was
@@ -1743,6 +1783,7 @@ void handleGetConfig() {
   doc["tz_offset_min"] = config.tzOffsetMin;
   doc["saver_enabled"] = config.saverEnabled;
   doc["saver_minutes"] = config.saverMinutes;
+  doc["saver_brightness"] = config.saverBrightness;
   doc["saver_style"] = config.saverStyle;
   doc["rotation"] = config.rotation;
   doc["square_fit"] = config.squareFit;
@@ -1944,9 +1985,7 @@ void loop() {
       saverActive = true;
       applyBrightness();  // blank style cuts the backlight here
     }
-    int want = effectiveBrightnessPct();
-    if (saverActive && strcmp(config.saverStyle, "blank") == 0) want = 0;
-    if (want != lastAppliedBrightness) applyBrightness();
+    if (wantedBacklightPct() != lastAppliedBrightness) applyBrightness();
   }
 
   if (config.autoCycle && !saverActive &&
@@ -1956,9 +1995,11 @@ void loop() {
 
   if (now - lastDrawMs > FRAME_INTERVAL_MS) {
     if (saverActive) {
-      // blank style: backlight is off, skip drawing entirely; clock
-      // style: redraw (the time text drifts once a minute).
+      // blank style: backlight is off, skip drawing entirely; the
+      // drawing styles redraw on the normal cadence (the clock drifts
+      // once a minute; the temperature tracks the live stats stream).
       if (strcmp(config.saverStyle, "clock") == 0) drawScreensaver();
+      else if (strcmp(config.saverStyle, "temp") == 0) drawSaverTemp();
     } else {
       drawCurrentScreen();
     }

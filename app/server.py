@@ -809,6 +809,7 @@ def build_set_config_payload(cfg):
                       ("night_end_min", int), ("night_brightness", int),
                       ("tz_offset_min", int), ("saver_enabled", bool),
                       ("saver_minutes", int), ("saver_style", str),
+                      ("saver_brightness", int),
                       ("rotation", int), ("square_fit", bool)]:
         if key in cfg:
             payload[key] = cast(cfg[key])

@@ -2,6 +2,19 @@
   "_comment": "Human-readable changelog for the dashboard's About tab -- written for people, not commit archaeologists. The dashboard fetches this from GitHub at page load (baked copy as fallback), so add an entry here with each release and every install sees it. Newest first. Dates are YYYY-MM-DD.",
   "entries": [
     {
+      "version": "0.9.6.1",
+      "date": "2026-07-12",
+      "title": "0.9.6.1: screensaver upgrades and layout polish (firmware 1.19)",
+      "notes": [
+        "New firmware 1.19 (flash from the General tab after updating): the screensaver gets a brightness setting, and a new 'Temperature' style -- just the CPU temperature, big and centered, in the same green-to-red colors as the temperature page.",
+        "Screensaver brightness only ever dims: if Night Mode is set darker, the darker value wins, so an idle screen never lights up a room you've darkened.",
+        "The Screen tab is reordered to Brightness, Screensaver, Night Mode, Rotation, Aspect Ratio.",
+        "Loading placeholders on desktop now span the full width like the cards they stand in for, and the Debugging view shows placeholders while it loads instead of a blank pane.",
+        "Fixed the General tab on phones: the health badge was hanging outside the card; everything now stacks centered inside it.",
+        "Firmware versions now use a two-part scheme (1.19 instead of 1.19.0)."
+      ]
+    },
+    {
       "version": "0.9.6.0",
       "date": "2026-07-12",
       "title": "0.9.6: usable without a display, safer certificate actions",

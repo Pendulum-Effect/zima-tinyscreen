@@ -165,6 +165,11 @@ class JsonVariantStub {
   template <typename T> T as() const;
   template <typename T> T to();
   JsonObjectStub toObject();
+  // Exact-match overload for non-const char* keys (e.g. config.pages[i]):
+  // without it, the new operator bool() makes the built-in commutative
+  // subscript (ptr[variant-as-integer]) a competing candidate and GCC
+  // warns about the ambiguity.
+  JsonVariantStub operator[](char *k) const { return (*this)[(const char *)k]; }
   JsonVariantStub operator[](const char *k) const {
     if (!v->obj.count(k)) v->obj[k] = std::make_shared<JsonValue>();
     return JsonVariantStub(v->obj.at(k));
@@ -185,6 +190,11 @@ class JsonVariantStub {
   // templates); it can't be `explicit` because real firmware code uses
   // `int x = doc["k"];`, which is idiomatic ArduinoJson. Benign -- leave it.
   operator int() const { return (int)(v->kind == JsonValue::INT ? v->i : (long)v->f); }
+  // Real ArduinoJson converts variants to bool; without this, assigning
+  // a BOOL-kind variant to a bool field silently picked operator int()
+  // (which reads the never-set int slot) and produced false -- hiding
+  // every `config.x = doc["x"]` bool assignment from the tests.
+  operator bool() const { return v->kind == JsonValue::BOOL ? v->b : v->i != 0; }
   operator const char *() const { return v->kind == JsonValue::STR ? v->s.c_str() : nullptr; }
   friend String operator|(const JsonVariantStub &a, const String &d) {
     return a.v->kind == JsonValue::STR ? String(a.v->s.c_str()) : d;

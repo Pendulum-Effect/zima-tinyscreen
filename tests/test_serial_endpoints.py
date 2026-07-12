@@ -153,6 +153,7 @@ class FakeDevice:
         "night_enabled": False, "night_start_min": 1320,
         "night_end_min": 420, "night_brightness": 10,
         "saver_enabled": False, "saver_minutes": 5, "saver_style": "clock",
+        "saver_brightness": 30,
         "firmware_version": "1.18.0",
     }
 
@@ -608,8 +609,11 @@ class TestPayloadBuilding(unittest.TestCase):
         self.assertIs(p["saver_enabled"], True)
         self.assertEqual(p["rotation"], 180)
         for absent in ("night_enabled", "night_start_min", "tz_offset_min",
-                       "saver_minutes", "square_fit"):
+                       "saver_minutes", "saver_brightness", "square_fit"):
             self.assertNotIn(absent, p)
+        # saver_brightness (firmware 1.19): int passthrough like the rest
+        p = server.build_set_config_payload({"saver_brightness": "45"})
+        self.assertEqual(p["saver_brightness"], 45)
 
     def test_layouts_mapping_stringified_and_non_dict_dropped(self):
         p = server.build_set_config_payload({"layouts": {1: 2, "cpu": "ring"}})

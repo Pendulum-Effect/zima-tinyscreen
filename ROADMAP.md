@@ -6,7 +6,7 @@ eventually hit context limits). It carries the current state, what's
 done, and what's next, so any session can pick up where the last left
 off. **Delete this file at the final 1.0 release.**
 
-Snapshot as of **0.9.6.0** (2026-07-12).
+Snapshot as of **0.9.6.1** (2026-07-12).
 
 ## How to get oriented fast
 
@@ -205,8 +205,39 @@ None are worth a dedicated round; fold them into other work or skip.
         cheap): the const bug is exactly the class the host-side suites
         can't see. Candidate for a later 0.9.6.x.
 
+- [x] **0.9.6.1** Screensaver features + layout polish (FIRMWARE 1.19):
+  - [x] Firmware: saver_brightness (NVS "saverBri", clamps 0-100,
+        reported in get_config) + "temp" saver style (drawSaverTemp:
+        big centered temp, tempColorFor ramp). New wantedBacklightPct()
+        is the single backlight-policy source (applyBrightness + the
+        once-a-second check both call it); drawing savers take
+        min(effective, saverBrightness) -- never brighten past night
+        mode. FIRMWARE_VERSION now two-part: "1.19".
+  - [x] Stub fidelity fix: JsonVariantStub had no operator bool(), so
+        every `config.x = doc["x"]` BOOL assignment silently read the
+        unset int slot and produced false -- no prior test ever read a
+        bool through set_config. Fixed + exact-match char* subscript
+        overload to keep the build warning-free. LESSON: stub gaps hide
+        exactly the code paths they fail to model.
+  - [x] Dashboard: saver brightness slider (hidden for "blank"),
+        Temperature style radio, style whitelist ['clock','blank',
+        'temp'], payload + server passthrough + FakeDevice
+        DEFAULT_CONFIG all carry saver_brightness.
+  - [x] Screen tab reordered: Brightness > Screensaver > Night Mode >
+        Rotation > Aspect.
+  - [x] Skeletons: desktop skel-card now wears the .card box exactly
+        (was capped 640px); Debugging subview shows skeletons during
+        its four fetches.
+  - [x] Mobile General: "health" row was missing from the phone grid
+        template, so the pill auto-placed into an implicit column OFF
+        the card. Row added + pill wraps centered.
+
 ## Next up (suggested order)
 
+- [ ] **Hardware round for 0.9.6.1**: flash firmware 1.19, set saver to
+      Temperature with brightness ~30%, confirm it dims (and that night
+      mode still wins if darker); check the phone General tab; skim the
+      Screen tab order.
 - [ ] **Hardware round for 0.9.6.0**: unplug the display with the app
       still open (General should show cached state + Warning, not an
       error), fresh-browser check of the HTTP cert gate button, one
