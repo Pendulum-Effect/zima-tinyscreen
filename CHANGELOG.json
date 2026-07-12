@@ -2,6 +2,19 @@
   "_comment": "Human-readable changelog for the dashboard's About tab -- written for people, not commit archaeologists. The dashboard fetches this from GitHub at page load (baked copy as fallback), so add an entry here with each release and every install sees it. Newest first. Dates are YYYY-MM-DD.",
   "entries": [
     {
+      "version": "0.9.6.0",
+      "date": "2026-07-12",
+      "title": "0.9.6: usable without a display, safer certificate actions",
+      "notes": [
+        "Fixed a bug that could take down the whole General tab with a cryptic error when the display was unplugged (Safari showed \"Attempted to assign to readonly property\"). The unplugged experience now works as designed: your settings stay browsable from the last known state, marked with a Warning badge.",
+        "Even on a fresh install with no display ever connected, the General page now shows everything app-level -- updates, debugging, certificate, PIN, reset -- with a friendly pointer to first-time setup. Only the Layouts and Screen tabs actually need the device.",
+        "Installing a certificate and reverting to self-signed both get proper confirmation windows now, with any rejection shown right in the window so you can fix and retry.",
+        "On plain HTTP, the certificate upload area is replaced entirely by an explanation and a button that takes you to the HTTPS dashboard -- there's no longer any way to even start an upload that would send your private key over the network unencrypted.",
+        "The TinyScreen wordmark in the sidebar now spans the full width of the navigation, matching the selection pills.",
+        "No firmware changes."
+      ]
+    },
+    {
       "version": "0.9.5.4",
       "date": "2026-07-12",
       "title": "0.9.5.4: proper confirmations, and a face for the app",

@@ -74,8 +74,10 @@
     display: flex;
     flex-direction: column;
   }
-  .sidebar h1 { font-size: 20px; margin: 0 0 42px; padding-left: 8px; }
-  .sidebar h1 img { height: 58px; width: auto; display: block; }
+  .sidebar h1 { font-size: 20px; margin: 0 0 42px; }
+  /* The wordmark spans exactly the width of the nav selection pills
+     below it (0.9.6) -- same box, no extra inset. */
+  .sidebar h1 img { width: 100%; height: auto; display: block; }
   .nav-item {
     display: flex; align-items: center; gap: 10px;
     padding: 11px 14px; border-radius: 8px; cursor: pointer;
@@ -126,7 +128,8 @@
       padding: 10px 12px;
     }
     .sidebar h1 { margin: 0 10px 0 4px; font-size: 17px; white-space: nowrap; }
-    .sidebar h1 img { height: 30px; }
+    /* Horizontal bar on small screens: cap by HEIGHT there instead. */
+    .sidebar h1 img { width: auto; height: 30px; }
     /* Icons carry the navigation on small screens -- labels hide so the
        bar never needs to scroll sideways. */
     .nav-item { margin-bottom: 0; flex: 1; justify-content: center; padding: 10px 6px; }
@@ -1516,7 +1519,13 @@
         fetch('/api/current_config'),
         fetch('/api/status'),
       ]);
-      const cfgData = await cfgRes.json();
+      // let, not const: the cached-config fallback below REASSIGNS this
+      // when the device is unplugged. As a const, that assignment threw
+      // ("Attempted to assign to readonly property" in Safari) and took
+      // the whole General tab down with it -- the exact unplugged
+      // scenario the fallback was written for, broken by its own
+      // declaration. Found on real hardware in 0.9.6.
+      let cfgData = await cfgRes.json();
       const statusData = await statusRes.json();
 
       // Isolated on purpose: this is a lower-stakes, additional lookup,
@@ -1573,7 +1582,40 @@
           deviceMissing = true;
           cfgData = { ok: true, config: cfgData.cached_config };
         } else {
-          showError((cfgData.error || 'Could not reach the device.') + ' <a href="wizard.html">Run setup →</a>');
+          // No device AND no cached state (fresh install / never read):
+          // only the DEVICE-bound tabs go quiet. Everything app-level on
+          // General -- updates, debugging, certificate, PIN, reset --
+          // stays fully usable; plugging a display in is not a
+          // prerequisite for managing the app (0.9.6).
+          document.getElementById('model-name').textContent = 'No display connected';
+          const sku = document.getElementById('model-sku');
+          sku.textContent = '';
+          sku.appendChild(document.createTextNode('Plug the display into a USB port, or '));
+          const wl = el('a', null, 'run first-time setup →');
+          wl.href = 'wizard.html';
+          sku.appendChild(wl);
+          const healthEl = document.getElementById('health-status');
+          healthEl.textContent = '';
+          const pill = document.createElement('span');
+          pill.className = 'pill err';
+          const st = document.createElement('span');
+          st.className = 'pill-state';
+          st.textContent = 'Offline';
+          const dt = document.createElement('span');
+          dt.className = 'pill-detail';
+          dt.textContent = '· No device detected';
+          pill.appendChild(st);
+          pill.appendChild(dt);
+          healthEl.appendChild(pill);
+          document.getElementById('general-loading').style.display = 'none';
+          document.getElementById('general-content').style.display = 'block';
+          ['layouts', 'screen'].forEach(tab => {
+            document.getElementById(tab + '-loading').style.display = 'none';
+            const errEl = document.getElementById(tab + '-error');
+            errEl.style.display = 'block';
+            errEl.innerHTML = 'No display connected — plug it in and reload, ' +
+              'or <a href="wizard.html">run first-time setup →</a>';
+          });
           return;
         }
       }
@@ -2193,6 +2235,27 @@
     body.appendChild(info);
 
     const up = el('div', 'card');
+    const onHttps = location.protocol === 'https:';
+    if (!onHttps) {
+      // Plain HTTP: don't just disable the upload -- don't OFFER it.
+      // The whole card becomes the warning, with one button to the
+      // HTTPS dashboard, so there's never a path to putting a private
+      // key on the wire unencrypted (0.9.6).
+      const httpsUrl = 'https://' + location.hostname + ':8990' + location.pathname;
+      up.appendChild(el('div', 'card-title', 'Upload your own'));
+      const warn = el('div', 'card-desc',
+        'Uploading a certificate sends its private key to the app, and on plain ' +
+        'HTTP that would travel over your network unencrypted \u2014 so uploads only ' +
+        'work from the HTTPS dashboard. Same app, same settings, encrypted ' +
+        'connection (expect the self-signed certificate warning).');
+      warn.style.marginTop = '8px';
+      up.appendChild(warn);
+      const go = el('button', 'btn', 'Open the HTTPS dashboard');
+      go.style.marginTop = '14px';
+      go.addEventListener('click', () => { window.location.href = httpsUrl; });
+      up.appendChild(go);
+      body.appendChild(up);
+    } else {
     up.appendChild(el('div', 'card-title', 'Upload your own'));
     up.appendChild(el('div', 'card-desc',
       'Both files in PEM format. Use the full chain as the certificate if your ' +
@@ -2222,24 +2285,6 @@
     btnRow.appendChild(uploadBtn);
     up.appendChild(btnRow);
     up.appendChild(status);
-
-    // Finding 6: key upload is only accepted over HTTPS. If we're on
-    // plain http, say so before they pick files and offer the switch.
-    const onHttps = location.protocol === 'https:';
-    if (!onHttps) {
-      uploadBtn.disabled = true;
-      const httpsUrl = 'https://' + location.hostname + ':8990' + location.pathname;
-      const warn = el('div', 'card-desc');
-      warn.style.marginTop = '10px';
-      warn.style.color = 'var(--err)';
-      warn.appendChild(document.createTextNode(
-        'You\u2019re on plain HTTP, so uploads are disabled to keep your private ' +
-        'key off the wire. Open this dashboard over HTTPS to upload: '));
-      const a = el('a', null, httpsUrl);
-      a.href = httpsUrl;
-      warn.appendChild(a);
-      up.appendChild(warn);
-    }
     body.appendChild(up);
 
     const readText = (file) => new Promise((res, rej) => {
@@ -2249,71 +2294,77 @@
       r.readAsText(file);
     });
 
-    uploadBtn.addEventListener('click', async () => {
+    uploadBtn.addEventListener('click', () => {
       if (!certPick.files[0] || !keyPick.files[0]) {
+        status.style.color = 'var(--err)';
         status.textContent = 'Pick both files first.';
         return;
       }
-      uploadBtn.disabled = true;
-      status.textContent = 'Validating and installing\u2026';
-      try {
-        const [cert, key] = await Promise.all(
-          [readText(certPick.files[0]), readText(keyPick.files[0])]);
-        const r = await fetch('/api/upload_cert', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'X-TinyScreen-Request': '1' },
-          body: JSON.stringify({ cert, key }),
-        });
-        const data = await r.json();
-        if (!data.ok) {
-          status.textContent = 'Rejected: ' + (data.error || 'unknown error');
-        } else {
-          status.textContent = 'Installed \u2713 ' + (data.hot_reloaded
-            ? 'New connections use it immediately.'
-            : 'It will be used the next time the app starts.');
-          await loadCertInfo();
-        }
-      } catch (e) {
-        status.textContent = 'Upload failed: ' + e.message;
-      } finally {
-        uploadBtn.disabled = false;
-      }
+      status.textContent = '';
+      confirmModal({
+        title: 'Install this certificate?',
+        text: 'Replaces the certificate the HTTPS dashboard and flasher use. New ' +
+              'connections switch to it immediately; the current pair is kept as ' +
+              'a backup on disk. If the new certificate is invalid or the pair ' +
+              'doesn\u2019t match, it\u2019s rejected and nothing changes.',
+        confirmLabel: 'Install',
+        onConfirm: async () => {
+          try {
+            const [cert, key] = await Promise.all(
+              [readText(certPick.files[0]), readText(keyPick.files[0])]);
+            const r = await fetch('/api/upload_cert', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', 'X-TinyScreen-Request': '1' },
+              body: JSON.stringify({ cert, key }),
+            });
+            const data = await r.json();
+            if (!data.ok) return { ok: false, error: 'Rejected: ' + (data.error || 'unknown error') };
+            await loadCertInfo();
+            openCertView();  // refresh the Current certificate card
+            return { ok: true };
+          } catch (e) {
+            return { ok: false, error: 'Upload failed: ' + e.message };
+          }
+        },
+      });
     });
+    }
 
     const rev = el('div', 'card');
     rev.appendChild(el('div', 'card-title', 'Revert to self-signed'));
     rev.appendChild(el('div', 'card-desc',
       'Generates a fresh self-signed certificate and switches to it. The current ' +
       'pair is kept as a backup on disk. Browsers will show the untrusted warning again.'));
-    const revStatus = el('div', 'card-desc', '');
-    revStatus.style.marginTop = '10px';
     const revBtn = el('button', 'btn', 'Revert');
     revBtn.style.marginTop = '12px';
-    revBtn.addEventListener('click', async () => {
-      revBtn.disabled = true;
-      revStatus.textContent = 'Generating\u2026';
-      try {
-        const r = await fetch('/api/reset_cert', { method: 'POST', headers: { 'X-TinyScreen-Request': '1' } });
-        const data = await r.json();
-        revStatus.textContent = data.ok
-          ? 'Done \u2713 back on a self-signed certificate.'
-          : 'Failed: ' + (data.error || 'unknown error');
-        if (data.ok) await loadCertInfo();
-      } catch (e) {
-        revStatus.textContent = 'Failed: ' + e.message;
-      } finally {
-        revBtn.disabled = false;
-      }
+    revBtn.addEventListener('click', () => {
+      confirmModal({
+        title: 'Revert to self-signed?',
+        text: 'Generates a fresh self-signed certificate and switches new ' +
+              'connections to it immediately. The current pair is kept as a ' +
+              'backup on disk. Browsers will show the untrusted-certificate ' +
+              'warning again until you upload a trusted one.',
+        confirmLabel: 'Revert',
+        onConfirm: async () => {
+          try {
+            const r = await fetch('/api/reset_cert', { method: 'POST', headers: { 'X-TinyScreen-Request': '1' } });
+            const data = await r.json();
+            if (!data.ok) return { ok: false, error: data.error || 'unknown error' };
+            await loadCertInfo();
+            openCertView();  // refresh the Current certificate card
+            return { ok: true };
+          } catch (e) {
+            return { ok: false, error: 'Failed: ' + e.message };
+          }
+        },
+      });
     });
     rev.appendChild(revBtn);
-    rev.appendChild(revStatus);
     body.appendChild(rev);
 
     const note = el('div', 'card-desc',
       'Tip: if you only ever use the dashboard over plain HTTP (port 8989), none of ' +
-      'this affects you \u2014 HTTPS (8990) exists mainly so the WebSerial flasher can run. ' +
-      'And do the upload itself over HTTPS if strangers share your network: a key sent ' +
-      'over plain HTTP travels unencrypted.');
+      'this affects you \u2014 HTTPS (8990) exists mainly so the WebSerial flasher can run.');
     note.style.marginTop = '14px';
     body.appendChild(note);
 

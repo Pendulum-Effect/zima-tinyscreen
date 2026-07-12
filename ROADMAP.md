@@ -6,7 +6,7 @@ eventually hit context limits). It carries the current state, what's
 done, and what's next, so any session can pick up where the last left
 off. **Delete this file at the final 1.0 release.**
 
-Snapshot as of **0.9.5.4** (2026-07-12).
+Snapshot as of **0.9.6.0** (2026-07-12).
 
 ## How to get oriented fast
 
@@ -177,8 +177,40 @@ None are worth a dedicated round; fold them into other work or skip.
         flasher JS; about.json's logo_url is now ignored). logo-slot
         placeholder CSS retired.
 
+- [x] **0.9.6.0** Polish round 1 (hardware-round feedback):
+  - [x] REAL BUG: `const cfgData` was reassigned by the cached-config
+        fallback -- threw in every browser (Safari wording: "Attempted
+        to assign to readonly property") the moment the device was
+        unplugged WITH a cache present, killing the General tab. The
+        E2Es never caught it because fresh sandboxes have no cache.
+        Fixed (let); the designed cached-browsing mode works for the
+        first time in several releases.
+  - [x] /api/current_config finally has committed coverage (happy path,
+        cache write contract, unplugged-with/without-cache) and the
+        shared FakeDevice now inlines a realistic config in get_config
+        acks (DEFAULT_CONFIG). LESSON: a "GET" endpoint with exclusive
+        serial access went untested because it didn't look
+        state-changing.
+  - [x] Fresh-install no-device General: app-level cards stay usable
+        (device card shows "No display connected" + wizard link);
+        layouts/screen get banners. About was already independent.
+  - [x] Cert actions through confirmModal (install + revert), errors
+        retryable in-modal, Current-certificate card refreshes after.
+  - [x] HTTP: upload card fully replaced by an explanation + "Open the
+        HTTPS dashboard" button -- no path to keying material on the
+        wire (server already rejected it; UI now can't offer it).
+  - [x] Sidebar wordmark spans the nav-pill width (verified 170px ==
+        170px programmatically + screenshot).
+  - [ ] Consider a CI playwright smoke job (chromium on runners is
+        cheap): the const bug is exactly the class the host-side suites
+        can't see. Candidate for a later 0.9.6.x.
+
 ## Next up (suggested order)
 
+- [ ] **Hardware round for 0.9.6.0**: unplug the display with the app
+      still open (General should show cached state + Warning, not an
+      error), fresh-browser check of the HTTP cert gate button, one
+      cert revert via the new modal.
 - [ ] **Hardware round for 0.9.5.x (remaining)**: enable the PIN on the real
       box; overlay on the phone browser you actually use; one flash +
       one settings save while locked (session cookie over plain HTTP);

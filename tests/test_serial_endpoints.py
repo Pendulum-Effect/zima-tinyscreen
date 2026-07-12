@@ -142,7 +142,22 @@ class FakeDevice:
     lines (stats traffic) are ignored, like real firmware ignores its
     own input echo."""
 
-    def __init__(self, ack_mode="ack"):
+    # A realistic firmware 1.18-shaped config, inlined into get_config
+    # acks -- board 1 with a few pages, so dashboard-facing tests render
+    # a believable device.
+    DEFAULT_CONFIG = {
+        "board": 1, "board_name": "ESP32-S3-TOUCH-1.69", "has_touch": True,
+        "pages": ["cpu", "temp", "net"], "layouts": {"cpu": "ring"},
+        "cycle_mode": "auto", "cycle_seconds": 10, "brightness": 90,
+        "rotation": 0, "square_fit": False,
+        "night_enabled": False, "night_start_min": 1320,
+        "night_end_min": 420, "night_brightness": 10,
+        "saver_enabled": False, "saver_minutes": 5, "saver_style": "clock",
+        "firmware_version": "1.18.0",
+    }
+
+    def __init__(self, ack_mode="ack", device_config=None):
+        self.device_config = dict(device_config or self.DEFAULT_CONFIG)
         self.master_fd, self.slave_fd = os.openpty()
         self.port = os.ttyname(self.slave_fd)
         self.ack_mode = ack_mode  # "ack" | "silent" | "garbage"
@@ -185,9 +200,15 @@ class FakeDevice:
             # compact form. Python's json.dumps default (space after
             # colons) is NOT what a real board sends -- using it here
             # made the server correctly report acked:false.
-            reply = json.dumps({"ack": msg["cmd"], "ok": True},
-                               separators=(",", ":")) + "\n"
-            os.write(self.master_fd, reply.encode())
+            reply = {"ack": msg["cmd"], "ok": True}
+            if msg["cmd"] == "get_config":
+                # Real firmware inlines the whole config in the ack line,
+                # and api_current_config caches that entire dict as
+                # last_config.json -- the shape the dashboard renders
+                # from when the device is unplugged.
+                reply.update(self.device_config)
+            os.write(self.master_fd,
+                     (json.dumps(reply, separators=(",", ":")) + "\n").encode())
         elif self.ack_mode == "garbage":
             os.write(self.master_fd, b'{"note":"not an ack"}\n\xff\xfe junk\n')
         # "silent": say nothing; the endpoint should time out its ack
@@ -479,6 +500,70 @@ class TestConfigure(SerialTestBase):
 # ---------------------------------------------------------------------
 # CollectorManager lifecycle (no HTTP): depth counting + respawn
 # ---------------------------------------------------------------------
+
+class TestCurrentConfig(SerialTestBase):
+    """/api/current_config (GET, but takes exclusive serial access):
+    the read path the dashboard renders from, plus the last-good-read
+    cache that keeps the dashboard browsable when the device is
+    unplugged. Had NO coverage until 0.9.6 -- and the dashboard side of
+    the cache contract had been broken (const reassignment) for several
+    releases without anything noticing."""
+
+    def _with_device(self, **kw):
+        dev = FakeDevice(**kw)
+        os.environ["TINYSCREEN_SERIAL_PORT"] = dev.port
+        self.addCleanup(dev.close)
+        return dev
+
+    def test_happy_path_reads_and_caches(self):
+        dev = self._with_device()
+        r = self.client.get("/api/current_config")
+        body = r.get_json()
+        self.assertEqual(r.status_code, 200)
+        self.assertTrue(body["ok"])
+        cfg = body["config"]
+        self.assertEqual(cfg["board"], 1)
+        self.assertEqual(cfg["pages"], ["cpu", "temp", "net"])
+        self.assertEqual(dev.commands, [{"cmd": "get_config"}])
+        self.assert_choreography("device-got-get_config")
+        # The ENTIRE ack dict is the cache -- the dashboard's unplugged
+        # mode renders from exactly this file.
+        cached = json.loads(
+            (Path(os.environ["TINYSCREEN_STATE_DIR"]) / "last_config.json").read_text())
+        self.assertEqual(cached, cfg)
+
+    def test_unplugged_serves_cache_with_no_device_flag(self):
+        self._with_device()
+        self.client.get("/api/current_config")  # warm the cache
+        _clear_events()
+        os.environ.pop("TINYSCREEN_SERIAL_PORT", None)
+        orig = server.glob.glob
+        server.glob.glob = lambda pattern: []
+        try:
+            r = self.client.get("/api/current_config")
+        finally:
+            server.glob.glob = orig
+        body = r.get_json()
+        self.assertEqual(r.status_code, 400)
+        self.assertFalse(body["ok"])
+        self.assertTrue(body["no_device"])
+        self.assertEqual(body["cached_config"]["board"], 1)
+        self.assertEqual(body["cached_config"]["pages"], ["cpu", "temp", "net"])
+        self.assertEqual(_read_events(), [])  # no serial work, no pause
+
+    def test_unplugged_with_no_cache(self):
+        os.environ.pop("TINYSCREEN_SERIAL_PORT", None)
+        cache = Path(os.environ["TINYSCREEN_STATE_DIR"]) / "last_config.json"
+        cache.unlink(missing_ok=True)
+        orig = server.glob.glob
+        server.glob.glob = lambda pattern: []
+        try:
+            body = self.client.get("/api/current_config").get_json()
+        finally:
+            server.glob.glob = orig
+        self.assertTrue(body["no_device"])
+        self.assertIsNone(body["cached_config"])
+
 
 class TestCollectorLifecycle(unittest.TestCase):
     def test_overlapping_pauses_and_watchdog_respawn(self):
