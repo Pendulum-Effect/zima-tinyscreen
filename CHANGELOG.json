@@ -4,7 +4,7 @@
     {
       "version": "0.9.7.1",
       "date": "2026-07-12",
-      "title": "0.9.7.1: cleaner PIN and certificate pages",
+      "title": "Cleaner PIN and certificate pages",
       "notes": [
         "The Dashboard PIN page is now a tidy stack of matching cards -- Change the PIN, Lock stats viewing, Turn the PIN off (button now says Disable PIN), and a new Forgot PIN? card -- each with one uniform button that opens its own confirmation window instead of showing a pile of fields.",
         "Changing the PIN happens in a popup with Current, New, and Repeat fields, with mistakes (mismatched PINs, wrong current PIN) explained right in the window so you can fix and retry.",
@@ -17,7 +17,7 @@
     {
       "version": "0.9.7.0",
       "date": "2026-07-12",
-      "title": "0.9.7: the dashboard learns some moves",
+      "title": "The dashboard learns some moves",
       "notes": [
         "The sidebar selection now physically glides to whatever you click instead of teleporting -- a small thing that makes the whole app feel more alive.",
         "Buttons and controls acknowledge your cursor: filled buttons lift with a soft teal glow, choice chips warm toward their selected look, toggles show a ring before you commit, and sidebar icons give a little nudge.",
@@ -29,7 +29,7 @@
     {
       "version": "0.9.6.1",
       "date": "2026-07-12",
-      "title": "0.9.6.1: screensaver upgrades and layout polish (firmware 1.19)",
+      "title": "Screensaver upgrades and layout polish (firmware 1.19)",
       "notes": [
         "New firmware 1.19 (flash from the General tab after updating): the screensaver gets a brightness setting, and a new 'Temperature' style -- just the CPU temperature, big and centered, in the same green-to-red colors as the temperature page.",
         "Screensaver brightness only ever dims: if Night Mode is set darker, the darker value wins, so an idle screen never lights up a room you've darkened.",
@@ -42,7 +42,7 @@
     {
       "version": "0.9.6.0",
       "date": "2026-07-12",
-      "title": "0.9.6: usable without a display, safer certificate actions",
+      "title": "Usable without a display, safer certificate actions",
       "notes": [
         "Fixed a bug that could take down the whole General tab with a cryptic error when the display was unplugged (Safari showed \"Attempted to assign to readonly property\"). The unplugged experience now works as designed: your settings stay browsable from the last known state, marked with a Warning badge.",
         "Even on a fresh install with no display ever connected, the General page now shows everything app-level -- updates, debugging, certificate, PIN, reset -- with a friendly pointer to first-time setup. Only the Layouts and Screen tabs actually need the device.",
@@ -55,7 +55,7 @@
     {
       "version": "0.9.5.4",
       "date": "2026-07-12",
-      "title": "0.9.5.4: proper confirmations, and a face for the app",
+      "title": "Proper confirmations, and a face for the app",
       "notes": [
         "Reset Device now works the way you'd expect: a confirmation window (like the update one) asks if you're sure, and confirming resets the display and takes you straight to the setup wizard. No more instructions pointing at a wizard link that didn't exist.",
         "Turning the PIN off also gets a proper confirmation window that asks for the PIN right there -- no more hunting for a field in a different card.",
@@ -66,7 +66,7 @@
     {
       "version": "0.9.5.3",
       "date": "2026-07-12",
-      "title": "0.9.5.3: two dead buttons come alive",
+      "title": "Two dead buttons come alive",
       "notes": [
         "The Reset button on the General tab now actually works -- it turns out it was never connected to anything, in any version. It now asks for a confirming second click, sends the reset over the serial connection, and tells you how it went.",
         "\"Turn off\" in PIN settings looked dead because every message it tried to show you (including its error messages) was being written somewhere invisible. Fixed -- and pressing it with an empty Current PIN field now tells you immediately what to fill in, without counting against the wrong-PIN limit. Previously, five absent-minded clicks could lock you out of your own settings for a minute.",
@@ -78,7 +78,7 @@
     {
       "version": "0.9.5.2",
       "date": "2026-07-11",
-      "title": "0.9.5.2: PIN polish and serial safety",
+      "title": "PIN polish and serial safety",
       "notes": [
         "The setup wizard now works on a PIN-protected box: it shows the same PIN prompt as the dashboard when needed. Before this patch, the wizard's \"flash from the ZimaBlade\" path failed with unexplained errors if a PIN was set.",
         "Two operations can no longer talk to the display at the same time (for example, two browser tabs both saving settings). Previously they could interleave on the serial connection and corrupt each other; now the second one gets a clear \"try again in a few seconds\" instead.",
@@ -90,7 +90,7 @@
     {
       "version": "0.9.5.1",
       "date": "2026-07-11",
-      "title": "0.9.5.1: PIN hardening patch",
+      "title": "PIN hardening patch",
       "notes": [
         "Changing or removing the PIN now signs out every browser that was logged in under the old one. That's the whole point of changing a PIN -- if you rotated it because some device shouldn't have access anymore, that device's saved login now dies with the old PIN. (You stay signed in on the device you made the change from.)",
         "The guess limit (five wrong tries, one-minute lockout) now covers every place a PIN can be checked, not just the login box. Before this patch, a device that was already signed in could try current-PIN guesses without limit when attempting to change the lock's settings.",
@@ -102,7 +102,7 @@
     {
       "version": "0.9.5.0",
       "date": "2026-07-11",
-      "title": "0.9.5: optional dashboard PIN",
+      "title": "Optional dashboard PIN",
       "notes": [
         "You can now protect the dashboard with a PIN (General tab -> Dashboard PIN). With it on, changing anything -- flashing, settings, updates, certificates -- asks for the PIN once per browser and remembers you for 30 days. It's off by default, and if you never turn it on, nothing changes.",
         "An extra toggle also locks the read-only stats, for homes where CPU/disk/network numbers feel private.",
@@ -114,7 +114,7 @@
     {
       "version": "0.9.4.0",
       "date": "2026-07-11",
-      "title": "0.9.4: the flash path gets a test rig",
+      "title": "The flash path gets a test rig",
       "notes": [
         "The three operations that take exclusive control of the display's serial connection -- flashing firmware, sending settings, and factory reset -- now have a full automated test suite. A simulated device on a real serial channel answers exactly like the board's firmware does, and a scripted stand-in for the flashing tool lets every success and failure path run without hardware. 19 new tests cover the whole dance, including making sure the stats collector always pauses before, and resumes after, every one of these operations -- even when they fail.",
         "Those tests (and all the existing ones) now run automatically on every build, and a failing test blocks the release from publishing. Previously the test suite only ran when someone remembered to run it.",
@@ -125,7 +125,7 @@
     {
       "version": "0.9.3.0",
       "date": "2026-07-11",
-      "title": "0.9.3: infrastructure hardening",
+      "title": "Infrastructure hardening",
       "notes": [
         "The web server underneath the dashboard grew up: both the HTTP and HTTPS listeners now run on cheroot, a production-grade server, instead of Flask's built-in development server (which its own makers say not to deploy). Certificate uploads still take effect instantly, no restart needed.",
         "The setup wizard no longer loads its flashing component from a CDN on the internet -- it's now bundled into the app itself, pinned to an exact version. The wizard now works on a ZimaBlade with no internet access, and a compromised or changed CDN copy can't affect your flasher.",
@@ -137,7 +137,7 @@
     {
       "version": "0.9.2.0",
       "date": "2026-07-10",
-      "title": "0.9.2: more security tidying",
+      "title": "More security tidying",
       "notes": [
         "Certificate uploads are now accepted only over HTTPS (port 8990), so your private key is never sent across the network unencrypted. If you open the certificate manager over plain HTTP, it now tells you and offers a one-click link to the secure address instead of failing after you've picked files.",
         "Error messages returned to the browser are now generic ('Flashing failed unexpectedly.') while the real details go to the app's logs -- so internal paths and diagnostics aren't handed out to anyone poking at the API.",
@@ -148,7 +148,7 @@
     {
       "version": "0.9.1.0",
       "date": "2026-07-10",
-      "title": "0.9.1: hardening the web surface",
+      "title": "Hardening the web surface",
       "notes": [
         "Security: the dashboard's action endpoints (flash, reset, update, certificate changes) now reject cross-site and headerless requests. Previously a random website you happened to visit could have quietly told your browser to POST commands to the dashboard on your network; that hole is closed. Normal use is unaffected -- anyone actually on your LAN, using the real dashboard, still has full access (there's still no login, by design for now).",
         "Security: added a global 1 MiB cap on request bodies, so a malformed or malicious oversized request can't exhaust memory on a small ZimaBlade. (The certificate upload keeps its own tighter per-file limit on top.)",
@@ -159,7 +159,7 @@
     {
       "version": "0.9.0.0",
       "date": "2026-07-10",
-      "title": "0.9.0: spring cleaning",
+      "title": "Spring cleaning",
       "notes": [
         "No new features this round -- instead, the whole project got tidied for the road to 1.0.",
         "The README was rewritten to describe the app as it actually is today: all seven screen layouts, the settings dashboard, drive health, the certificate manager, the real protocol fields (including the RAM-is-GiB / disks-are-decimal-GB distinction), and how to run the test suite.",
