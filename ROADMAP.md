@@ -6,7 +6,7 @@ eventually hit context limits). It carries the current state, what's
 done, and what's next, so any session can pick up where the last left
 off. **Delete this file at the final 1.0 release.**
 
-Snapshot as of **0.9.7.2** (2026-07-12).
+Snapshot as of **0.9.7.3** (2026-07-12).
 
 ## How to get oriented fast
 
@@ -301,6 +301,27 @@ None are worth a dedicated round; fold them into other work or skip.
     mode remains 100% reliable while the app never enumerates, that
     asymmetry itself indicates failing flash-XIP or PSRAM, i.e.
     hardware.
+
+- [x] **0.9.7.3** Flash-failure mystery RESOLVED (boot console captured):
+  - The unit was healthy the whole time: boot log showed
+    SPI_FAST_FLASH_BOOT + clean app entry + stable enumeration
+    (usbmodem present). "Not detected" was the LAST MILE: most likely
+    the esp-web-tools dialog still holding the port during the
+    wizard's configure step.
+  - Two console lines explained: "nvs_open failed: NOT_FOUND" =
+    read-only open of a namespace that doesn't exist on a
+    freshly-erased chip (EXPECTED on factory-first boot; firmware 1.20
+    now opens read-write, which creates the namespace silently --
+    nothing is written until the first set_config). "PSRAM ID read
+    error" = module most likely has no PSRAM chip; flag makes it
+    probe, log, and continue.
+  - [ ] FOLLOW-UP: confirm which module variants (with/without PSRAM)
+        ship on boards 0 and 1; if neither has PSRAM, drop
+        -DBOARD_HAS_PSRAM to silence the probe error (do NOT change
+        blind -- current bits demonstrably boot, and the canvas lives
+        in internal RAM either way at 240x280).
+  - [ ] FOLLOW-UP: wizard configure step could auto-detect "port held
+        by another connection" and say so explicitly.
 
 ## Next up (suggested order)
 

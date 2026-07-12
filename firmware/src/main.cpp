@@ -41,7 +41,7 @@
 // "Software Version" field via the get_config command below. No
 // auto-update-checking mechanism exists yet (that's a separate, not-yet
 // -built feature) -- this just answers "what's currently on my device."
-#define FIRMWARE_VERSION "1.19"  // two-part scheme as of 1.19 (was x.y.z)
+#define FIRMWARE_VERSION "1.20"  // two-part scheme as of 1.19 (was x.y.z)
 
 // Note: screen dimensions are NOT fixed -- board 1 (1.69") is 240x280,
 // taller than board 0's 240x240. See screenW/screenH globals, set from
@@ -150,7 +150,14 @@ struct Config {
 Preferences prefs;
 
 void loadConfig() {
-  prefs.begin("tinyscreen", true); // read-only
+  // Read-WRITE open, deliberately: a read-only nvs_open on a namespace
+  // that doesn't exist yet (i.e. the first boot after a full flash
+  // erase) fails with a scary-looking "nvs_open failed: NOT_FOUND" on
+  // the console -- which sent a real debugging session down the wrong
+  // path (1.20). A read-write open silently CREATES the namespace on
+  // that first boot instead; every getX below still returns its default,
+  // and nothing is written until the first set_config persists.
+  prefs.begin("tinyscreen", false);
   config.configured = prefs.getBool("configured", false);
   config.boardId = prefs.getInt("boardId", 0);
   config.autoCycle = prefs.getBool("autoCycle", false);

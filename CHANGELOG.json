@@ -2,6 +2,16 @@
   "_comment": "Human-readable changelog for the dashboard's About tab -- written for people, not commit archaeologists. The dashboard fetches this from GitHub at page load (baked copy as fallback), so add an entry here with each release and every install sees it. Newest first. Dates are YYYY-MM-DD.",
   "entries": [
     {
+      "version": "0.9.7.3",
+      "date": "2026-07-12",
+      "title": "Calmer first boot after a full erase (firmware 1.20)",
+      "notes": [
+        "New firmware 1.20: the very first boot after a full flash erase no longer prints a scary-looking storage error to the console. It was harmless -- the settings storage simply didn't exist yet on a blank chip -- but it sent a real troubleshooting session down the wrong path, so now the storage is created quietly instead.",
+        "The wizard now reminds you to close the flashing dialog before the configure step -- it can keep holding the serial port, which made a freshly-flashed, perfectly healthy display look undetectable.",
+        "No other changes."
+      ]
+    },
+    {
       "version": "0.9.7.2",
       "date": "2026-07-12",
       "title": "Complete flash sets for the browser flasher",

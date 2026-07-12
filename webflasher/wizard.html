@@ -460,7 +460,8 @@
       port = await navigator.serial.requestPort();
       await port.open({ baudRate: 115200 });
     } catch (e) {
-      statusCb('Could not open the serial port: ' + e.message + ' — if no port shows ' +
+      statusCb('Could not open the serial port: ' + e.message + ' — close the ' +
+        'flashing dialog first if it’s still open (it can keep holding the port), and if no port shows ' +
         'up in the picker at all, unplug the display and plug it back in (a power ' +
         'cycle after flashing is sometimes needed), then try again. If it still ' +
         'never appears, open the flasher’s “Logs & console” and check what the ' +
@@ -508,10 +509,11 @@
     const state = ev.detail && ev.detail.state;
     const statusEl = document.getElementById('computer-flash-status');
     if (state === 'FINISHED') {
-      statusEl.textContent = '✓ Flashed successfully. If the display doesn’t show up ' +
-        'in the next step, unplug it and plug it back in first — native-USB boards ' +
-        'sometimes need a power cycle after flashing, and the port can come back ' +
-        'under a new name. Click Next to continue.';
+      statusEl.textContent = '✓ Flashed successfully. Close the flashing dialog before ' +
+        'continuing — it can keep holding the serial port. If the display still ' +
+        'doesn’t show up in the next step, unplug it and plug it back in — native-USB ' +
+        'boards sometimes need a power cycle after flashing, and the port can come ' +
+        'back under a new name. Click Next to continue.';
       statusEl.className = 'status-msg ok';
     } else if (state === 'ERROR') {
       statusEl.textContent = '✗ Flashing failed — try again, then click Next once it succeeds.';
