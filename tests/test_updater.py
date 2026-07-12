@@ -848,6 +848,35 @@ class TestServerEndpoints(UpdaterTestBase):
         self.assertNotIn("layouts", build({"board": 1, "pages": ["temp"]}))
 
 
+class TestFlasherManifests(unittest.TestCase):
+    """The esp-web-tools manifests must describe a COMPLETE bootable
+    flash set at the right ESP32-S3 offsets -- a wrong or missing part
+    only bites after a full erase, which no CI path exercises (0.9.7.2,
+    from the flash-failure review). Byte-parity with what `pio run -t
+    upload` flashes: bootloader@0x0, partitions@0x8000,
+    boot_app0@0xE000, app@0x10000."""
+
+    def _check(self, variant):
+        p = Path(__file__).resolve().parent.parent / "webflasher" / f"manifest-{variant}.json"
+        m = json.loads(p.read_text())
+        build = m["builds"][0]
+        self.assertEqual(build["chipFamily"], "ESP32-S3")
+        parts = {x["offset"]: x["path"] for x in build["parts"]}
+        self.assertEqual(sorted(parts), [0, 0x8000, 0xE000, 0x10000])
+        self.assertIn("bootloader.bin", parts[0])
+        self.assertIn("partitions.bin", parts[0x8000])
+        self.assertIn("boot_app0.bin", parts[0xE000])
+        self.assertIn("firmware.bin", parts[0x10000])
+        for path in parts.values():
+            self.assertTrue(path.startswith(f"firmware/{variant}/"), path)
+
+    def test_native_manifest_complete(self):
+        self._check("native")
+
+    def test_bridge_manifest_complete(self):
+        self._check("bridge")
+
+
 class TestCertEndpoints(UpdaterTestBase):
     """HTTPS certificate upload/reset -- validation, permissions, backups.
     Reuses the endpoint harness; generates real pairs with the openssl

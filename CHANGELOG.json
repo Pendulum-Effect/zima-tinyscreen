@@ -2,6 +2,16 @@
   "_comment": "Human-readable changelog for the dashboard's About tab -- written for people, not commit archaeologists. The dashboard fetches this from GitHub at page load (baked copy as fallback), so add an entry here with each release and every install sees it. Newest first. Dates are YYYY-MM-DD.",
   "entries": [
     {
+      "version": "0.9.7.2",
+      "date": "2026-07-12",
+      "title": "Complete flash sets for the browser flasher",
+      "notes": [
+        "The browser flasher now writes the same complete set of parts that a developer flash writes -- including the small file that records which app slot to boot from. Previously that file was never written, which was harmless on a normal install but left booting dependent on a fallback after a full \"Erase device\" install.",
+        "After flashing, the wizard now tells you that native-USB displays sometimes need to be unplugged and replugged before the next step, and that the port can come back under a new name -- and points you at the flasher's log console if the device never reappears.",
+        "No firmware code changes; the firmware binaries themselves are unchanged."
+      ]
+    },
+    {
       "version": "0.9.7.1",
       "date": "2026-07-12",
       "title": "Cleaner PIN and certificate pages",

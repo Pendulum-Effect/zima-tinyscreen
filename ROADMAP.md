@@ -6,7 +6,7 @@ eventually hit context limits). It carries the current state, what's
 done, and what's next, so any session can pick up where the last left
 off. **Delete this file at the final 1.0 release.**
 
-Snapshot as of **0.9.7.1** (2026-07-12).
+Snapshot as of **0.9.7.2** (2026-07-12).
 
 ## How to get oriented fast
 
@@ -270,6 +270,37 @@ None are worth a dedicated round; fold them into other work or skip.
         surface). TestCertPairMessages pins all five messages.
   - [x] Tip text -> .info-card with icon; HTTP-gate + Revert buttons
         uniform.
+
+- [x] **0.9.7.2** Firmware/flash-pipeline review (1.69" won't enumerate
+      after erase+flash despite "successful"):
+  - REVIEWED CLEAN: setup() boot order (no GPIO before configuration,
+    no while(!Serial), CDC enumerates pre-setup); blank-NVS first boot
+    is deliberately inert; 1.19 changes all sit behind config/saver
+    activity; variant flags unchanged since 1.18 flashed this exact
+    unit successfully; manifests have correct S3 offsets (bootloader@0,
+    partitions@0x8000, app@0x10000); NATIVE_USB_BOARDS=[1] mapping ok.
+  - FOUND + FIXED: manifests flashed THREE parts where pio upload
+    flashes FOUR -- boot_app0.bin@0xE000 (otadata init) was missing.
+    Post-erase boot therefore leaned on the IDF bootloader's
+    empty-otadata fallback. Probably not the root cause (the fallback
+    boots ota_0) but the only discrepancy found; CI now stages
+    boot_app0.bin from the framework package and fails loudly if
+    absent; TestFlasherManifests pins the 4-part set for both
+    variants.
+  - NOTED (not changed): the native env inherits ARDUINO_USB_MODE from
+    the board definition rather than pinning it; pin explicitly if USB
+    behavior ever needs debugging.
+  - DIAGNOSTIC PLAN for the unit (decisive step is the boot console):
+    (1) after a "successful" flash, unplug/replug WITHOUT BOOT held,
+    then check whether ANY port appears (Mac: ls /dev/cu.*) -- present
+    but wizard-undetected points at flow/port-picking; absent points
+    deeper. (2) esp-web-tools "Logs & console" AFTER the post-flash
+    reset: ROM/bootloader output names the failure (flash read errors /
+    invalid header -> dying flash chip = hardware; clean bootloader log
+    then silence -> app-level, reopen this review). (3) if download
+    mode remains 100% reliable while the app never enumerates, that
+    asymmetry itself indicates failing flash-XIP or PSRAM, i.e.
+    hardware.
 
 ## Next up (suggested order)
 

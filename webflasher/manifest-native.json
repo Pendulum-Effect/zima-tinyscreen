@@ -7,9 +7,22 @@
     {
       "chipFamily": "ESP32-S3",
       "parts": [
-        { "path": "firmware/native/bootloader.bin", "offset": 0 },
-        { "path": "firmware/native/partitions.bin", "offset": 32768 },
-        { "path": "firmware/native/firmware.bin", "offset": 65536 }
+        {
+          "path": "firmware/native/bootloader.bin",
+          "offset": 0
+        },
+        {
+          "path": "firmware/native/partitions.bin",
+          "offset": 32768
+        },
+        {
+          "path": "firmware/native/boot_app0.bin",
+          "offset": 57344
+        },
+        {
+          "path": "firmware/native/firmware.bin",
+          "offset": 65536
+        }
       ]
     }
   ]

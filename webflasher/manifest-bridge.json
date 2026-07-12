@@ -7,9 +7,22 @@
     {
       "chipFamily": "ESP32-S3",
       "parts": [
-        { "path": "firmware/bridge/bootloader.bin", "offset": 0 },
-        { "path": "firmware/bridge/partitions.bin", "offset": 32768 },
-        { "path": "firmware/bridge/firmware.bin", "offset": 65536 }
+        {
+          "path": "firmware/bridge/bootloader.bin",
+          "offset": 0
+        },
+        {
+          "path": "firmware/bridge/partitions.bin",
+          "offset": 32768
+        },
+        {
+          "path": "firmware/bridge/boot_app0.bin",
+          "offset": 57344
+        },
+        {
+          "path": "firmware/bridge/firmware.bin",
+          "offset": 65536
+        }
       ]
     }
   ]
