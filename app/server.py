@@ -160,8 +160,9 @@ def _csrf_guard():
 #     disabling, or toggling lock_stats requires the CURRENT pin in the
 #     request body -- a hijacked session cookie alone can't take over
 #     or remove the lock.
-#   - Login is globally rate-limited (5 consecutive failures -> 60s
-#     lockout) rather than per-IP: on a flat LAN, per-IP limits are
+#   - Login is globally rate-limited (5 consecutive failures -> lockout
+#     with exponential backoff, 60s doubling to a 1h cap) rather than
+#     per-IP: on a flat LAN, per-IP limits are
 #     trivially dodged and the only cost of a global limit is that a
 #     failed brute force briefly locks everyone out -- acceptable, and
 #     visible.
@@ -180,11 +181,15 @@ AUTH_FILE_NAME = "auth.json"
 _PBKDF2_ITERATIONS = 600_000
 _PIN_MIN_LEN, _PIN_MAX_LEN = 4, 128
 _LOCKOUT_THRESHOLD = 5
-_LOCKOUT_SECONDS = 60
+_LOCKOUT_SECONDS = 60          # base; DOUBLES per consecutive lockout (0.9.5.2)
+_LOCKOUT_MAX_SECONDS = 3600
+_LOCKOUT_DECAY_SECONDS = 3600  # a quiet hour resets the multiplier
 
 _login_lock = threading.Lock()
 _login_failures = 0
 _login_locked_until = 0.0
+_lockout_streak = 0
+_last_lockout_at = 0.0
 
 # Endpoints that must work while locked, or nothing can ever unlock:
 _AUTH_EXEMPT_PATHS = {"/api/auth/status", "/api/auth/login"}
@@ -208,15 +213,38 @@ def _lockout_remaining() -> int:
 
 
 def _record_pin_attempt(success: bool) -> None:
-    global _login_failures, _login_locked_until
+    """Failure bookkeeping with exponential backoff (0.9.5.2). A fixed
+    5-per-60s gate lets a patient attacker grind a 4-digit PIN in about
+    a day and a half; doubling each consecutive lockout (60s -> 2m ->
+    4m ... capped at 1h) stretches that to months. The streak decays
+    only after a quiet hour WITHOUT a lockout -- deliberately NOT on a
+    successful login, since the owner logging in mid-attack must not
+    hand the attacker a fresh fast lane. Every lockout is printed to
+    the app log (docker logs) with the source address, so a grinding
+    attempt is visible instead of silent."""
+    global _login_failures, _login_locked_until, _lockout_streak, _last_lockout_at
     with _login_lock:
         if success:
             _login_failures = 0
             return
         _login_failures += 1
         if _login_failures >= _LOCKOUT_THRESHOLD:
-            _login_locked_until = time.time() + _LOCKOUT_SECONDS
+            now = time.time()
+            if now - _last_lockout_at > _LOCKOUT_DECAY_SECONDS:
+                _lockout_streak = 0
+            duration = min(_LOCKOUT_SECONDS * (2 ** _lockout_streak),
+                           _LOCKOUT_MAX_SECONDS)
+            _lockout_streak += 1
+            _last_lockout_at = now
+            _login_locked_until = now + duration
             _login_failures = 0
+            try:
+                src = request.remote_addr or "unknown"
+            except RuntimeError:  # outside a request context (tests)
+                src = "unknown"
+            print(f"[auth] LOCKOUT (streak {_lockout_streak}): "
+                  f"{_LOCKOUT_THRESHOLD} failed PIN attempts, last from {src}; "
+                  f"PIN checks refused for {duration}s.", file=sys.stderr)
 
 
 def _check_pin_with_lockout(pin, cfg):
@@ -474,6 +502,45 @@ def _security_headers(resp):
         # Auth state and login outcomes must never come from a cache.
         resp.headers["Cache-Control"] = "no-store"
     return resp
+
+
+# --- Exclusive-serial mutex (0.9.5.2) ----------------------------------
+# CollectorManager's pause depth-counting keeps the COLLECTOR off the
+# port during exclusive operations, but nothing kept those operations
+# off EACH OTHER: two concurrent requests (two browser tabs, or a
+# hostile LAN device spamming while the owner works) would both open
+# the same port and interleave reads/writes -- exactly the corruption
+# the pause mechanism exists to prevent, reintroduced one layer up.
+# One operation at a time; the loser gets an immediate, honest 409
+# rather than queueing (these operations take seconds each, and a queue
+# under spam is just a slower outage).
+_exclusive_serial = threading.Lock()
+
+
+def _begin_exclusive_serial():
+    """Take the port for one exclusive operation. Returns an error
+    response to hand straight back if another operation holds it, else
+    None with the collector paused. Always pair with
+    _end_exclusive_serial() in a finally."""
+    if not _exclusive_serial.acquire(blocking=False):
+        return jsonify({
+            "ok": False, "busy": True,
+            "error": "Another operation is using the display's serial "
+                     "connection right now. Try again in a few seconds.",
+        }), 409
+    try:
+        collector.pause()
+    except BaseException:
+        _exclusive_serial.release()
+        raise
+    return None
+
+
+def _end_exclusive_serial():
+    try:
+        collector.resume()
+    finally:
+        _exclusive_serial.release()
 
 
 class RawSerialPort:
@@ -777,7 +844,9 @@ def api_configure():
     if not port:
         return jsonify({"ok": False, "error": "No ESP32 serial device found. Is it plugged in?"}), 400
 
-    collector.pause()
+    busy = _begin_exclusive_serial()
+    if busy:
+        return busy
     ser = None
     try:
         ser = RawSerialPort(port, baudrate=115200, timeout=2)
@@ -805,7 +874,7 @@ def api_configure():
                 ser.close()
             except Exception:
                 pass
-        collector.resume()
+        _end_exclusive_serial()
 
 
 @app.route("/api/reset_device", methods=["POST"])
@@ -821,7 +890,9 @@ def api_reset_device():
     if not port:
         return jsonify({"ok": False, "error": "No ESP32 serial device found. Is it plugged in?"}), 400
 
-    collector.pause()
+    busy = _begin_exclusive_serial()
+    if busy:
+        return busy
     ser = None
     try:
         ser = RawSerialPort(port, baudrate=115200, timeout=2)
@@ -848,7 +919,7 @@ def api_reset_device():
                 ser.close()
             except Exception:
                 pass
-        collector.resume()
+        _end_exclusive_serial()
 
 
 @app.route("/api/app_version", methods=["GET"])
@@ -1209,7 +1280,9 @@ def api_current_config():
                         "error": "No ESP32 serial device found. Is it plugged in?",
                         "cached_config": cached}), 400
 
-    collector.pause()
+    busy = _begin_exclusive_serial()
+    if busy:
+        return busy
     ser = None
     try:
         ser = RawSerialPort(port, baudrate=115200, timeout=2)
@@ -1256,7 +1329,7 @@ def api_current_config():
                 ser.close()
             except Exception:
                 pass
-        collector.resume()
+        _end_exclusive_serial()
 
 
 # ---------------------------------------------------------------------
@@ -1292,7 +1365,9 @@ def api_flash():
     if missing:
         return jsonify({"ok": False, "error": f"Missing firmware file(s) in {fw_dir.name}/: {', '.join(missing)}"}), 500
 
-    collector.pause()
+    busy = _begin_exclusive_serial()
+    if busy:
+        return busy
     try:
         result = subprocess.run(
             [
@@ -1327,7 +1402,7 @@ def api_flash():
     except Exception as e:
         return _server_error("Flashing failed unexpectedly.", e)
     finally:
-        collector.resume()
+        _end_exclusive_serial()
 
 
 # ---------------------------------------------------------------------
@@ -1560,6 +1635,9 @@ def run_https():
         return
     _harden_cert_perms()
     ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    # Explicit floor rather than trusting the distro OpenSSL default;
+    # nothing that speaks WebSerial is older than TLS 1.2 anyway.
+    ctx.minimum_version = ssl.TLSVersion.TLSv1_2
     try:
         ctx.load_cert_chain(str(cert_path), str(key_path))
     except (ssl.SSLError, OSError) as e:

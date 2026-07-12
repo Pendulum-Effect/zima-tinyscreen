@@ -423,6 +423,36 @@ class TestConfigure(SerialTestBase):
                              f"tz file clobbered by {bad!r}")
         self.assertEqual(len(dev.commands), 7)  # serial part still ran each time
 
+    def test_concurrent_exclusive_operations_get_409_not_corruption(self):
+        """0.9.5.2: two simultaneous exclusive-serial requests (two
+        browser tabs, or spam during a real operation) must not share
+        the port -- exactly one runs, the other gets an immediate 409,
+        and exactly one pause/resume cycle happens."""
+        dev = self._with_device()
+        results = []
+        def hit():
+            c = server.app.test_client()
+            r = c.post("/api/configure", json={"board": 0, "pages": ["temp"]},
+                       headers={server.CUSTOM_REQUEST_HEADER: "1"})
+            results.append(r)
+        t1 = threading.Thread(target=hit)
+        t2 = threading.Thread(target=hit)
+        t1.start(); time.sleep(0.4); t2.start()
+        t1.join(timeout=30); t2.join(timeout=30)
+
+        statuses = sorted(r.status_code for r in results)
+        self.assertEqual(statuses, [200, 409], statuses)
+        loser = next(r for r in results if r.status_code == 409)
+        self.assertTrue(loser.get_json()["busy"])
+        winner = next(r for r in results if r.status_code == 200)
+        self.assertTrue(winner.get_json()["acked"])
+        # One command reached the device, one pause/resume cycle total,
+        # and the lock is free again afterwards.
+        self.assertEqual(len(dev.commands), 1)
+        self.assert_choreography("device-got-set_config")
+        self.assertTrue(server._exclusive_serial.acquire(blocking=False))
+        server._exclusive_serial.release()
+
     def test_no_device_is_400(self):
         os.environ.pop("TINYSCREEN_SERIAL_PORT", None)
         orig = server.glob.glob

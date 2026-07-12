@@ -189,9 +189,10 @@ with it enabled, every state-changing request requires a login (once per
 browser, 30 days), and an extra toggle also locks the read-only stats
 for households that consider CPU/disk/network numbers sensitive. The
 PIN is stored only as a salted pbkdf2-sha256 hash (600k iterations) in
-the app's state folder; login is rate-limited (5 wrong guesses -> 60s
-lockout, for everyone -- deliberate, since per-IP limits mean nothing on
-a flat LAN). Changing or removing the PIN always requires the current
+the app's state folder; login is rate-limited (5 wrong guesses locks PIN entry for a
+minute, doubling on every consecutive lockout up to an hour, for
+everyone -- deliberate, since per-IP limits mean nothing on a flat LAN
+-- and each lockout is logged with the source address). Changing or removing the PIN always requires the current
 PIN -- itself under the same guess limit -- so a stolen session cookie
 alone can't take over the lock, and rotating the PIN signs out every
 browser that was logged in under the old one. The dashboard also

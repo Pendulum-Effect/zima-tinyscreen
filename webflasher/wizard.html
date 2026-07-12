@@ -25,6 +25,10 @@
     await import("https://unpkg.com/esp-web-tools@10.2.1/dist/web/install-button.js?module");
   }
 </script>
+<!-- Optional-PIN support: the wizard's "flash from the ZimaBlade" path
+     POSTs to the same gated endpoints as the dashboard; this shared
+     script shows the PIN prompt and retries when the box is locked. -->
+<script src="auth_overlay.js"></script>
 <style>
   :root {
     --bg: #0b1418;

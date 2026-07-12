@@ -2,6 +2,18 @@
   "_comment": "Human-readable changelog for the dashboard's About tab -- written for people, not commit archaeologists. The dashboard fetches this from GitHub at page load (baked copy as fallback), so add an entry here with each release and every install sees it. Newest first. Dates are YYYY-MM-DD.",
   "entries": [
     {
+      "version": "0.9.5.2",
+      "date": "2026-07-11",
+      "title": "0.9.5.2: PIN polish and serial safety",
+      "notes": [
+        "The setup wizard now works on a PIN-protected box: it shows the same PIN prompt as the dashboard when needed. Before this patch, the wizard's \"flash from the ZimaBlade\" path failed with unexplained errors if a PIN was set.",
+        "Two operations can no longer talk to the display at the same time (for example, two browser tabs both saving settings). Previously they could interleave on the serial connection and corrupt each other; now the second one gets a clear \"try again in a few seconds\" instead.",
+        "Repeated PIN lockouts now back off: each consecutive lockout doubles the wait (one minute, then two, four... up to an hour), which turns a patient guessing attack from days into months. Every lockout is also written to the app's log with the source address, so an attack is visible instead of silent.",
+        "HTTPS now explicitly refuses anything older than TLS 1.2, and every build now runs an advisory check of the app's dependencies against known vulnerabilities.",
+        "No firmware changes."
+      ]
+    },
+    {
       "version": "0.9.5.1",
       "date": "2026-07-11",
       "title": "0.9.5.1: PIN hardening patch",

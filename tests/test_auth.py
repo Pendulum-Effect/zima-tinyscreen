@@ -50,6 +50,8 @@ class AuthTestBase(unittest.TestCase):
         with server._login_lock:
             server._login_failures = 0
             server._login_locked_until = 0.0
+            server._lockout_streak = 0
+            server._last_lockout_at = 0.0
         self.client = server.app.test_client()
 
     # -- helpers ---------------------------------------------------------
@@ -279,6 +281,37 @@ class TestLockout(AuthTestBase):
             self.assertGreaterEqual(r.get_json()["retry_in"], 1)
             time.sleep(1.2)
             self.assertEqual(self.login("9999", client=other).status_code, 200)
+        finally:
+            server._LOCKOUT_SECONDS = orig
+
+    def test_lockout_duration_doubles_per_streak(self):
+        """0.9.5.2: consecutive lockouts back off exponentially, so a
+        patient PIN-grinding attack slows from days to months. A
+        successful owner login mid-attack must NOT reset the streak."""
+        self.enable_pin("9999")
+        orig = server._LOCKOUT_SECONDS
+        server._LOCKOUT_SECONDS = 1
+        try:
+            other = self.fresh_client()
+            durations = []
+            for _ in range(3):
+                for _ in range(server._LOCKOUT_THRESHOLD):
+                    self.login("0000", client=other)
+                durations.append(server._login_locked_until - time.time())
+                # owner logs in successfully after the lockout expires --
+                # deliberately must not grant the attacker a fresh streak
+                time.sleep(durations[-1] + 0.2)
+                self.assertEqual(self.login("9999",
+                                            client=self.fresh_client()).status_code, 200)
+            self.assertAlmostEqual(durations[0], 1, delta=0.4)
+            self.assertAlmostEqual(durations[1], 2, delta=0.4)
+            self.assertAlmostEqual(durations[2], 4, delta=0.4)
+            # And the cap holds even for an absurd streak
+            server._lockout_streak = 99
+            for _ in range(server._LOCKOUT_THRESHOLD):
+                self.login("0000", client=other)
+            self.assertLessEqual(server._login_locked_until - time.time(),
+                                 server._LOCKOUT_MAX_SECONDS)
         finally:
             server._LOCKOUT_SECONDS = orig
 

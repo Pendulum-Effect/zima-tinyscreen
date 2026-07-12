@@ -6,7 +6,7 @@ eventually hit context limits). It carries the current state, what's
 done, and what's next, so any session can pick up where the last left
 off. **Delete this file at the final 1.0 release.**
 
-Snapshot as of **0.9.5.1** (2026-07-11).
+Snapshot as of **0.9.5.2** (2026-07-11).
 
 ## How to get oriented fast
 
@@ -114,9 +114,35 @@ Snapshot as of **0.9.5.1** (2026-07-11).
   - [x] 5 new tests (31 total in test_auth.py); serial/updater/collector
         suites + browser E2E re-verified with the new headers.
 
+- [x] **0.9.5.2** PIN polish + serial safety (second self-audit):
+  - [x] Wizard was BROKEN on a PIN-enabled box (its server-side
+        flash/configure path got bare 401s). Auth overlay extracted to
+        webflasher/auth_overlay.js (self-contained: injects its own
+        styles with var() fallbacks, idempotent, marker flag
+        window.__tinyscreenAuthOverlay); dashboard and wizard both
+        include it; dashboard's inline copy and pin CSS removed.
+  - [x] Exclusive-serial mutex: configure/reset/current_config/flash
+        serialize through _begin/_end_exclusive_serial; concurrent
+        caller gets 409 {busy:true}. Fixes real interleaving corruption
+        (two tabs sufficed), not just hostile spam.
+  - [x] Lockout backoff: doubles per consecutive lockout, 1h cap, streak
+        decays after a quiet hour but deliberately NOT on successful
+        login. Lockouts logged to stderr with source address.
+  - [x] TLS 1.2 floor explicit; CI advisory pip-audit (non-blocking).
+  - [x] Suites now: auth 32, serial 20; wizard + dashboard overlay flows
+        E2E-verified in a real browser.
+
+## Diminishing-returns note (read before proposing 0.9.5.3)
+
+Three consecutive security rounds have now happened. What's left is
+gold-plating for a home appliance: GH-action SHA pinning, npm tarball
+integrity pinning (needs a hash from a trusted first CI run), CSP
+script-src for the inline-script pages, per-endpoint rate limits.
+None are worth a dedicated round; fold them into other work or skip.
+
 ## Next up (suggested order)
 
-- [ ] **Hardware round for 0.9.5 + 0.9.5.1**: enable the PIN on the real
+- [ ] **Hardware round for 0.9.5.x (all three)**: enable the PIN on the real
       box; overlay on the phone browser you actually use; one flash +
       one settings save while locked (session cookie over plain HTTP);
       change the PIN and confirm a second signed-in device gets locked
