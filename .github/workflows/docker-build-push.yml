@@ -115,6 +115,19 @@ jobs:
       - name: Stage firmware binaries for the Docker build
         run: |
           mkdir -p webflasher/firmware/bridge webflasher/firmware/native
+          # boot_app0.bin initializes the otadata partition (0xE000) to
+          # select the first app slot. PlatformIO's own upload flashes it;
+          # our WebSerial manifests must too, or a full-erase install
+          # leaves otadata blank and boot depends on the IDF bootloader's
+          # empty-otadata fallback instead of pinned state (0.9.7.2 --
+          # found comparing the manifest part set against pio upload
+          # during the flash-failure review).
+          BOOT_APP0=$(find ~/.platformio/packages -name boot_app0.bin | head -1)
+          if [ -z "$BOOT_APP0" ]; then
+            echo "::error::boot_app0.bin not found in the PlatformIO framework package"; exit 1
+          fi
+          cp "$BOOT_APP0" webflasher/firmware/bridge/boot_app0.bin
+          cp "$BOOT_APP0" webflasher/firmware/native/boot_app0.bin
           cp firmware/.pio/build/esp32-s3-tinyscreen-bridge/bootloader.bin webflasher/firmware/bridge/
           cp firmware/.pio/build/esp32-s3-tinyscreen-bridge/partitions.bin webflasher/firmware/bridge/
           cp firmware/.pio/build/esp32-s3-tinyscreen-bridge/firmware.bin webflasher/firmware/bridge/
