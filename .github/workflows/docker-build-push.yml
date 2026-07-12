@@ -40,6 +40,8 @@ jobs:
             || { echo "::error::firmware/src/main.cpp and the Arduino sketch have drifted -- re-sync them."; exit 1; }
           diff -u firmware/src/tiny_fonts.h firmware_arduino/zima_tinyscreen/tiny_fonts.h \
             || { echo "::error::tiny_fonts.h differs between the two firmware trees -- re-sync them."; exit 1; }
+          diff -u firmware/src/tiny_logo.h firmware_arduino/zima_tinyscreen/tiny_logo.h \
+            || { echo "::error::tiny_logo.h differs between the two firmware trees -- re-sync them."; exit 1; }
           echo "firmware/ and firmware_arduino/ are in sync."
 
       - name: Set up Python
