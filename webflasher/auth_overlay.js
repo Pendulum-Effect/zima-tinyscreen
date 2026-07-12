@@ -52,6 +52,11 @@
   const rawFetch = window.fetch.bind(window);
   let pinPrompt = null;  // in-flight overlay promise, shared
 
+  // Exposed so pages can demand a login proactively (e.g. the PIN
+  // management view logs you in BEFORE showing its buttons, instead of
+  // letting each button bounce off the auth guard mid-action).
+  window.__tinyscreenRequirePin = () => requirePin();
+
   window.fetch = async (input, init) => {
     const res = await rawFetch(input, init);
     if (res.status !== 401) return res;

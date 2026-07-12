@@ -2,6 +2,18 @@
   "_comment": "Human-readable changelog for the dashboard's About tab -- written for people, not commit archaeologists. The dashboard fetches this from GitHub at page load (baked copy as fallback), so add an entry here with each release and every install sees it. Newest first. Dates are YYYY-MM-DD.",
   "entries": [
     {
+      "version": "0.9.5.3",
+      "date": "2026-07-12",
+      "title": "0.9.5.3: two dead buttons come alive",
+      "notes": [
+        "The Reset button on the General tab now actually works -- it turns out it was never connected to anything, in any version. It now asks for a confirming second click, sends the reset over the serial connection, and tells you how it went.",
+        "\"Turn off\" in PIN settings looked dead because every message it tried to show you (including its error messages) was being written somewhere invisible. Fixed -- and pressing it with an empty Current PIN field now tells you immediately what to fill in, without counting against the wrong-PIN limit. Previously, five absent-minded clicks could lock you out of your own settings for a minute.",
+        "Opening PIN settings from a browser that isn't signed in now asks for the PIN up front, instead of letting each button inside bounce off the lock mid-click.",
+        "The dashboard and its scripts now tell browsers to re-check for new versions on every load, so after an app update you're never running a stale page against a new server.",
+        "No firmware changes."
+      ]
+    },
+    {
       "version": "0.9.5.2",
       "date": "2026-07-11",
       "title": "0.9.5.2: PIN polish and serial safety",

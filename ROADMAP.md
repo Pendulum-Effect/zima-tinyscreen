@@ -6,7 +6,7 @@ eventually hit context limits). It carries the current state, what's
 done, and what's next, so any session can pick up where the last left
 off. **Delete this file at the final 1.0 release.**
 
-Snapshot as of **0.9.5.2** (2026-07-11).
+Snapshot as of **0.9.5.3** (2026-07-12).
 
 ## How to get oriented fast
 
@@ -140,9 +140,28 @@ integrity pinning (needs a hash from a trusted first CI run), CSP
 script-src for the inline-script pages, per-endpoint rate limits.
 None are worth a dedicated round; fold them into other work or skip.
 
+- [x] **0.9.5.3** Hardware-round findings fixed (busy message verified
+      on the real box; two dead buttons reported):
+  - [x] Reset Device button was NEVER wired to anything in any version
+        -- now arm-then-fire -> POST /api/reset_device -> visible
+        outcome + wizard pointer.
+  - [x] "Turn off does nothing" root cause: offStatus was written on
+        every click but NEVER APPENDED to the DOM -- all feedback since
+        0.9.5.0 went to a detached element. Lesson recorded: E2E tests
+        asserted the side effect (auth.json deleted) but not the
+        VISIBLE feedback; assert what the user sees.
+  - [x] Empty current-PIN is now a 400 UX slip, NOT a counted attempt
+        (five absent-minded Turn off clicks used to lock the owner out);
+        client shows an instant local message and never sends it.
+  - [x] PIN settings demands login up front for sessionless visitors
+        (requirePin exposed as window.__tinyscreenRequirePin) instead of
+        bouncing each button off the guard mid-action.
+  - [x] Cache-Control: no-cache on .html/.js (ETag revalidation) so app
+        updates can't leave browsers on a stale page.
+
 ## Next up (suggested order)
 
-- [ ] **Hardware round for 0.9.5.x (all three)**: enable the PIN on the real
+- [ ] **Hardware round for 0.9.5.x (remaining)**: enable the PIN on the real
       box; overlay on the phone browser you actually use; one flash +
       one settings save while locked (session cookie over plain HTTP);
       change the PIN and confirm a second signed-in device gets locked

@@ -426,7 +426,16 @@ def api_auth_set_pin():
     cfg = _load_auth()
 
     if cfg is not None:
-        ok, refused = _check_pin_with_lockout(body.get("current_pin"), cfg)
+        current = body.get("current_pin")
+        if not isinstance(current, str) or not current:
+            # An EMPTY field is a UX slip (clicking Turn off without
+            # filling the box), not a guess -- refuse it plainly and,
+            # critically, do NOT feed it to the lockout counter: five
+            # absent-minded clicks must not lock the owner out of their
+            # own settings (0.9.5.3, found on real hardware).
+            return jsonify({"ok": False,
+                            "error": "Enter the current PIN first."}), 400
+        ok, refused = _check_pin_with_lockout(current, cfg)
         if refused:
             return refused  # 429: same lockout as login -- this endpoint
             # must not be a rate-limit-free guessing oracle (0.9.5.1)
@@ -501,6 +510,14 @@ def _security_headers(resp):
     if request.path.startswith("/api/auth/"):
         # Auth state and login outcomes must never come from a cache.
         resp.headers["Cache-Control"] = "no-store"
+    elif request.path == "/" or request.path.endswith((".html", ".js")):
+        # Revalidate pages and scripts on every load (0.9.5.3): without
+        # this, browsers heuristically cache the dashboard, so after an
+        # app update people can run a STALE page against a NEW server --
+        # "the new button does nothing" bugs that no amount of code can
+        # fix. no-cache (not no-store) keeps it cheap: send_from_directory
+        # sets ETag/Last-Modified, so unchanged files answer with a 304.
+        resp.headers.setdefault("Cache-Control", "no-cache")
     return resp
 
 

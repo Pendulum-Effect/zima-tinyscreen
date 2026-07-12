@@ -182,11 +182,16 @@ class TestLockStats(AuthTestBase):
 class TestChangeAndDisable(AuthTestBase):
     def test_change_requires_current_and_invalidates_old(self):
         self.enable_pin("1111")
-        # Missing/wrong current pin: refused, even from a logged-in session
-        for payload in ({"new_pin": "2222"},
-                        {"new_pin": "2222", "current_pin": "9999"}):
-            r = self.client.post("/api/auth/set_pin", json=payload, headers=HDRS)
-            self.assertEqual(r.status_code, 403)
+        # Missing/empty current pin: refused as a UX slip (400, not
+        # counted); a WRONG current pin: refused as a failed attempt
+        # (403, counted) -- even from a logged-in session.
+        r = self.client.post("/api/auth/set_pin", json={"new_pin": "2222"},
+                             headers=HDRS)
+        self.assertEqual(r.status_code, 400)
+        r = self.client.post("/api/auth/set_pin",
+                             json={"new_pin": "2222", "current_pin": "9999"},
+                             headers=HDRS)
+        self.assertEqual(r.status_code, 403)
         # Correct current pin: changed
         r = self.client.post("/api/auth/set_pin",
                              json={"current_pin": "1111", "new_pin": "2222"},
@@ -434,6 +439,30 @@ class TestSetPinLockout(AuthTestBase):
         self.assertEqual(r.status_code, 429)
 
 
+class TestEmptyCurrentPin(AuthTestBase):
+    """0.9.5.3, found on real hardware: an empty current_pin field is a
+    UX slip, not a guess -- it must refuse with a plain 400 and must
+    NOT feed the lockout counter (five absent-minded clicks were
+    locking owners out of their own settings)."""
+
+    def test_empty_current_is_400_and_never_locks(self):
+        self.enable_pin("9999")
+        for payload in ({"disable": True}, {"disable": True, "current_pin": ""},
+                        {"new_pin": "2222"}, {"lock_stats": True, "current_pin": ""}):
+            for _ in range(3):  # 12 clicks total, > 2x the threshold
+                r = self.client.post("/api/auth/set_pin", json=payload, headers=HDRS)
+                self.assertEqual(r.status_code, 400, payload)
+                self.assertIn("Enter the current PIN", r.get_json()["error"])
+        # Lockout untouched: a real wrong guess still gets 403 (not 429),
+        # and the correct PIN still works immediately.
+        r = self.client.post("/api/auth/set_pin",
+                             json={"current_pin": "0000", "disable": True}, headers=HDRS)
+        self.assertEqual(r.status_code, 403)
+        r = self.client.post("/api/auth/set_pin",
+                             json={"current_pin": "9999", "disable": True}, headers=HDRS)
+        self.assertEqual(r.get_json(), {"ok": True, "enabled": False})
+
+
 class TestSecurityHeaders(AuthTestBase):
     def test_frame_denial_and_sniffing_headers_everywhere(self):
         for path in ("/dashboard.html", "/wizard.html", "/api/last_flash"):
@@ -442,6 +471,15 @@ class TestSecurityHeaders(AuthTestBase):
             self.assertEqual(r.headers.get("Content-Security-Policy"),
                              "frame-ancestors 'none'", path)
             self.assertEqual(r.headers.get("X-Content-Type-Options"), "nosniff", path)
+
+    def test_pages_and_scripts_revalidate(self):
+        """0.9.5.3: browsers must revalidate the dashboard and its JS on
+        every load, or app updates leave people running a stale page
+        against a new server."""
+        for path in ("/dashboard.html", "/wizard.html", "/auth_overlay.js"):
+            r = self.client.get(path)
+            self.assertEqual(r.headers.get("Cache-Control"), "no-cache", path)
+            self.assertIsNotNone(r.headers.get("ETag"), path)
 
     def test_auth_responses_never_cached(self):
         self.assertEqual(self.client.get("/api/auth/status")

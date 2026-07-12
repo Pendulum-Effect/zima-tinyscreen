@@ -2352,6 +2352,15 @@
 
   async function openPinView() {
     await loadPinSummary();
+    // If a PIN is on and this browser isn't logged in, log in FIRST --
+    // otherwise every button below would 401 into the generic overlay
+    // mid-click, which reads as "the button does nothing" (0.9.5.3,
+    // found on real hardware).
+    if (authStatus && authStatus.enabled && !authStatus.authed) {
+      const ok = await window.__tinyscreenRequirePin();
+      if (!ok) return;
+      await loadPinSummary();
+    }
     document.getElementById('general-sub-title').textContent = 'Dashboard PIN';
     const body = document.getElementById('general-sub-body');
     body.textContent = '';
@@ -2394,14 +2403,24 @@
     save.style.marginTop = '12px';
     save.addEventListener('click', async () => {
       const payload = {};
-      if (enabled) payload.current_pin = current.value;
+      if (enabled) {
+        if (!current.value) {
+          status.style.color = 'var(--err)';
+          status.textContent = 'Enter the current PIN first.';
+          current.focus();
+          return;
+        }
+        payload.current_pin = current.value;
+      }
       if (fresh.value || !enabled) {
         if (fresh.value !== confirm.value) {
+          status.style.color = 'var(--err)';
           status.textContent = 'The two PIN fields don\u2019t match.';
           return;
         }
         payload.new_pin = fresh.value;
       }
+      status.style.color = '';
       payload.lock_stats = lockBox.checked;
       save.disabled = true;
       status.textContent = 'Saving\u2026';
@@ -2431,24 +2450,43 @@
         'device on your network.'));
       const offStatus = el('div', 'card-desc', '');
       offStatus.style.marginTop = '10px';
+      // The 0.9.5.0..0.9.5.2 bug behind "Turn off does nothing": this
+      // element was written to on every click but never appended, so
+      // ALL feedback (errors, progress, lockout notices) rendered into
+      // a detached node. Append it or the whole card is a black hole.
+      off.appendChild(offStatus);
       const offBtn = el('button', 'btn', 'Turn off');
       offBtn.style.marginTop = '12px';
       offBtn.addEventListener('click', async () => {
+        // Checked here, before any request: an empty field must give
+        // instant, local feedback (and never reach the server, where it
+        // would read as a PIN attempt).
+        if (!current || !current.value) {
+          offStatus.style.color = 'var(--err)';
+          offStatus.textContent = 'Fill in the Current PIN field above first, then press Turn off.';
+          current && current.focus();
+          return;
+        }
         offBtn.disabled = true;
+        offStatus.style.color = '';
         offStatus.textContent = 'Removing\u2026';
         try {
           const r = await fetch('/api/auth/set_pin', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'X-TinyScreen-Request': '1' },
-            body: JSON.stringify({ disable: true, current_pin: current ? current.value : '' }),
+            body: JSON.stringify({ disable: true, current_pin: current.value }),
           });
           const data = await r.json();
-          offStatus.textContent = data.ok
-            ? 'PIN removed.'
-            : (data.error || 'Failed.') + (data.error && data.error.indexOf('Current PIN') === 0
-               ? ' (Fill in the Current PIN field above, then press Turn off.)' : '');
-          if (data.ok) { await loadPinSummary(); openPinView(); }
+          if (data.ok) {
+            offStatus.textContent = 'PIN removed.';
+            await loadPinSummary();
+            openPinView();
+          } else {
+            offStatus.style.color = 'var(--err)';
+            offStatus.textContent = data.error || 'Failed.';
+          }
         } catch (e) {
+          offStatus.style.color = 'var(--err)';
           offStatus.textContent = 'Failed: ' + e.message;
         } finally {
           offBtn.disabled = false;
@@ -2475,6 +2513,65 @@
 
   document.getElementById('pin-manage-btn').addEventListener('click', openPinView);
   loadPinSummary();
+
+  // --- Reset Device (0.9.5.3) ---------------------------------------------
+  // This button existed since the card was designed but was never wired
+  // to anything -- a dead button that three hardware rounds walked past
+  // until someone finally pressed it. Two-step arm/fire instead of a
+  // confirm() dialog (stays in the page's visual language, and a second
+  // deliberate click is a better guard for a destructive action).
+  {
+    const btn = document.getElementById('reset-device-btn');
+    const status = document.getElementById('reset-status');
+    let armed = false;
+    let disarmTimer = null;
+    const disarm = () => {
+      armed = false;
+      btn.textContent = 'Reset';
+      status.style.display = 'none';
+      status.textContent = '';
+    };
+    btn.addEventListener('click', async () => {
+      if (!armed) {
+        armed = true;
+        btn.textContent = 'Really reset?';
+        status.style.display = 'block';
+        status.style.color = '';
+        status.textContent = 'This wipes the display\u2019s saved settings and returns it to ' +
+          'first-time setup. Click again to confirm; anything else cancels.';
+        clearTimeout(disarmTimer);
+        disarmTimer = setTimeout(disarm, 8000);  // quietly stand down
+        return;
+      }
+      clearTimeout(disarmTimer);
+      armed = false;
+      btn.disabled = true;
+      btn.textContent = 'Resetting\u2026';
+      status.textContent = 'Sending the reset command over the serial connection\u2026';
+      try {
+        const r = await fetch('/api/reset_device', {
+          method: 'POST', headers: { 'X-TinyScreen-Request': '1' },
+        });
+        const data = await r.json();
+        if (data.ok) {
+          status.textContent = (data.acked
+            ? 'Done \u2713 the display confirmed the reset.'
+            : 'Reset sent. The display didn\u2019t confirm \u2014 if it\u2019s still showing ' +
+              'stats, check the cable and try again.') +
+            ' To set it up fresh, open the setup wizard from the top of this page.';
+        } else {
+          status.style.color = 'var(--err)';
+          status.textContent = data.error || 'Reset failed.';
+        }
+      } catch (e) {
+        status.style.color = 'var(--err)';
+        status.textContent = 'Reset failed: ' + e.message;
+      } finally {
+        btn.disabled = false;
+        btn.textContent = 'Reset';
+      }
+    });
+  }
 
   document.getElementById('general-sub-back').addEventListener('click', resetSubViews);
 
