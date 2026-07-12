@@ -460,43 +460,65 @@
       port = await navigator.serial.requestPort();
       await port.open({ baudRate: 115200 });
     } catch (e) {
-      statusCb('Could not open the serial port: ' + e.message + ' — close the ' +
-        'flashing dialog first if it’s still open (it can keep holding the port), and if no port shows ' +
-        'up in the picker at all, unplug the display and plug it back in (a power ' +
-        'cycle after flashing is sometimes needed), then try again. If it still ' +
-        'never appears, open the flasher’s “Logs & console” and check what the ' +
-        'device prints after reset.', 'err');
+      statusCb('Could not open the serial port: ' + e.message + ' \u2014 close the ' +
+        'flashing dialog first if it\u2019s still open (it can keep holding the port).', 'err');
       return false;
     }
+    // Two hard-won lessons in here (0.9.7.5, both from real hardware):
+    // 1) OPENING the port can RESET a native-USB board -- the USB-serial
+    //    peripheral doubles as its reset control -- and anything written
+    //    while the firmware is still booting is silently lost. The old
+    //    code wrote immediately, saw no ack, and reported "likely
+    //    worked"; the device arrived at the ZimaBlade unconfigured.
+    //    So: pause after open, then send-and-verify with retries (the
+    //    command is idempotent).
+    // 2) The old read loop raced reads against timeouts, which can
+    //    orphan a pending read and swallow the very chunk holding the
+    //    ack. One background pump into a buffer loses nothing.
+    const reader = port.readable.getReader();
+    const writer = port.writable.getWriter();
+    const decoder = new TextDecoder();
+    let buf = '';
+    const pump = (async () => {
+      try {
+        for (;;) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          if (value) buf += decoder.decode(value, { stream: true });
+        }
+      } catch (e) { /* cancelled on cleanup */ }
+    })();
     try {
-      const writer = port.writable.getWriter();
+      statusCb('Waiting for the display to finish booting\u2026', '');
+      await new Promise(r => setTimeout(r, 1800));
       const payload = JSON.stringify({ cmd: 'set_config', ...defaultConfigFor(boardId) }) + '\n';
-      await writer.write(new TextEncoder().encode(payload));
-      writer.releaseLock();
-
-      const reader = port.readable.getReader();
-      const decoder = new TextDecoder();
-      let buf = '';
       let acked = false;
-      const deadline = Date.now() + 4000;
-      while (Date.now() < deadline && !acked) {
-        const { value, done } = await Promise.race([
-          reader.read(),
-          new Promise(resolve => setTimeout(() => resolve({ value: undefined, done: false }), 300)),
-        ]);
-        if (done) break;
-        if (value) {
-          buf += decoder.decode(value, { stream: true });
+      for (let attempt = 1; attempt <= 3 && !acked; attempt++) {
+        statusCb('Sending settings' + (attempt > 1 ? ' (attempt ' + attempt + ' of 3)' : '') + '\u2026', '');
+        await writer.write(new TextEncoder().encode(payload));
+        const deadline = Date.now() + 2500;
+        while (Date.now() < deadline && !acked) {
+          await new Promise(r => setTimeout(r, 150));
           if (buf.includes('"ack":"set_config"')) acked = true;
         }
       }
-      reader.releaseLock();
-      statusCb(acked ? 'Settings applied.' : 'Sent — no confirmation seen, but it likely worked.', 'ok');
-      return true;
+      if (acked) {
+        statusCb('Settings applied \u2713 \u2014 the screen should light up in a few ' +
+                 'seconds (it restarts once to bring the display up).', 'ok');
+        return true;
+      }
+      statusCb('The display never confirmed the settings \u2014 nothing was saved. ' +
+               'Unplug it, plug it back in, and run this step again. If it keeps ' +
+               'failing, open the flasher\u2019s \u201cLogs & console\u201d and check what the ' +
+               'device prints after reset.', 'err');
+      return false;
     } catch (e) {
       statusCb('Error while sending settings: ' + e.message, 'err');
       return false;
     } finally {
+      try { writer.releaseLock(); } catch (e) {}
+      try { await reader.cancel(); } catch (e) {}
+      try { reader.releaseLock(); } catch (e) {}
       try { await port.close(); } catch (e) {}
     }
   }

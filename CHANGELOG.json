@@ -2,6 +2,18 @@
   "_comment": "Human-readable changelog for the dashboard's About tab -- written for people, not commit archaeologists. The dashboard fetches this from GitHub at page load (baked copy as fallback), so add an entry here with each release and every install sees it. Newest first. Dates are YYYY-MM-DD.",
   "entries": [
     {
+      "version": "0.9.7.5",
+      "date": "2026-07-12",
+      "title": "The computer-path setup step stops lying",
+      "notes": [
+        "Fixed first-time setup over a computer's USB port leaving the display unconfigured: opening the serial connection can restart these displays, and the settings used to be sent while it was still booting -- then reported as 'likely worked'. The wizard now waits for the display to finish booting, sends the settings, verifies the display confirmed them, and retries a couple of times if it didn't.",
+        "If the display truly never confirms, the wizard now says so plainly -- nothing was saved, run the step again -- instead of guessing optimistically.",
+        "On success, the wizard mentions the screen will light up within a few seconds (it restarts once to bring the display up), so you know what 'worked' looks like before unplugging it.",
+        "The 'Run first-time setup' links shown for an unconfigured display now match the app's colors instead of rendering as default blue/purple links.",
+        "No firmware changes."
+      ]
+    },
+    {
       "version": "0.9.7.4",
       "date": "2026-07-12",
       "title": "The wrong-board trap is closed (firmware 1.21)",

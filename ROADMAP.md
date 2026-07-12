@@ -6,7 +6,7 @@ eventually hit context limits). It carries the current state, what's
 done, and what's next, so any session can pick up where the last left
 off. **Delete this file at the final 1.0 release.**
 
-Snapshot as of **0.9.7.4** (2026-07-12).
+Snapshot as of **0.9.7.5** (2026-07-12).
 
 ## How to get oriented fast
 
@@ -349,6 +349,28 @@ None are worth a dedicated round; fold them into other work or skip.
   - [ ] FOLLOW-UP: wizard could show "detected an unconfigured device"
         and preselect nothing, making board choice an explicit step
         that can't be skimmed past.
+
+- [x] **0.9.7.5** Mac/WebSerial configure path fixed (hardware round on
+      0.9.7.4 confirmed the ZimaBlade path works end-to-end; the
+      computer path left devices unconfigured):
+  - Root causes, both in pushDefaultConfigViaWebSerial: (1) OPENING
+    the port can RESET native-USB boards (the USB-serial peripheral
+    doubles as reset control); the old code wrote set_config
+    immediately, the bytes landed mid-boot and were lost, and the
+    status lied "Sent -- likely worked". (2) The old read loop raced
+    reads against timeouts; an orphaned read could swallow the ack
+    chunk even when configuration succeeded.
+  - Rewrite: single background reader pump into a buffer (loses
+    nothing); 1800ms boot pause after open; send-and-verify with 3
+    idempotent retries at 2500ms deadlines; honest failure message
+    (nothing saved, retry, check Logs & console); success message
+    notes the screen lights up + one restart.
+  - Setup links (#model-sku a, tab error banners) themed teal --
+    they rendered as default blue/purple in user screenshots.
+  - [ ] HARDWARE VERIFY: re-test the full Mac path end-to-end --
+        flash, configure (should see the boot pause + ack), screen
+        lights while still on the Mac, then move to the ZimaBoard
+        and confirm it arrives CONFIGURED.
 
 ## Next up (suggested order)
 
