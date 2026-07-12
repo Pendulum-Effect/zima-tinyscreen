@@ -87,16 +87,26 @@ int main() {
   CHECK(config.brightness == 100);
   CHECK(config.numPages == 1 && strcmp(config.pages[0], "temp") == 0);
 
-  // ---- computeLayoutBox: square fit on the 240x280 panel ----
+  // ---- computeLayoutBox: aspect modes on the 240x280 panel ----
   int lx, ly, lw, lh;
-  computeLayoutBox(240, 280, true, &lx, &ly, &lw, &lh);
-  CHECK(lx == 0 && ly == 20 && lw == 240 && lh == 240);   // letterboxed
-  computeLayoutBox(280, 240, true, &lx, &ly, &lw, &lh);   // rotated 90
-  CHECK(lx == 20 && ly == 0 && lw == 240 && lh == 240);   // pillarboxed
-  computeLayoutBox(240, 280, false, &lx, &ly, &lw, &lh);  // native
+  computeLayoutBox(240, 280, 1, &lx, &ly, &lw, &lh);       // square 1:1
+  CHECK(lx == 0 && ly == 20 && lw == 240 && lh == 240);
+  computeLayoutBox(280, 240, 1, &lx, &ly, &lw, &lh);       // rotated 90
+  CHECK(lx == 20 && ly == 0 && lw == 240 && lh == 240);
+  computeLayoutBox(240, 280, 0, &lx, &ly, &lw, &lh);       // full panel
   CHECK(lx == 0 && ly == 0 && lw == 240 && lh == 280);
-  computeLayoutBox(240, 240, true, &lx, &ly, &lw, &lh);   // already square
+  computeLayoutBox(240, 240, 1, &lx, &ly, &lw, &lh);       // already square
   CHECK(lx == 0 && ly == 0 && lw == 240 && lh == 240);
+  // Compact 1.3" (mode 2): 200px centered square -- the physical size
+  // of a 1.3" board's glass, so nothing hides behind a 1.3" cutout.
+  computeLayoutBox(240, 280, 2, &lx, &ly, &lw, &lh);
+  CHECK(lx == 20 && ly == 40 && lw == 200 && lh == 200);
+  computeLayoutBox(280, 240, 2, &lx, &ly, &lw, &lh);       // rotated
+  CHECK(lx == 40 && ly == 20 && lw == 200 && lh == 200);
+  computeLayoutBox(240, 240, 2, &lx, &ly, &lw, &lh);       // on a 1.3" board
+  CHECK(lx == 20 && ly == 20 && lw == 200 && lh == 200);
+  computeLayoutBox(160, 160, 2, &lx, &ly, &lw, &lh);       // smaller than 200
+  CHECK(lx == 0 && ly == 0 && lw == 160 && lh == 160);
 
   // ---- mapSwipeDeltaX per rotation ----
   CHECK(mapSwipeDeltaX(50, 5, 0) == 50);     // native: raw X is display X
@@ -340,6 +350,49 @@ int main() {
     strcpy(config.saverStyle, "temp");
     config.saverBrightness = 30;
     saverActive = false;
+  }
+
+  // ---- 1.22: roll gating -- animate at most every cooldown ----
+  {
+    // page switch always snaps (action 2), even mid-cooldown
+    CHECK(decideRollAction(false, true, false, 1000, 900, 4000) == 2);
+    // no change / already rolling -> keep (0)
+    CHECK(decideRollAction(true, false, false, 9000, 0, 4000) == 0);
+    CHECK(decideRollAction(true, true, true, 9000, 0, 4000) == 0);
+    // change + cooldown elapsed -> roll (1)
+    CHECK(decideRollAction(true, true, false, 5000, 1000, 4000) == 1);
+    // change but too soon -> hold (0); rolls once the window passes
+    CHECK(decideRollAction(true, true, false, 4999, 1000, 4000) == 0);
+    CHECK(decideRollAction(true, true, false, 5001, 1000, 4000) == 1);
+    // easing: monotone, endpoints exact
+    CHECK(rollEase(0.0f) == 0.0f && rollEase(1.0f) == 1.0f);
+    CHECK(rollEase(0.5f) > 0.49f && rollEase(0.5f) < 0.51f);
+    CHECK(rollEase(0.25f) < rollEase(0.75f));
+  }
+
+  // ---- 1.22: aspect_mode via set_config (legacy square_fit maps) ----
+  {
+    config.configured = true;
+    config.aspectMode = 0; config.squareFit = false;
+    JsonDocument doc;
+    doc["cmd"] = "set_config";
+    doc["aspect_mode"] = 2;
+    handleSetConfig(doc);
+    CHECK(config.aspectMode == 2);
+    CHECK(!config.squareFit);
+    JsonDocument doc2;                    // legacy dashboards still work
+    doc2["cmd"] = "set_config";
+    doc2["square_fit"] = true;
+    handleSetConfig(doc2);
+    CHECK(config.aspectMode == 1);
+    CHECK(config.squareFit);
+    JsonDocument doc3;                    // explicit mode wins over legacy
+    doc3["cmd"] = "set_config";
+    doc3["square_fit"] = false;
+    doc3["aspect_mode"] = 2;
+    handleSetConfig(doc3);
+    CHECK(config.aspectMode == 2);
+    pendingRestart = false;
   }
 
   // ---- 1.21: a device only becomes configured when told its board ----

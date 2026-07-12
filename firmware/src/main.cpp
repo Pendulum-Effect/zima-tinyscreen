@@ -34,6 +34,7 @@
 // tools/genfont.py) -- must come after Arduino_GFX_Library.h, which
 // provides the GFXfont/GFXglyph structs.
 #include "tiny_fonts.h"
+#include "tiny_logo.h"
 #include <ArduinoJson.h>
 
 // Bump this string whenever a firmware change is meaningful enough for a
@@ -41,7 +42,7 @@
 // "Software Version" field via the get_config command below. No
 // auto-update-checking mechanism exists yet (that's a separate, not-yet
 // -built feature) -- this just answers "what's currently on my device."
-#define FIRMWARE_VERSION "1.21"  // two-part scheme as of 1.19 (was x.y.z)
+#define FIRMWARE_VERSION "1.22"  // two-part scheme as of 1.19 (was x.y.z)
 
 // Note: screen dimensions are NOT fixed -- board 1 (1.69") is 240x280,
 // taller than board 0's 240x240. See screenW/screenH globals, set from
@@ -137,7 +138,8 @@ struct Config {
   // who want a 1:1 face on the 240x280 display. Both require a display
   // re-init, so changes trigger the same restart path as a board change.
   int rotation = 0;
-  bool squareFit = false;
+  bool squareFit = false;   // legacy (<=1.21); kept for NVS/protocol compat
+  int aspectMode = 0;       // 0 full, 1 square 1:1, 2 compact 1.3" (1.22)
 
   // Per-page layout style, parallel to pages[] slot-for-slot. "default"
   // is the classic TinyScreen ring look; pages may offer alternates
@@ -178,6 +180,8 @@ void loadConfig() {
   saverStyle.toCharArray(config.saverStyle, 8);
   config.rotation = prefs.getInt("rotation", 0);
   config.squareFit = prefs.getBool("squareFit", false);
+  // Migration: devices configured before 1.22 only have squareFit.
+  config.aspectMode = prefs.getInt("aspectMode", config.squareFit ? 1 : 0);
   String pagesCsv = prefs.getString("pages", "temp");
   String layoutsCsv = prefs.getString("layouts", "");
   prefs.end();
@@ -247,6 +251,7 @@ void saveConfig() {
   prefs.putString("saverStyle", config.saverStyle);
   prefs.putInt("rotation", config.rotation);
   prefs.putBool("squareFit", config.squareFit);
+  prefs.putInt("aspectMode", config.aspectMode);
   String layoutsCsv = "";
   for (int i = 0; i < config.numPages; i++) {
     if (i > 0) layoutsCsv += ",";
@@ -354,10 +359,25 @@ int screenH = 240;
 // drawing goes through LX/LY/LW/LH so pages don't care which mode
 // they're in. computeLayoutBox is pure for host-side unit testing.
 int LX = 0, LY = 0, LW = 240, LH = 240;
-void computeLayoutBox(int physW, int physH, bool squareFit,
+// aspectMode: 0 = full panel, 1 = square 1:1 (largest centered square),
+// 2 = compact 1.3" -- a 200px centered square, matching the physical
+// drawable size of the 1.3" boards. The math: the 1.3" panels are
+// 240x240 across a 1.3" diagonal (339 px diagonal -> ~0.00383 in/px),
+// so their glass is 0.919" on a side. The 1.69" panel is 240x280
+// across 1.69" (369 px diagonal -> ~0.00458 in/px); 0.919" there is
+// 0.919 / 0.00458 = 200.5 px. A 200px square therefore shows the same
+// physical picture as a 1.3" board -- nothing gets cut off behind a
+// 1.3" case cutout.
+void computeLayoutBox(int physW, int physH, int aspectMode,
                       int *lx, int *ly, int *lw, int *lh) {
-  if (squareFit && physW != physH) {
-    int side = physW < physH ? physW : physH;
+  int side = 0;
+  if (aspectMode == 1 && physW != physH) {
+    side = physW < physH ? physW : physH;
+  } else if (aspectMode == 2) {
+    int minDim = physW < physH ? physW : physH;
+    side = minDim < 200 ? minDim : 200;
+  }
+  if (side > 0) {
     *lx = (physW - side) / 2;
     *ly = (physH - side) / 2;
     *lw = side;
@@ -428,7 +448,7 @@ void initDisplay() {
   bool swapped = (rot == 1 || rot == 3);
   screenW = swapped ? p.height : p.width;
   screenH = swapped ? p.width : p.height;
-  computeLayoutBox(screenW, screenH, config.squareFit, &LX, &LY, &LW, &LH);
+  computeLayoutBox(screenW, screenH, config.aspectMode, &LX, &LY, &LW, &LH);
   bus = new Arduino_ESP32SPI(p.lcd_dc, p.lcd_cs, p.lcd_sck, p.lcd_mosi, -1 /* no MISO */);
   if (p.driverIsGC9A01) {
     gfx = new Arduino_GC9A01(bus, p.lcd_rst, rot, true /* IPS */);
@@ -586,6 +606,175 @@ void advancePage(int dir) {
 // ---------------------------------------------------------------------
 
 // ---------------------------------------------------------------------
+// Rolling numbers (1.22): the primary readout on every layout rolls
+// odometer-style when its value changes -- each changed character
+// slides out vertically (up when the value grew, down when it fell)
+// while its replacement slides in. Readability rule: a slot rolls at
+// most every ROLL_COOLDOWN_MS; between rolls the DISPLAYED value holds
+// steady and then rolls to the freshest value, so a jittery metric
+// reads as a calm roll every few seconds instead of a blur.
+// Right-edge anchored during the roll (like the reference video: 47 ->
+// 117 keeps the trailing digit planted and grows leftward).
+// ---------------------------------------------------------------------
+struct RollSlot {
+  char shown[14];        // what's on screen (roll target once rolling)
+  char from[14];         // what we're rolling away from
+  unsigned long animStart;
+  unsigned long lastRoll;
+  int pageIdx;           // owning page -- page switches snap, never roll
+  bool active;
+  bool up;               // roll direction (value grew -> glyphs move up)
+};
+static RollSlot rollSlots[6 * 2];  // pages[6] x (primary, secondary)
+static int activeRolls = 0;
+const unsigned long ROLL_MS = 420;
+const unsigned long ROLL_COOLDOWN_MS = 4000;
+
+void drawTextCentered(const char *s, int cx, int cyCenter);  // below
+
+// Pure decision core (host-tested): what should a slot do when asked to
+// display possibly-changed content now? 0 = keep showing what's shown,
+// 1 = start a roll, 2 = snap instantly (page switch / first show).
+int decideRollAction(bool samePage, bool changed, bool active,
+                     unsigned long now, unsigned long lastRoll,
+                     unsigned long cooldownMs) {
+  if (!samePage) return 2;
+  if (!changed || active) return 0;
+  if (now - lastRoll >= cooldownMs) return 1;
+  return 0;  // hold: rolls to the freshest value once the cooldown ends
+}
+
+float rollEase(float p) {  // smoothstep -- gentle in, gentle out
+  if (p < 0.0f) p = 0.0f;
+  if (p > 1.0f) p = 1.0f;
+  return p * p * (3.0f - 2.0f * p);
+}
+
+// State step shared by every anchor wrapper. Returns the slot, updated.
+RollSlot &rollStep(int sub, const char *s) {
+  RollSlot &r = rollSlots[currentPageIdx * 2 + sub];
+  unsigned long now = millis();
+  bool changed = strcmp(s, r.shown) != 0;
+  int action = decideRollAction(r.pageIdx == currentPageIdx, changed,
+                                r.active, now, r.lastRoll, ROLL_COOLDOWN_MS);
+  if (action == 2) {
+    snprintf(r.shown, sizeof(r.shown), "%s", s);
+    r.pageIdx = currentPageIdx;
+    if (r.active) { r.active = false; activeRolls--; }
+    r.lastRoll = now;  // arriving on a page starts calm
+  } else if (action == 1) {
+    snprintf(r.from, sizeof(r.from), "%s", r.shown);
+    snprintf(r.shown, sizeof(r.shown), "%s", s);
+    r.up = strtof(r.shown, nullptr) >= strtof(r.from, nullptr);
+    r.animStart = now;
+    r.lastRoll = now;
+    r.active = true;
+    activeRolls++;
+  }
+  if (r.active && now - r.animStart >= ROLL_MS) {
+    r.active = false;
+    activeRolls--;
+  }
+  return r;
+}
+
+// Mid-roll frame renderer. xRight anchors the TARGET string's right
+// edge; baseline/h/y1 are the target's metrics in the current font.
+// Cells lay out right-to-left, each as wide as the wider of the two
+// glyphs living in it; changed glyphs slide vertically, and the strips
+// they pass through get erased with the (solid) background color.
+void renderRollFrame(RollSlot &r, int xRight, int baseline,
+                     int textTop, int textH, uint16_t bg) {
+  unsigned long now = millis();
+  float p = rollEase((float)(now - r.animStart) / (float)ROLL_MS);
+  int rowH = textH + 6;
+  int slide = (int)(p * rowH + 0.5f);
+  int lenS = strlen(r.shown), lenF = strlen(r.from);
+  int cells = lenS > lenF ? lenS : lenF;
+
+  for (int i = 0; i < cells; i++) {            // i = 0 is the RIGHTMOST cell
+    char cs = (i < lenS) ? r.shown[lenS - 1 - i] : ' ';
+    char cf = (i < lenF) ? r.from[lenF - 1 - i] : ' ';
+    char bufS[2] = { cs, 0 }, bufF[2] = { cf, 0 };
+    int16_t sx1, sy1, fx1, fy1; uint16_t sw, sh, fw, fh;
+    canvas->getTextBounds(bufS, 0, 0, &sx1, &sy1, &sw, &sh);
+    canvas->getTextBounds(bufF, 0, 0, &fx1, &fy1, &fw, &fh);
+    int cellW = (int)(sw > fw ? sw : fw) + 2;
+    xRight -= cellW;
+    if (cs == cf) {
+      if (cs != ' ') {
+        canvas->setCursor(xRight + (cellW - (int)sw) / 2 - sx1, baseline);
+        canvas->print(bufS);
+      }
+      continue;
+    }
+    int outOff = r.up ? -slide : slide;              // old glyph exits
+    int inOff = r.up ? rowH - slide : slide - rowH;  // new glyph enters
+    if (cf != ' ') {
+      canvas->setCursor(xRight + (cellW - (int)fw) / 2 - fx1, baseline + outOff);
+      canvas->print(bufF);
+    }
+    if (cs != ' ') {
+      canvas->setCursor(xRight + (cellW - (int)sw) / 2 - sx1, baseline + inOff);
+      canvas->print(bufS);
+    }
+    canvas->fillRect(xRight, textTop - rowH, cellW, rowH, bg);
+    canvas->fillRect(xRight, textTop + textH + 1, cellW, rowH, bg);
+  }
+}
+
+// Anchor wrappers -- same anchor semantics as their drawText* cousins.
+void drawValueTextCentered(int sub, const char *s, int cx, int cyCenter,
+                           uint16_t bg) {
+  RollSlot &r = rollStep(sub, s);
+  if (!r.active) { drawTextCentered(r.shown, cx, cyCenter); return; }
+  int16_t x1, y1; uint16_t w, h;
+  canvas->getTextBounds(r.shown, 0, 0, &x1, &y1, &w, &h);
+  renderRollFrame(r, cx + (int)w / 2, cyCenter - (int)h / 2 - y1,
+                  cyCenter - (int)h / 2, (int)h, bg);
+}
+
+void drawValueTextBottomRight(int sub, const char *s, int rightX,
+                              int bottomY, uint16_t bg) {
+  RollSlot &r = rollStep(sub, s);
+  int16_t x1, y1; uint16_t w, h;
+  canvas->getTextBounds(r.shown, 0, 0, &x1, &y1, &w, &h);
+  if (!r.active) {
+    canvas->setCursor(rightX - (int)w - x1, bottomY - (int)h - y1);
+    canvas->print(r.shown);
+    return;
+  }
+  renderRollFrame(r, rightX, bottomY - (int)h - y1, bottomY - (int)h,
+                  (int)h, bg);
+}
+
+void drawValueTextTopRight(int sub, const char *s, int rightX, int topY,
+                           uint16_t bg) {
+  RollSlot &r = rollStep(sub, s);
+  int16_t x1, y1; uint16_t w, h;
+  canvas->getTextBounds(r.shown, 0, 0, &x1, &y1, &w, &h);
+  if (!r.active) {
+    canvas->setCursor(rightX - (int)w - x1, topY - y1);
+    canvas->print(r.shown);
+    return;
+  }
+  renderRollFrame(r, rightX, topY - y1, topY, (int)h, bg);
+}
+
+void drawValueTextLeftBaseline(int sub, const char *s, int leftX,
+                               int baseline, uint16_t bg) {
+  RollSlot &r = rollStep(sub, s);
+  int16_t x1, y1; uint16_t w, h;
+  canvas->getTextBounds(r.shown, 0, 0, &x1, &y1, &w, &h);
+  if (!r.active) {
+    canvas->setCursor(leftX, baseline);
+    canvas->print(r.shown);
+    return;
+  }
+  renderRollFrame(r, leftX + x1 + (int)w, baseline, baseline + y1, (int)h, bg);
+}
+
+// ---------------------------------------------------------------------
 // Text helpers for the smooth GFX fonts. With a custom font the cursor
 // is the BASELINE, not the top-left like the classic 5x7 -- these
 // anchor via getTextBounds so callers never juggle baselines. Callers
@@ -652,10 +841,10 @@ void drawRingGauge(const char *title, float pct, uint16_t color,
     }
   }
 
-  // Percentage, centered in the ring
+  // Percentage, centered in the ring -- rolls when it changes (1.22)
   canvas->setFont(&tiny_sans_bold_32);
   canvas->setTextColor(COL_TEXT);
-  drawTextCentered(bigText, cx, cy);
+  drawValueTextCentered(0, bigText, cx, cy, COL_BG);
 
   // Secondary line under the ring (watts, GB, ...)
   if (sub && sub[0]) {
@@ -720,8 +909,7 @@ void drawDialGauge(const char *label, float pct, const char *sub) {
   canvas->getTextBounds(num, 0, 0, &nx1, &ny1, &nw, &nh);
   int baseY = cy - (int)nh / 2 - ny1;         // center the digits on cy
   canvas->setTextColor(COL_TEXT);
-  canvas->setCursor(cx - (int)nw / 2 - nx1, baseY);
-  canvas->print(num);
+  drawValueTextCentered(0, num, cx, cy, COL_BG);
   canvas->setFont(&tiny_sans_18);
   canvas->getTextBounds("%", 0, 0, &px1, &py1, &pw, &ph);
   canvas->setCursor(cx + (int)nw / 2 + SY(4) - px1, baseY);
@@ -745,7 +933,7 @@ void drawStaleBanner() {
   if (haveData && (millis() - stats.last_update_ms) < 5000) return;
   canvas->setTextColor(COL_WARN);
   canvas->setTextSize(1);
-  const char *msg = haveData ? "no data..." : "waiting for host...";
+  const char *msg = "no data...";  // !haveData shows the splash instead (1.22)
   int16_t x1, y1; uint16_t w, h;
   canvas->getTextBounds(msg, 0, 0, &x1, &y1, &w, &h);
   canvas->setCursor(CX() - w / 2, SY(24));
@@ -1167,7 +1355,7 @@ void drawNetBars() {
     drawTextTopLeft(label, left, rows[i].labelY);
     canvas->setFont(&tiny_sans_bold_24);
     canvas->setTextColor(COL_TEXT);
-    drawTextTopRight(val, right, rows[i].labelY - SY(4));
+    drawValueTextTopRight(i, val, right, rows[i].labelY - SY(4), COL_BG);
 
     int barY = rows[i].labelY + SY(28);
     int barH = SY(10), barW = right - left;
@@ -1225,8 +1413,7 @@ void drawNetGraph() {
       }
     }
     canvas->setTextColor(cols[s]);
-    canvas->setCursor(slots[s] + aw + gap, baseline);
-    canvas->print(vals[s]);
+    drawValueTextLeftBaseline(s, vals[s], slots[s] + aw + gap, baseline, COL_BG);
   }
   canvas->setFont();
 
@@ -1498,7 +1685,7 @@ void drawTempMist(bool animated) {
   snprintf(big, sizeof(big), "%.0f", stats.cpu_temp_c);
   canvas->setFont(strlen(big) <= 2 ? &tiny_sans_bold_128 : &tiny_sans_bold_64);
   canvas->setTextColor(tcol);
-  drawTextBottomRight(big, LX + LW - SY(12) + LY, cornerY - SY(10) + LY);
+  drawValueTextBottomRight(0, big, LX + LW - SY(12) + LY, cornerY - SY(10) + LY, COL_BG);
   canvas->setFont();
 }
 
@@ -1510,7 +1697,28 @@ const char *layoutForPage(const char *pageId) {
   return "default";
 }
 
+// Waiting-for-host splash (1.22): before the first stats line arrives
+// there's nothing real to draw, and empty metrics with a tiny
+// "waiting for host..." banner read like a malfunction. The wordmark
+// plus "loading..." reads like a product booting.
+void drawSplash() {
+  canvas->fillScreen(COL_BG);
+  int lx = (screenW - TINY_LOGO_W) / 2;
+  int ly = (screenH - TINY_LOGO_H) / 2 - SY(16);
+  canvas->draw16bitRGBBitmap(lx, ly, (uint16_t *)TINY_LOGO_DATA,
+                             TINY_LOGO_W, TINY_LOGO_H);
+  canvas->setFont(&tiny_sans_18);
+  canvas->setTextColor(COL_SUBTEXT);
+  drawTextCentered("loading...", screenW / 2, ly + TINY_LOGO_H + SY(28));
+  canvas->setFont();
+  canvas->flush();
+}
+
 void drawCurrentScreen() {
+  if (!haveData) {   // nothing has ever arrived -- splash, not layouts
+    drawSplash();
+    return;
+  }
   canvas->fillScreen(COL_BG);
   drawPage(config.pages[currentPageIdx]);
   drawStaleBanner();
@@ -1616,19 +1824,19 @@ void drawScreensaver() {
 }
 
 void drawSaverTemp() {
-  // "temp" screensaver (1.19): nothing but the CPU temperature, big and
-  // centered, in the same green->amber->red ramp the temperature page
-  // uses -- glanceable across the room, and the color carries the
-  // signal even when the digits are too far to read.
+  // "temp" screensaver (1.19, retyped 1.22): nothing but the CPU
+  // temperature in the same font and degree format as the Temperature
+  // layout page (was: the blocky scaled classic font), in the shared
+  // green->amber->red ramp, at the ABSOLUTE center of the physical
+  // panel -- the saver deliberately ignores the aspect-ratio box, since
+  // there's no layout to keep inside a cutout.
   canvas->fillScreen(COL_BG);
-  char t[8];
-  snprintf(t, sizeof(t), "%d", (int)(stats.cpu_temp_c + 0.5f));
+  char t[10];
+  snprintf(t, sizeof(t), "%.0f\xB0", stats.cpu_temp_c);
+  canvas->setFont(&tiny_sans_bold_32);
   canvas->setTextColor(tempColorFor(stats.cpu_temp_c));
-  canvas->setTextSize(9);
-  int16_t x1, y1; uint16_t w, h;
-  canvas->getTextBounds(t, 0, 0, &x1, &y1, &w, &h);
-  canvas->setCursor(LX + (LW - (int)w) / 2, LY + (LH - (int)h) / 2 + (int)h);
-  canvas->print(t);
+  drawTextCentered(t, screenW / 2, screenH / 2);
+  canvas->setFont();
   canvas->flush();
 }
 
@@ -1734,6 +1942,17 @@ void handleSetConfig(JsonDocument &doc) {
     bool sq = doc["square_fit"];
     if (sq != config.squareFit) {
       config.squareFit = sq;
+      // Legacy field (<=1.21 dashboards): mirror into aspectMode unless
+      // an explicit aspect_mode also arrived (parsed below, wins).
+      int m = sq ? 1 : 0;
+      if (m != config.aspectMode) { config.aspectMode = m; displayGeomChanged = true; }
+    }
+  }
+  if (doc["aspect_mode"].is<int>()) {
+    int m = doc["aspect_mode"];
+    if (m >= 0 && m <= 2 && m != config.aspectMode) {
+      config.aspectMode = m;
+      config.squareFit = (m == 1);  // keep the legacy field coherent
       displayGeomChanged = true;
     }
   }
@@ -1807,6 +2026,7 @@ void handleGetConfig() {
   doc["saver_style"] = config.saverStyle;
   doc["rotation"] = config.rotation;
   doc["square_fit"] = config.squareFit;
+  doc["aspect_mode"] = config.aspectMode;
   JsonObject layoutsOut = doc["layouts"].to<JsonObject>();
   for (int i = 0; i < config.numPages; i++) {
     layoutsOut[config.pages[i]] = config.layouts[i];
@@ -2013,7 +2233,10 @@ void loop() {
     advancePage(1);
   }
 
-  if (now - lastDrawMs > FRAME_INTERVAL_MS) {
+  // Rolls need real frames: 200ms cadence reads as a slideshow, so
+  // while any roll is mid-flight the redraw runs at 33ms (1.22).
+  unsigned long frameInterval = activeRolls > 0 ? 33 : FRAME_INTERVAL_MS;
+  if (now - lastDrawMs > frameInterval) {
     if (saverActive) {
       // blank style: backlight is off, skip drawing entirely; the
       // drawing styles redraw on the normal cadence (the clock drifts

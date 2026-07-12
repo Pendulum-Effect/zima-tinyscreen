@@ -2,6 +2,19 @@
   "_comment": "Human-readable changelog for the dashboard's About tab -- written for people, not commit archaeologists. The dashboard fetches this from GitHub at page load (baked copy as fallback), so add an entry here with each release and every install sees it. Newest first. Dates are YYYY-MM-DD.",
   "entries": [
     {
+      "version": "0.9.8.0",
+      "date": "2026-07-12",
+      "title": "Rolling numbers, a real splash screen, and a 1.3\" fit (firmware 1.22)",
+      "notes": [
+        "New firmware 1.22 -- flash from the General tab after updating. The headline: numbers on the physical screen now roll odometer-style when they change, on every layout. Digits slide up when a value grows and down when it falls, with the trailing digit staying planted like a proper odometer.",
+        "Readability rule built in: a readout rolls at most once every 4 seconds. A jittery metric holds steady and then rolls calmly to the freshest value instead of flickering.",
+        "New Aspect Ratio option: 1.3\" compact. It shrinks the picture to a 200-pixel centered square -- the exact physical size of a 1.3\" board's glass -- so a 240x280 display mounted behind a case with a 1.3\" cutout shows everything with nothing hidden at the edges.",
+        "The Temperature screensaver now uses the same typeface and degree format as the Temperature layout page, dead-center on the physical panel, instead of the old blocky scaled font.",
+        "While waiting for the first stats from the host, the screen now shows the TinyScreen wordmark with 'loading...' underneath -- a proper splash screen instead of empty metrics with a tiny 'waiting for host' note.",
+        "Older dashboards still work: the previous square-fit setting maps onto the new aspect modes automatically."
+      ]
+    },
+    {
       "version": "0.9.7.5",
       "date": "2026-07-12",
       "title": "The computer-path setup step stops lying",

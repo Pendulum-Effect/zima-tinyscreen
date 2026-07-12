@@ -6,7 +6,7 @@ eventually hit context limits). It carries the current state, what's
 done, and what's next, so any session can pick up where the last left
 off. **Delete this file at the final 1.0 release.**
 
-Snapshot as of **0.9.7.5** (2026-07-12).
+Snapshot as of **0.9.8.0** (2026-07-12).
 
 ## How to get oriented fast
 
@@ -371,6 +371,51 @@ None are worth a dedicated round; fold them into other work or skip.
         flash, configure (should see the boot pause + ack), screen
         lights while still on the Mac, then move to the ZimaBoard
         and confirm it arrives CONFIGURED.
+
+## Known bugs to fix before final release
+
+- [ ] **Mac/WebSerial configure still leaves the device unconfigured**
+      (0.9.7.5's boot-pause + verified retries did NOT fix it; the
+      ZimaBlade path recovers it every time). Next diagnostic: capture
+      the wizard's on-screen status during the configure step (did it
+      claim an ack? which attempt?) plus the boot console right after.
+      Suspects: the open-triggered reset taking longer than 1.8s on
+      this unit; the ack arriving on a DIFFERENT port instance after
+      re-enumeration; or writes landing while the CDC host buffer isn't
+      drained. Consider: configure step re-requesting the port fresh,
+      or moving first-config entirely to the ZimaBlade path in the
+      wizard copy.
+
+- [x] **0.9.8.0** Screen-feel round (FIRMWARE 1.22):
+  - [x] Rolling numbers on every layout's primary readout: shared
+        engine (rollStep state + decideRollAction pure core +
+        renderRollFrame) with anchor wrappers (centered, bottom-right,
+        top-right, left-baseline). Wired: ring gauge big value (cpu/
+        ram/temp/mmc/nas ring styles), dial number, mist temp jumbo,
+        net bars both rates (sub-slots 0/1), net graph both rates.
+        Right-edge anchored mid-roll (reference video: 47->117 keeps
+        the 7 planted). Direction follows the value (grew = up).
+        ROLL_COOLDOWN_MS=4000: displayed value HOLDS then rolls to the
+        freshest -- never more than one roll per 4s per readout. Frame
+        pacing drops 200ms->33ms only while a roll is active.
+  - [x] aspect_mode 0/1/2 replaces squareFit internally (NVS
+        "aspectMode", migration from squareFit, legacy square_fit
+        still honored in set_config and kept coherent in acks).
+        Mode 2 = 200px centered square = the physical glass size of a
+        1.3" board (math in computeLayoutBox's comment). Dashboard
+        radio row grew "1.3 inch compact"; payload sends aspect_mode +
+        square_fit for firmware <=1.21 degradation.
+  - [x] Temp saver: tiny_sans_bold_32 + degree format, tempColorFor,
+        ABSOLUTE panel center (ignores the aspect box on purpose).
+  - [x] Splash: tiny_logo.h (RGB565 180x97 from the wordmark PNG,
+        34KB flash, regenerate-don't-edit) + "loading..." replaces the
+        empty-layout + "waiting for host..." state entirely; the
+        stale-with-data banner remains. CI drift guard now covers
+        tiny_logo.h.
+  - [ ] HARDWARE VERIFY (1.22): rolls on a real panel (smoothness at
+        33ms frames, mask strips clean on ring/dial/mist/net); compact
+        1.3" behind the actual case cutout; saver centering; splash on
+        a fresh boot before the collector connects.
 
 ## Next up (suggested order)
 

@@ -860,10 +860,11 @@
 
         <div class="card" id="aspect-card">
           <div class="card-title">Aspect Ratio</div>
-          <div class="card-desc">Prefer a perfectly square face? Fit everything into a centered 240&times;240 box instead of using the full screen.</div>
+          <div class="card-desc">Use the full screen, fit everything into a centered square, or shrink to the exact viewable size of a 1.3&quot; display &mdash; handy when the screen sits behind a case with a 1.3&quot; cutout, so nothing is physically hidden.</div>
           <div class="radio-row" style="margin-top:12px;">
             <button class="radio-btn" data-aspect="native">Native (240&times;280)</button>
             <button class="radio-btn" data-aspect="square">Square (1:1)</button>
+            <button class="radio-btn" data-aspect="compact13">1.3&quot; compact</button>
           </div>
           <div class="info-note"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg><span>The screen restarts for a moment when this changes.</span></div>
         </div>
@@ -1348,7 +1349,7 @@
   // Night mode / screensaver (firmware 1.1.0)
   let nightEnabled = false, nightStartMin = 1320, nightEndMin = 420, nightBrightness = 10;
   let saverEnabled = false, saverMinutes = 5, saverStyle = 'clock', saverBrightness = 30;
-  let rotation = 0, squareFit = false;
+  let rotation = 0, aspectMode = 0;  // 0 full, 1 square, 2 compact 1.3" 
 
   // Keep the custom track's filled portion in sync with the value, and
   // render 0 as "Off" (both sliders allow full-off now).
@@ -1603,9 +1604,10 @@
       markDirty();
     });
   });
+  const ASPECT_MODES = { native: 0, square: 1, compact13: 2 };
   document.querySelectorAll('.radio-btn[data-aspect]').forEach(btn => {
     btn.addEventListener('click', () => {
-      squareFit = btn.dataset.aspect === 'square';
+      aspectMode = ASPECT_MODES[btn.dataset.aspect] || 0;
       document.querySelectorAll('.radio-btn[data-aspect]').forEach(b =>
         b.classList.toggle('active', b === btn));
       markDirty();
@@ -1924,11 +1926,13 @@
       syncSlider(brightnessSlider, brightnessValue, currentBrightness);
 
       rotation = [0, 90, 180, 270].includes(cfg.rotation) ? cfg.rotation : 0;
-      squareFit = !!cfg.square_fit;
+      // aspect_mode (firmware 1.22); older firmware only has square_fit
+      aspectMode = typeof cfg.aspect_mode === 'number' ? cfg.aspect_mode
+                   : (cfg.square_fit ? 1 : 0);
       document.querySelectorAll('.radio-btn[data-rot]').forEach(b =>
         b.classList.toggle('active', parseInt(b.dataset.rot, 10) === rotation));
       document.querySelectorAll('.radio-btn[data-aspect]').forEach(b =>
-        b.classList.toggle('active', (b.dataset.aspect === 'square') === squareFit));
+        b.classList.toggle('active', (ASPECT_MODES[b.dataset.aspect] || 0) === aspectMode));
       // Square-fit is meaningless on an already-square panel (board 0):
       // hide the card rather than offer a no-op.
       document.getElementById('aspect-card').style.display =
@@ -3107,7 +3111,8 @@
           // offset above stays as the fallback for older setups.
           tz_name: Intl.DateTimeFormat().resolvedOptions().timeZone,
           rotation: rotation,
-          square_fit: squareFit,
+          aspect_mode: aspectMode,
+          square_fit: aspectMode === 1,  // graceful degradation for firmware <=1.21
           layouts: pageLayouts,
           saver_enabled: saverEnabled,
           saver_minutes: saverMinutes,

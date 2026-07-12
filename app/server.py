@@ -809,7 +809,8 @@ def build_set_config_payload(cfg):
                       ("tz_offset_min", int), ("saver_enabled", bool),
                       ("saver_minutes", int), ("saver_style", str),
                       ("saver_brightness", int),
-                      ("rotation", int), ("square_fit", bool)]:
+                      ("rotation", int), ("square_fit", bool),
+                      ("aspect_mode", int)]:
         if key in cfg:
             payload[key] = cast(cfg[key])
     # board is only-if-present as of 0.9.7.4 -- it USED to default to 0,

@@ -153,7 +153,7 @@ class FakeDevice:
         "night_enabled": False, "night_start_min": 1320,
         "night_end_min": 420, "night_brightness": 10,
         "saver_enabled": False, "saver_minutes": 5, "saver_style": "clock",
-        "saver_brightness": 30, "configured": True,
+        "saver_brightness": 30, "configured": True, "aspect_mode": 0,
         "firmware_version": "1.18.0",
     }
 
@@ -619,6 +619,10 @@ class TestPayloadBuilding(unittest.TestCase):
         # saver_brightness (firmware 1.19): int passthrough like the rest
         p = server.build_set_config_payload({"saver_brightness": "45"})
         self.assertEqual(p["saver_brightness"], 45)
+        # aspect_mode (firmware 1.22): int passthrough, absent by default
+        p = server.build_set_config_payload({"aspect_mode": 2})
+        self.assertEqual(p["aspect_mode"], 2)
+        self.assertNotIn("aspect_mode", server.build_set_config_payload({}))
 
     def test_layouts_mapping_stringified_and_non_dict_dropped(self):
         p = server.build_set_config_payload({"layouts": {1: 2, "cpu": "ring"}})
