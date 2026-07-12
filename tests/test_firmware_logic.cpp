@@ -342,6 +342,36 @@ int main() {
     saverActive = false;
   }
 
+  // ---- 1.21: a device only becomes configured when told its board ----
+  {
+    config.configured = false;
+    config.boardId = 0;
+    pendingRestart = false;              // earlier blocks may have armed it
+    JsonDocument doc;                    // a layouts-save-shaped command
+    doc["cmd"] = "set_config";
+    doc["brightness"] = 70;
+    handleSetConfig(doc);
+    CHECK(!config.configured);           // still waiting for setup
+    CHECK(config.brightness == 70);      // ...but the field DID apply
+    CHECK(!pendingRestart);              // and no pointless restart
+
+    JsonDocument doc2;                   // proper first-time setup
+    doc2["cmd"] = "set_config";
+    doc2["board"] = 1;
+    handleSetConfig(doc2);
+    CHECK(config.configured);
+    CHECK(config.boardId == 1);
+    CHECK(pendingRestart);               // first config restarts into initDisplay
+
+    pendingRestart = false;
+    JsonDocument doc3;                   // boardless saves keep configured
+    doc3["cmd"] = "set_config";
+    doc3["brightness"] = 90;
+    handleSetConfig(doc3);
+    CHECK(config.configured);
+    pendingRestart = false;
+  }
+
   // ---- generated fonts: sane ranges, degree glyph present, digits real ----
   CHECK(tiny_sans_18.first == 32 && tiny_sans_18.last == 176);
   CHECK(tiny_sans_bold_64.first == 32 && tiny_sans_bold_64.last == 176);

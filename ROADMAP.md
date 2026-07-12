@@ -6,7 +6,7 @@ eventually hit context limits). It carries the current state, what's
 done, and what's next, so any session can pick up where the last left
 off. **Delete this file at the final 1.0 release.**
 
-Snapshot as of **0.9.7.3** (2026-07-12).
+Snapshot as of **0.9.7.4** (2026-07-12).
 
 ## How to get oriented fast
 
@@ -322,6 +322,33 @@ None are worth a dedicated round; fold them into other work or skip.
         in internal RAM either way at 240x280).
   - [ ] FOLLOW-UP: wizard configure step could auto-detect "port held
         by another connection" and say so explicitly.
+
+- [x] **0.9.7.4** ROOT CAUSE of the 1.69" saga (screenshot showed the
+      smoking gun: an "ESP32-S3-LCD-1.3" model card on 1.69" hardware):
+  - Mechanism: unconfigured device reports its DEFAULTS (board 0,
+    configured:false). Dashboard ignored the configured flag and
+    rendered a real board-0 device; its saves echoed board back;
+    build_set_config_payload ALSO defaulted board:0; firmware flipped
+    configured=true on any set_config. Result: one casual layouts save
+    -> device configured as board 0 -> board-0 display pins collide
+    with native USB data lines on the 1.69" -> USB flaps with the draw
+    cadence = the 1,2,3-1,2 clicking + vanishing port. Both incidents,
+    same mechanism; the "NVS corruption" theory was wrong.
+  - Fixed at all three layers (any one suffices): dashboard renders
+    configured:false as "New display detected" + read-only tabs and
+    sends NO board on saves; server includes board only-if-present
+    (was: default 0); firmware 1.21 only becomes configured via a
+    command explicitly naming the board.
+  - Tests: firmware (boardless save can't configure; field still
+    applies; explicit board configures + restarts), payload (no board
+    key by default), E2E (unconfigured rendering + wire payload has no
+    board).
+  - Unit recovery: full erase -> flash -> replug WITHOUT BOOT held
+    (the boot:0x1 log showed BOOT still down at reset) -> wizard setup
+    choosing the 1.69" TOUCH board.
+  - [ ] FOLLOW-UP: wizard could show "detected an unconfigured device"
+        and preselect nothing, making board choice an explicit step
+        that can't be skimmed past.
 
 ## Next up (suggested order)
 

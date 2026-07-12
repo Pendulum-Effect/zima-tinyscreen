@@ -41,7 +41,7 @@
 // "Software Version" field via the get_config command below. No
 // auto-update-checking mechanism exists yet (that's a separate, not-yet
 // -built feature) -- this just answers "what's currently on my device."
-#define FIRMWARE_VERSION "1.20"  // two-part scheme as of 1.19 (was x.y.z)
+#define FIRMWARE_VERSION "1.21"  // two-part scheme as of 1.19 (was x.y.z)
 
 // Note: screen dimensions are NOT fixed -- board 1 (1.69") is 240x280,
 // taller than board 0's 240x240. See screenW/screenH globals, set from
@@ -1746,13 +1746,26 @@ void handleSetConfig(JsonDocument &doc) {
     applyBrightness();
   }
 
-  config.configured = true;
+  // A device may only BECOME configured by a command that names its
+  // board explicitly (1.21). Before this guard, ANY set_config -- e.g.
+  // a dashboard layouts save built against an unconfigured device's
+  // defaults -- flipped configured=true with boardId still at its
+  // default of 0. Board 0's display pins collide with the native USB
+  // data lines on other boards (the exact hazard the unconfigured
+  // hands-off rule in setup() exists for), so the moment drawing
+  // started, the device rhythmically fell off the USB bus -- the
+  // clicking + vanishing port that burned two real debugging sessions.
+  // Field updates still apply and persist; the device simply keeps
+  // waiting for a proper first-time setup that says which board it is.
+  if (config.configured || doc["board"].is<int>()) {
+    config.configured = true;
+  }
   saveConfig();
 
   // Ack so the settings page can confirm success
   Serial.println("{\"ack\":\"set_config\",\"ok\":true}");
 
-  if (boardChanged || displayGeomChanged || !wasConfigured) {
+  if (boardChanged || displayGeomChanged || (!wasConfigured && config.configured)) {
     // Pins/driver differ per board, and rotation / square-fit need the
     // display and canvas re-created with different dimensions -- cleanest
     // to just restart into setup() with the new settings rather than

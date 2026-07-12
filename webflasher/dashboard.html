@@ -1768,6 +1768,47 @@
         }
       }
       const cfg = cfgData.config;
+      if (cfg && cfg.configured === false) {
+        // A live but UNCONFIGURED display (fresh flash or full erase).
+        // Render it as exactly that -- NOT as a configured board-0
+        // device, which is what the raw defaults look like. Rendering
+        // those defaults as real once let a casual layouts save push
+        // board:0 to hardware that isn't board 0 (see the save payload
+        // comment below for why that's catastrophic).
+        document.getElementById('model-name').textContent = 'New display detected';
+        const sku = document.getElementById('model-sku');
+        sku.textContent = '';
+        sku.appendChild(document.createTextNode('It\u2019s alive, but hasn\u2019t been told which board it is yet. '));
+        const wl = el('a', null, 'Run first-time setup \u2192');
+        wl.href = 'wizard.html';
+        sku.appendChild(wl);
+        const healthEl = document.getElementById('health-status');
+        healthEl.textContent = '';
+        const pill = document.createElement('span');
+        pill.className = 'pill warn';
+        const st = document.createElement('span');
+        st.className = 'pill-state';
+        st.textContent = 'Unconfigured';
+        const dt = document.createElement('span');
+        dt.className = 'pill-detail';
+        dt.textContent = '\u00b7 Waiting for first-time setup';
+        pill.appendChild(st);
+        pill.appendChild(dt);
+        healthEl.appendChild(pill);
+        if (cfg.firmware_version) {
+          document.getElementById('firmware-version').textContent = 'Firmware: v' + cfg.firmware_version;
+        }
+        document.getElementById('general-loading').style.display = 'none';
+        document.getElementById('general-content').style.display = 'block';
+        ['layouts', 'screen'].forEach(tab => {
+          document.getElementById(tab + '-loading').style.display = 'none';
+          const errEl = document.getElementById(tab + '-error');
+          errEl.style.display = 'block';
+          errEl.innerHTML = 'This display needs first-time setup before it can be ' +
+            'adjusted \u2014 <a href="wizard.html">run setup \u2192</a>';
+        });
+        return;
+      }
 
       // Per-page layout selections (firmware 1.4.0) -- set before ANY
       // preview renders (the General tab's device preview uses them too;
@@ -3038,7 +3079,10 @@
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'X-TinyScreen-Request': '1' },
         body: JSON.stringify({
-          board: currentBoard,
+          // No board field, deliberately (0.9.7.4): the wizard is the
+          // only thing that may name a board. Echoing it here once told
+          // an unconfigured device it was board 0 -- whose pin profile
+          // kills USB on other boards.
           pages: finalPages,
           cycle_mode: cycleMode,
           cycle_seconds: cycleSeconds,

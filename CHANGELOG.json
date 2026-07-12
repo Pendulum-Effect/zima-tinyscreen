@@ -2,6 +2,17 @@
   "_comment": "Human-readable changelog for the dashboard's About tab -- written for people, not commit archaeologists. The dashboard fetches this from GitHub at page load (baked copy as fallback), so add an entry here with each release and every install sees it. Newest first. Dates are YYYY-MM-DD.",
   "entries": [
     {
+      "version": "0.9.7.4",
+      "date": "2026-07-12",
+      "title": "The wrong-board trap is closed (firmware 1.21)",
+      "notes": [
+        "Root cause of the mystery clicking and vanishing displays, found at last: a freshly-flashed, unconfigured display looked to the dashboard like a configured 1.3\" board, and saving any setting then genuinely configured it as one. The 1.3\" pin layout collides with the USB wiring on other boards, knocking them off the bus the moment drawing starts -- the rhythmic clicking.",
+        "Fixed at every layer: the dashboard now shows an unconfigured display as 'New display detected' with a pointer to first-time setup (and keeps Layouts/Screen read-only until then); ordinary saves no longer mention the board at all; and firmware 1.21 refuses to consider itself configured until a command explicitly names its board. Only the setup wizard does that.",
+        "If your display is currently stuck clicking: do one more full-erase flash from the wizard, unplug and replug it WITHOUT holding the BOOT button, then complete the wizard's setup step and pick your actual board. With this release, that state can't be created again.",
+        "Settings changes sent to an unconfigured display still apply -- it just keeps waiting for proper setup instead of guessing what it is."
+      ]
+    },
+    {
       "version": "0.9.7.3",
       "date": "2026-07-12",
       "title": "Calmer first boot after a full erase (firmware 1.20)",

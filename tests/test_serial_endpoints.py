@@ -153,7 +153,7 @@ class FakeDevice:
         "night_enabled": False, "night_start_min": 1320,
         "night_end_min": 420, "night_brightness": 10,
         "saver_enabled": False, "saver_minutes": 5, "saver_style": "clock",
-        "saver_brightness": 30,
+        "saver_brightness": 30, "configured": True,
         "firmware_version": "1.18.0",
     }
 
@@ -599,10 +599,15 @@ class TestCollectorLifecycle(unittest.TestCase):
 
 class TestPayloadBuilding(unittest.TestCase):
     def test_defaults(self):
+        # NO board in the defaults (0.9.7.4): a boardless configure must
+        # never tell the device it's board 0 -- that pin profile kills
+        # USB on other boards. Only the wizard names boards.
         p = server.build_set_config_payload({})
-        self.assertEqual(p, {"cmd": "set_config", "board": 0, "pages": ["temp"],
+        self.assertEqual(p, {"cmd": "set_config", "pages": ["temp"],
                              "cycle_mode": "static", "cycle_seconds": 10,
                              "brightness": 100})
+        p = server.build_set_config_payload({"board": 1})
+        self.assertEqual(p["board"], 1)
 
     def test_optional_fields_pass_through_only_if_present(self):
         p = server.build_set_config_payload({"saver_enabled": 1, "rotation": "180"})

@@ -799,7 +799,6 @@ def build_set_config_payload(cfg):
     """
     payload = {
         "cmd": "set_config",
-        "board": int(cfg.get("board", 0)),
         "pages": cfg.get("pages", ["temp"]),
         "cycle_mode": cfg.get("cycle_mode", "static"),
         "cycle_seconds": int(cfg.get("cycle_seconds", 10)),
@@ -813,6 +812,15 @@ def build_set_config_payload(cfg):
                       ("rotation", int), ("square_fit", bool)]:
         if key in cfg:
             payload[key] = cast(cfg[key])
+    # board is only-if-present as of 0.9.7.4 -- it USED to default to 0,
+    # which meant any configure call that didn't name a board silently
+    # told the device "you are board 0". On non-board-0 hardware that
+    # profile's display pins collide with the native USB data lines, so
+    # a plain dashboard layouts save could knock a healthy device off
+    # the bus. The wizard names the board explicitly; nothing else
+    # should ever change it.
+    if "board" in cfg:
+        payload["board"] = int(cfg["board"])
     # Per-page layout styles: pass the whole mapping through untouched --
     # the firmware whitelists per page, so unknown ids degrade to default
     # on-device rather than being policed twice.
