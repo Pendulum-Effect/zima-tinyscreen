@@ -42,7 +42,7 @@
 // "Software Version" field via the get_config command below. No
 // auto-update-checking mechanism exists yet (that's a separate, not-yet
 // -built feature) -- this just answers "what's currently on my device."
-#define FIRMWARE_VERSION "1.23"  // two-part scheme as of 1.19 (was x.y.z)
+#define FIRMWARE_VERSION "1.24"  // two-part scheme as of 1.19 (was x.y.z)
 
 // Note: screen dimensions are NOT fixed -- board 1 (1.69") is 240x280,
 // taller than board 0's 240x240. See screenW/screenH globals, set from
@@ -650,6 +650,61 @@ float rollEase(float p) {  // smoothstep -- gentle in, gentle out
   return p * p * (3.0f - 2.0f * p);
 }
 
+// ---------------------------------------------------------------------
+// Gauge tweens (1.24): rings and dials EASE between values instead of
+// snapping. Unlike the digit rolls there's no cooldown -- an arc in
+// smooth motion is how analog instruments behave, and tiny changes
+// produce tiny sweeps -- so the needle leads and the odometer follows,
+// like a real dashboard. A new value arriving mid-sweep retargets from
+// wherever the arc currently is, so motion never jumps.
+// ---------------------------------------------------------------------
+struct TweenSlot {
+  float shown, from, target;
+  unsigned long start;
+  int pageIdx;
+  bool active, init;
+};
+static TweenSlot tweenSlots[6 * 2];
+static int activeTweens = 0;
+const unsigned long TWEEN_MS = 600;
+
+// Pure evaluation core (host-tested): where is a tween from `from` to
+// `target` that started at `start`, evaluated at `now`?
+float tweenEval(float from, float target, unsigned long start,
+                unsigned long now, unsigned long durMs, bool *stillActive) {
+  float p = durMs == 0 ? 1.0f : (float)(now - start) / (float)durMs;
+  if (p >= 1.0f) {
+    *stillActive = false;
+    return target;
+  }
+  *stillActive = true;
+  return from + (target - from) * rollEase(p);
+}
+
+float tweenValue(int sub, float target) {
+  TweenSlot &t = tweenSlots[currentPageIdx * 2 + sub];
+  unsigned long now = millis();
+  if (!t.init || t.pageIdx != currentPageIdx) {   // first show / page switch
+    t.init = true;
+    t.pageIdx = currentPageIdx;
+    t.shown = t.target = target;
+    if (t.active) { t.active = false; activeTweens--; }
+    return t.shown;
+  }
+  if (fabsf(target - t.target) > 0.001f) {        // retarget mid-flight OK
+    t.from = t.shown;
+    t.target = target;
+    t.start = now;
+    if (!t.active) { t.active = true; activeTweens++; }
+  }
+  if (t.active) {
+    bool still;
+    t.shown = tweenEval(t.from, t.target, t.start, now, TWEEN_MS, &still);
+    if (!still) { t.active = false; activeTweens--; }
+  }
+  return t.shown;
+}
+
 // State step shared by every anchor wrapper. Returns the slot, updated.
 RollSlot &rollStep(int sub, const char *s) {
   RollSlot &r = rollSlots[currentPageIdx * 2 + sub];
@@ -917,7 +972,7 @@ void drawTextBottomRight(const char *s, int rightX, int bottomY) {
 // big smooth font, and the page's secondary line beneath the ring.
 void drawRingGauge(const char *title, float pct, uint16_t color,
                    const char *bigText, const char *sub) {
-  pct = constrain(pct, 0.0f, 100.0f);
+  pct = tweenValue(0, constrain(pct, 0.0f, 100.0f));  // eased sweep (1.24)
   int cx = CX();
   int cy = SY(122);
   int rOuter = SY(76), rInner = SY(62);
@@ -978,7 +1033,7 @@ uint16_t utilColorFor(float pct) {
 // The ring color rides the utilization ramp, so a straining box glows
 // amber and then red.
 void drawDialGauge(const char *label, float pct, const char *sub) {
-  pct = constrain(pct, 0.0f, 100.0f);
+  pct = tweenValue(0, constrain(pct, 0.0f, 100.0f));  // eased sweep (1.24)
   int cx = CX();
   int cy = SY(108);
   int rOuter = SY(86), rInner = SY(62);   // 24px thick at full size
@@ -2339,7 +2394,7 @@ void loop() {
 
   // Rolls need real frames: 200ms cadence reads as a slideshow, so
   // while any roll is mid-flight the redraw runs at 33ms (1.22).
-  unsigned long frameInterval = activeRolls > 0 ? 33 : FRAME_INTERVAL_MS;
+  unsigned long frameInterval = (activeRolls + activeTweens) > 0 ? 33 : FRAME_INTERVAL_MS;
   if (now - lastDrawMs > frameInterval) {
     if (saverActive) {
       // blank style: backlight is off, skip drawing entirely; the

@@ -6,7 +6,7 @@ eventually hit context limits). It carries the current state, what's
 done, and what's next, so any session can pick up where the last left
 off. **Delete this file at the final 1.0 release.**
 
-Snapshot as of **0.9.8.1** (2026-07-12).
+Snapshot as of **0.9.8.2** (2026-07-12).
 
 ## How to get oriented fast
 
@@ -441,6 +441,21 @@ None are worth a dedicated round; fold them into other work or skip.
   - [ ] HARDWARE VERIFY (1.23): mist page rolls over the glow (no
         blips), dial % steady through 9->10 and 99->100 boundaries,
         ring/net rolls unchanged.
+
+- [x] **0.9.8.2** Gauge tweens (FIRMWARE 1.24): rings + dial ease
+      between values (TWEEN_MS=600, shared smoothstep). One insertion
+      point per gauge (the pct at the top of drawRingGauge /
+      drawDialGauge); the dial's utilColorFor(pct) follows the tween
+      automatically, the ring's color param stays caller-owned
+      (switches instantly -- revisit only if it ever looks off on
+      hardware). NO cooldown by design: needle leads, odometer
+      follows. Mid-flight retarget starts from the current shown
+      value (never jumps). tweenEval is the pure host-tested core;
+      frame pacing now keys off activeRolls + activeTweens.
+  - [ ] HARDWARE VERIFY (1.24): ring + dial sweeps feel right at 33ms
+        frames; dial color fade through zone boundaries; splash ->
+        first data still snaps (no sweep from zero on page arrival --
+        page-arrival snap is by design).
 
 ## Next up (suggested order)
 

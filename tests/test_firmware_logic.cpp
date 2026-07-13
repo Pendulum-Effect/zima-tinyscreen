@@ -395,6 +395,29 @@ int main() {
     pendingRestart = false;
   }
 
+  // ---- 1.24: gauge tween evaluation ----
+  {
+    bool active;
+    // At start: exactly the from value, still active
+    CHECK(tweenEval(20.0f, 80.0f, 1000, 1000, 600, &active) == 20.0f);
+    CHECK(active);
+    // Midpoint of smoothstep: exactly halfway
+    float mid = tweenEval(20.0f, 80.0f, 1000, 1300, 600, &active);
+    CHECK(mid > 49.5f && mid < 50.5f && active);
+    // Monotone toward the target
+    float q1 = tweenEval(20.0f, 80.0f, 1000, 1150, 600, &active);
+    float q3 = tweenEval(20.0f, 80.0f, 1000, 1450, 600, &active);
+    CHECK(q1 < mid && mid < q3);
+    // Done: exactly the target, inactive
+    CHECK(tweenEval(20.0f, 80.0f, 1000, 1600, 600, &active) == 80.0f);
+    CHECK(!active);
+    // Downward tween works the same
+    float dn = tweenEval(80.0f, 20.0f, 0, 300, 600, &active);
+    CHECK(dn > 49.5f && dn < 50.5f && active);
+    // Zero duration: instant
+    CHECK(tweenEval(0.0f, 5.0f, 0, 0, 0, &active) == 5.0f && !active);
+  }
+
   // ---- 1.21: a device only becomes configured when told its board ----
   {
     config.configured = false;

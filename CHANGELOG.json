@@ -2,6 +2,18 @@
   "_comment": "Human-readable changelog for the dashboard's About tab -- written for people, not commit archaeologists. The dashboard fetches this from GitHub at page load (baked copy as fallback), so add an entry here with each release and every install sees it. Newest first. Dates are YYYY-MM-DD.",
   "entries": [
     {
+      "version": "0.9.8.2",
+      "date": "2026-07-12",
+      "title": "Gauges sweep instead of snapping (firmware 1.24)",
+      "notes": [
+        "New firmware 1.24: the ring gauges and the dial now ease smoothly between values instead of jumping -- about half a second of gentle sweep, the same easing curve as the rolling digits. Flash from the General tab after updating.",
+        "A new value arriving mid-sweep retargets from wherever the arc currently is, so the motion never stutters or jumps backward.",
+        "The dial's color follows the eased value too, so it fades through its zones as the needle sweeps rather than flicking.",
+        "Design note: unlike the digits (which hold and roll every few seconds for readability), the gauges move freely -- an arc in smooth motion is how analog instruments behave. The needle leads, the odometer follows.",
+        "No dashboard or server changes."
+      ]
+    },
+    {
       "version": "0.9.8.1",
       "date": "2026-07-12",
       "title": "Smoother, steadier rolling numbers (firmware 1.23)",
