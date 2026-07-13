@@ -42,7 +42,7 @@
 // "Software Version" field via the get_config command below. No
 // auto-update-checking mechanism exists yet (that's a separate, not-yet
 // -built feature) -- this just answers "what's currently on my device."
-#define FIRMWARE_VERSION "1.22"  // two-part scheme as of 1.19 (was x.y.z)
+#define FIRMWARE_VERSION "1.23"  // two-part scheme as of 1.19 (was x.y.z)
 
 // Note: screen dimensions are NOT fixed -- board 1 (1.69") is 240x280,
 // taller than board 0's 240x240. See screenW/screenH globals, set from
@@ -678,100 +678,201 @@ RollSlot &rollStep(int sub, const char *s) {
   return r;
 }
 
-// Mid-roll frame renderer. xRight anchors the TARGET string's right
-// edge; baseline/h/y1 are the target's metrics in the current font.
-// Cells lay out right-to-left, each as wide as the wider of the two
-// glyphs living in it; changed glyphs slide vertically, and the strips
-// they pass through get erased with the (solid) background color.
-void renderRollFrame(RollSlot &r, int xRight, int baseline,
-                     int textTop, int textH, uint16_t bg) {
-  unsigned long now = millis();
-  float p = rollEase((float)(now - r.animStart) / (float)ROLL_MS);
-  int rowH = textH + 6;
-  int slide = (int)(p * rowH + 0.5f);
-  int lenS = strlen(r.shown), lenF = strlen(r.from);
-  int cells = lenS > lenF ? lenS : lenF;
+// Mid-roll frame renderer, v2 (1.23). Hardware review of v1 found two
+// classes of jank, both fixed here:
+//   1. "Blips" on gradient layouts (mist): v1 clipped sliding glyphs by
+//      painting background-colored rectangles over the overflow strips,
+//      which punched black holes through any non-solid background. v2
+//      clips EXACTLY: it snapshots the strip pixels from the canvas
+//      framebuffer, draws the overflowing glyph, and restores the
+//      snapshot -- correct over any background, gradients included.
+//   2. The %-sign (and everything else) wobbling sideways: v1 laid
+//      glyphs into padded uniform cells, so mid-roll positions never
+//      matched the natural print positions before/after the roll. v2
+//      derives every glyph's cursor from real font advances -- a
+//      character that isn't changing sits EXACTLY where a plain print
+//      would put it, and when the string's shape changes (99 -> 100),
+//      surviving characters glide between their old and new natural
+//      positions instead of snapping.
+//
+// Advance measurement: GFX fonts have no kerning, so the advance of a
+// glyph is width("cc") - width("c") -- the second copy adds exactly one
+// advance to the bounding box.
+static uint16_t rollClipBuf[104 * 106];  // one strip snapshot (<= bold_128)
+static int rollClipX, rollClipY, rollClipW, rollClipH;
 
-  for (int i = 0; i < cells; i++) {            // i = 0 is the RIGHTMOST cell
-    char cs = (i < lenS) ? r.shown[lenS - 1 - i] : ' ';
-    char cf = (i < lenF) ? r.from[lenF - 1 - i] : ' ';
-    char bufS[2] = { cs, 0 }, bufF[2] = { cf, 0 };
-    int16_t sx1, sy1, fx1, fy1; uint16_t sw, sh, fw, fh;
-    canvas->getTextBounds(bufS, 0, 0, &sx1, &sy1, &sw, &sh);
-    canvas->getTextBounds(bufF, 0, 0, &fx1, &fy1, &fw, &fh);
-    int cellW = (int)(sw > fw ? sw : fw) + 2;
-    xRight -= cellW;
-    if (cs == cf) {
-      if (cs != ' ') {
-        canvas->setCursor(xRight + (cellW - (int)sw) / 2 - sx1, baseline);
-        canvas->print(bufS);
-      }
-      continue;
-    }
-    int outOff = r.up ? -slide : slide;              // old glyph exits
-    int inOff = r.up ? rowH - slide : slide - rowH;  // new glyph enters
-    if (cf != ' ') {
-      canvas->setCursor(xRight + (cellW - (int)fw) / 2 - fx1, baseline + outOff);
-      canvas->print(bufF);
-    }
-    if (cs != ' ') {
-      canvas->setCursor(xRight + (cellW - (int)sw) / 2 - sx1, baseline + inOff);
-      canvas->print(bufS);
-    }
-    canvas->fillRect(xRight, textTop - rowH, cellW, rowH, bg);
-    canvas->fillRect(xRight, textTop + textH + 1, cellW, rowH, bg);
+int rollAdvance(char c) {
+  char one[2] = { c, 0 }, two[3] = { c, c, 0 };
+  int16_t x1, y1; uint16_t w1, h1, w2, h2;
+  canvas->getTextBounds(one, 0, 0, &x1, &y1, &w1, &h1);
+  canvas->getTextBounds(two, 0, 0, &x1, &y1, &w2, &h2);
+  return (int)w2 - (int)w1;
+}
+
+void rollSaveStrip(int x, int y, int w, int h) {
+  if (x < 0) { w += x; x = 0; }
+  if (y < 0) { h += y; y = 0; }
+  if (x + w > screenW) w = screenW - x;
+  if (y + h > screenH) h = screenH - y;
+  if (w > 104) w = 104;
+  if (h > 106) h = 106;
+  rollClipX = x; rollClipY = y; rollClipW = w; rollClipH = h;
+  if (w <= 0 || h <= 0) { rollClipW = 0; return; }
+  uint16_t *fb = canvas->getFramebuffer();
+  for (int r = 0; r < h; r++) {
+    memcpy(rollClipBuf + r * w, fb + (y + r) * screenW + x,
+           w * sizeof(uint16_t));
   }
 }
 
-// Anchor wrappers -- same anchor semantics as their drawText* cousins.
-void drawValueTextCentered(int sub, const char *s, int cx, int cyCenter,
-                           uint16_t bg) {
-  RollSlot &r = rollStep(sub, s);
-  if (!r.active) { drawTextCentered(r.shown, cx, cyCenter); return; }
-  int16_t x1, y1; uint16_t w, h;
-  canvas->getTextBounds(r.shown, 0, 0, &x1, &y1, &w, &h);
-  renderRollFrame(r, cx + (int)w / 2, cyCenter - (int)h / 2 - y1,
-                  cyCenter - (int)h / 2, (int)h, bg);
+void rollRestoreStrip() {
+  if (rollClipW <= 0 || rollClipH <= 0) return;
+  uint16_t *fb = canvas->getFramebuffer();
+  for (int r = 0; r < rollClipH; r++) {
+    memcpy(fb + (rollClipY + r) * screenW + rollClipX,
+           rollClipBuf + r * rollClipW, rollClipW * sizeof(uint16_t));
+  }
 }
 
-void drawValueTextBottomRight(int sub, const char *s, int rightX,
-                              int bottomY, uint16_t bg) {
+// Draw one glyph at (cursorX, baseline + vOff), keeping every pixel it
+// would place outside the text band [bandTop, bandBot) untouched.
+void rollDrawGlyphClipped(char c, int cursorX, int baseline, int vOff,
+                          int bandTop, int bandBot) {
+  if (c == ' ') return;
+  char g[2] = { c, 0 };
+  int16_t x1, y1; uint16_t w, h;
+  canvas->getTextBounds(g, 0, 0, &x1, &y1, &w, &h);
+  int gy = baseline + vOff + y1;               // ink top at this offset
+  int gx = cursorX + x1;
+  bool above = gy < bandTop;
+  bool below = gy + (int)h > bandBot;
+  if (above) {
+    rollSaveStrip(gx - 1, gy - 1, (int)w + 2, bandTop - gy + 1);
+  } else if (below) {
+    rollSaveStrip(gx - 1, bandBot, (int)w + 2, gy + (int)h - bandBot + 1);
+  } else {
+    rollClipW = 0;
+  }
+  canvas->setCursor(cursorX, baseline + vOff);
+  canvas->print(g);
+  rollRestoreStrip();
+}
+
+// Natural per-character cursor positions for `str` whose first
+// character's cursor sits at cursor0. Returns length.
+int rollLayout(const char *str, int cursor0, int *outX, int maxN) {
+  int n = 0, x = cursor0;
+  for (const char *p = str; *p && n < maxN; p++, n++) {
+    outX[n] = x;
+    x += rollAdvance(*p);
+  }
+  return n;
+}
+
+// anchor: 0 = centered on anchorX, 1 = right edge at anchorX,
+//         2 = left cursor at anchorX. Returns the current right edge of
+//         the readout this frame (callers that hang satellites off the
+//         text -- the dial's %-sign -- follow it so nothing wobbles).
+int renderRollFrame(RollSlot &r, int anchor, int anchorX, int baseline) {
+  unsigned long now = millis();
+  float p = rollEase((float)(now - r.animStart) / (float)ROLL_MS);
+  int16_t nx1, ny1, ox1, oy1; uint16_t nw, nh, ow, oh;
+  canvas->getTextBounds(r.shown, 0, 0, &nx1, &ny1, &nw, &nh);
+  canvas->getTextBounds(r.from, 0, 0, &ox1, &oy1, &ow, &oh);
+  int bandTop = baseline + ny1 - 1;
+  int bandBot = baseline + ny1 + (int)nh + 1;
+  int rowH = (int)nh + 6;
+  int slide = (int)(p * rowH + 0.5f);
+
+  int cursorN0 = anchorX - (anchor == 0 ? (int)nw / 2 : anchor == 1 ? (int)nw : 0) - nx1;
+  int cursorO0 = anchorX - (anchor == 0 ? (int)ow / 2 : anchor == 1 ? (int)ow : 0) - ox1;
+
+  int xsN[16], xsO[16];
+  int lenN = rollLayout(r.shown, cursorN0, xsN, 16);
+  int lenO = rollLayout(r.from, cursorO0, xsO, 16);
+  int shift = cursorN0 - cursorO0;             // whole-string drift
+  int cells = lenN > lenO ? lenN : lenO;
+
+  for (int i = 0; i < cells; i++) {            // i = 0 is the RIGHTMOST
+    int iN = lenN - 1 - i, iO = lenO - 1 - i;
+    char cN = iN >= 0 ? r.shown[iN] : ' ';
+    char cO = iO >= 0 ? r.from[iO] : ' ';
+    // Cursor path: old natural position -> new natural position.
+    int xO = iO >= 0 ? xsO[iO] : xsN[iN] - shift;
+    int xN = iN >= 0 ? xsN[iN] : xsO[iO] + shift;
+    int x = xO + (int)((xN - xO) * p + ((xN >= xO) ? 0.5f : -0.5f));
+    if (cN == cO) {
+      // Unchanged character: exactly a natural print, gliding between
+      // its old and new homes if the string reshaped around it.
+      if (cN != ' ') {
+        canvas->setCursor(x, baseline);
+        char g[2] = { cN, 0 };
+        canvas->print(g);
+      }
+      continue;
+    }
+    int outOff = r.up ? -slide : slide;
+    int inOff = r.up ? rowH - slide : slide - rowH;
+    rollDrawGlyphClipped(cO, x, baseline, outOff, bandTop, bandBot);
+    rollDrawGlyphClipped(cN, x, baseline, inOff, bandTop, bandBot);
+  }
+  // Current right edge: interpolates between the old and new natural
+  // right edges, matching the glyphs' own glide.
+  int edgeN = cursorN0 + nx1 + (int)nw;
+  int edgeO = cursorO0 + ox1 + (int)ow;
+  return edgeO + (int)((edgeN - edgeO) * p + 0.5f);
+}
+
+// Anchor wrappers -- same anchor semantics as their drawText* cousins.
+// Each returns the readout's current right edge (static: natural edge).
+int drawValueTextCentered(int sub, const char *s, int cx, int cyCenter) {
+  RollSlot &r = rollStep(sub, s);
+  int16_t x1, y1; uint16_t w, h;
+  canvas->getTextBounds(r.shown, 0, 0, &x1, &y1, &w, &h);
+  if (!r.active) {
+    drawTextCentered(r.shown, cx, cyCenter);
+    return cx + (int)w / 2;
+  }
+  int baseline = cyCenter - (int)h / 2 - y1;
+  return renderRollFrame(r, 0, cx, baseline);
+}
+
+int drawValueTextBottomRight(int sub, const char *s, int rightX,
+                             int bottomY) {
   RollSlot &r = rollStep(sub, s);
   int16_t x1, y1; uint16_t w, h;
   canvas->getTextBounds(r.shown, 0, 0, &x1, &y1, &w, &h);
   if (!r.active) {
     canvas->setCursor(rightX - (int)w - x1, bottomY - (int)h - y1);
     canvas->print(r.shown);
-    return;
+    return rightX;
   }
-  renderRollFrame(r, rightX, bottomY - (int)h - y1, bottomY - (int)h,
-                  (int)h, bg);
+  return renderRollFrame(r, 1, rightX, bottomY - (int)h - y1);
 }
 
-void drawValueTextTopRight(int sub, const char *s, int rightX, int topY,
-                           uint16_t bg) {
+int drawValueTextTopRight(int sub, const char *s, int rightX, int topY) {
   RollSlot &r = rollStep(sub, s);
   int16_t x1, y1; uint16_t w, h;
   canvas->getTextBounds(r.shown, 0, 0, &x1, &y1, &w, &h);
   if (!r.active) {
     canvas->setCursor(rightX - (int)w - x1, topY - y1);
     canvas->print(r.shown);
-    return;
+    return rightX;
   }
-  renderRollFrame(r, rightX, topY - y1, topY, (int)h, bg);
+  return renderRollFrame(r, 1, rightX, topY - y1);
 }
 
-void drawValueTextLeftBaseline(int sub, const char *s, int leftX,
-                               int baseline, uint16_t bg) {
+int drawValueTextLeftBaseline(int sub, const char *s, int leftX,
+                              int baseline) {
   RollSlot &r = rollStep(sub, s);
   int16_t x1, y1; uint16_t w, h;
   canvas->getTextBounds(r.shown, 0, 0, &x1, &y1, &w, &h);
   if (!r.active) {
     canvas->setCursor(leftX, baseline);
     canvas->print(r.shown);
-    return;
+    return leftX + x1 + (int)w;
   }
-  renderRollFrame(r, leftX + x1 + (int)w, baseline, baseline + y1, (int)h, bg);
+  return renderRollFrame(r, 2, leftX, baseline);
 }
 
 // ---------------------------------------------------------------------
@@ -844,7 +945,7 @@ void drawRingGauge(const char *title, float pct, uint16_t color,
   // Percentage, centered in the ring -- rolls when it changes (1.22)
   canvas->setFont(&tiny_sans_bold_32);
   canvas->setTextColor(COL_TEXT);
-  drawValueTextCentered(0, bigText, cx, cy, COL_BG);
+  drawValueTextCentered(0, bigText, cx, cy);
 
   // Secondary line under the ring (watts, GB, ...)
   if (sub && sub[0]) {
@@ -909,10 +1010,13 @@ void drawDialGauge(const char *label, float pct, const char *sub) {
   canvas->getTextBounds(num, 0, 0, &nx1, &ny1, &nw, &nh);
   int baseY = cy - (int)nh / 2 - ny1;         // center the digits on cy
   canvas->setTextColor(COL_TEXT);
-  drawValueTextCentered(0, num, cx, cy, COL_BG);
+  // The %-sign hangs off the digits' LIVE right edge (1.23): anchoring
+  // it to the target width made it sit still while rolling digits
+  // glided underneath -- the "the % moves around" report.
+  int numRight = drawValueTextCentered(0, num, cx, cy);
   canvas->setFont(&tiny_sans_18);
   canvas->getTextBounds("%", 0, 0, &px1, &py1, &pw, &ph);
-  canvas->setCursor(cx + (int)nw / 2 + SY(4) - px1, baseY);
+  canvas->setCursor(numRight + SY(4) - px1, baseY);
   canvas->print("%");
 
   // Page label in the dial's bottom gap
@@ -1355,7 +1459,7 @@ void drawNetBars() {
     drawTextTopLeft(label, left, rows[i].labelY);
     canvas->setFont(&tiny_sans_bold_24);
     canvas->setTextColor(COL_TEXT);
-    drawValueTextTopRight(i, val, right, rows[i].labelY - SY(4), COL_BG);
+    drawValueTextTopRight(i, val, right, rows[i].labelY - SY(4));
 
     int barY = rows[i].labelY + SY(28);
     int barH = SY(10), barW = right - left;
@@ -1413,7 +1517,7 @@ void drawNetGraph() {
       }
     }
     canvas->setTextColor(cols[s]);
-    drawValueTextLeftBaseline(s, vals[s], slots[s] + aw + gap, baseline, COL_BG);
+    drawValueTextLeftBaseline(s, vals[s], slots[s] + aw + gap, baseline);
   }
   canvas->setFont();
 
@@ -1685,7 +1789,7 @@ void drawTempMist(bool animated) {
   snprintf(big, sizeof(big), "%.0f", stats.cpu_temp_c);
   canvas->setFont(strlen(big) <= 2 ? &tiny_sans_bold_128 : &tiny_sans_bold_64);
   canvas->setTextColor(tcol);
-  drawValueTextBottomRight(0, big, LX + LW - SY(12) + LY, cornerY - SY(10) + LY, COL_BG);
+  drawValueTextBottomRight(0, big, LX + LW - SY(12) + LY, cornerY - SY(10) + LY);
   canvas->setFont();
 }
 

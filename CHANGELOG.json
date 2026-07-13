@@ -2,6 +2,18 @@
   "_comment": "Human-readable changelog for the dashboard's About tab -- written for people, not commit archaeologists. The dashboard fetches this from GitHub at page load (baked copy as fallback), so add an entry here with each release and every install sees it. Newest first. Dates are YYYY-MM-DD.",
   "entries": [
     {
+      "version": "0.9.8.1",
+      "date": "2026-07-12",
+      "title": "Smoother, steadier rolling numbers (firmware 1.23)",
+      "notes": [
+        "New firmware 1.23, all about polish on the rolling numbers after seeing them on real hardware. Flash from the General tab after updating.",
+        "Fixed the dark 'blips' around rolling digits on layouts with a background glow (like the temperature mist page). The animation used to erase its working area with solid black; it now snapshots and restores the exact pixels it touches, so any background survives untouched.",
+        "Fixed the percent sign (and neighboring digits) shifting sideways at the start and end of a roll. Characters now sit at exactly their natural printed positions during the animation -- an unchanged character doesn't move by a single pixel -- and when a value changes width (99% to 100%), the surviving characters glide smoothly to their new homes instead of snapping.",
+        "On the dial layout, the small percent sign now rides the digits' live edge during a roll instead of waiting at the destination.",
+        "No dashboard or server changes."
+      ]
+    },
+    {
       "version": "0.9.8.0",
       "date": "2026-07-12",
       "title": "Rolling numbers, a real splash screen, and a 1.3\" fit (firmware 1.22)",

@@ -6,7 +6,7 @@ eventually hit context limits). It carries the current state, what's
 done, and what's next, so any session can pick up where the last left
 off. **Delete this file at the final 1.0 release.**
 
-Snapshot as of **0.9.8.0** (2026-07-12).
+Snapshot as of **0.9.8.1** (2026-07-12).
 
 ## How to get oriented fast
 
@@ -416,6 +416,31 @@ None are worth a dedicated round; fold them into other work or skip.
         33ms frames, mask strips clean on ring/dial/mist/net); compact
         1.3" behind the actual case cutout; saver centering; splash on
         a fresh boot before the collector connects.
+
+- [x] **0.9.8.1** Roll renderer v2 (FIRMWARE 1.23), from hardware video
+      review of 1.22:
+  - Bug 1 (mist "blips"): v1 clipped sliding glyphs by painting
+    COL_BG rectangles over the overflow strips -- black holes through
+    any gradient. v2 clips exactly: snapshot the strip pixels from the
+    canvas framebuffer (rollSaveStrip, 22KB static buffer sized for
+    bold_128), draw the overflowing glyph, restore (rollRestoreStrip).
+    Correct over ANY background.
+  - Bug 2 (% wobble): v1 laid glyphs into padded uniform cells;
+    mid-roll positions never matched natural print positions. v2
+    derives per-character cursors from real font advances (advance =
+    width("cc") - width("c"); GFX fonts have no kerning), so an
+    unchanged character sits EXACTLY where plain print puts it, and on
+    width changes (99 -> 100) survivors glide between old and new
+    natural homes (cursor lerp by eased p). Wrappers return the
+    readout's LIVE right edge; the dial's %-shoulder follows it.
+  - Verified by faithful pixel simulation of the algorithm (PIL, GFX
+    baseline semantics) on a gradient: 99%->100% and 45->46 sheets
+    show intact gradient, pixel-still unchanged chars, clean band
+    clipping. The first sim run itself caught a metrics-anchor bug --
+    worth keeping the sim script pattern for future renderer work.
+  - [ ] HARDWARE VERIFY (1.23): mist page rolls over the glow (no
+        blips), dial % steady through 9->10 and 99->100 boundaries,
+        ring/net rolls unchanged.
 
 ## Next up (suggested order)
 

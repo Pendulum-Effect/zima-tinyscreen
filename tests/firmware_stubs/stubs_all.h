@@ -87,6 +87,7 @@ class Arduino_GFX {
   }
   void fillArc(int, int, int, int, int, int, uint16_t) {}
   void draw16bitRGBBitmap(int, int, uint16_t *, int, int) {}
+  uint16_t *getFramebuffer() { static uint16_t fb[240 * 280]; return fb; }
   void fillCircle(int, int, int, uint16_t) {}
   void drawCircle(int, int, int, uint16_t) {}
   void fillRect(int, int, int, int, uint16_t) {}
