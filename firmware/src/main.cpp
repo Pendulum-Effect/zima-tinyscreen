@@ -42,7 +42,7 @@
 // "Software Version" field via the get_config command below. No
 // auto-update-checking mechanism exists yet (that's a separate, not-yet
 // -built feature) -- this just answers "what's currently on my device."
-#define FIRMWARE_VERSION "1.24"  // two-part scheme as of 1.19 (was x.y.z)
+#define FIRMWARE_VERSION "1.25"  // two-part scheme as of 1.19 (was x.y.z)
 
 // Note: screen dimensions are NOT fixed -- board 1 (1.69") is 240x280,
 // taller than board 0's 240x240. See screenW/screenH globals, set from
@@ -651,22 +651,27 @@ float rollEase(float p) {  // smoothstep -- gentle in, gentle out
 }
 
 // ---------------------------------------------------------------------
-// Gauge tweens (1.24): rings and dials EASE between values instead of
-// snapping. Unlike the digit rolls there's no cooldown -- an arc in
-// smooth motion is how analog instruments behave, and tiny changes
-// produce tiny sweeps -- so the needle leads and the odometer follows,
-// like a real dashboard. A new value arriving mid-sweep retargets from
-// wherever the arc currently is, so motion never jumps.
+// Gauge tweens (1.24, synced 1.25): rings and dials EASE between values
+// instead of snapping. As of 1.25 a gauge moves in LOCKSTEP with its
+// digits: the tween retargets exactly when the paired digit roll fires
+// (same gate, same data snapshot, same duration), so the arc sweeps
+// while the number rolls -- one coherent update moment per readout
+// every few seconds instead of a needle that leads the odometer.
+// Mechanically: the tween watches its paired RollSlot's lastRoll
+// timestamp; a change means the digits just fired (or the page armed),
+// and only then does the arc adopt a new target. A mid-flight fire
+// still retargets from wherever the arc currently is.
 // ---------------------------------------------------------------------
 struct TweenSlot {
   float shown, from, target;
   unsigned long start;
+  unsigned long gateSeen;   // paired RollSlot.lastRoll we last acted on
   int pageIdx;
   bool active, init;
 };
 static TweenSlot tweenSlots[6 * 2];
 static int activeTweens = 0;
-const unsigned long TWEEN_MS = 600;
+const unsigned long TWEEN_MS = ROLL_MS;  // lockstep with the digits (1.25)
 
 // Pure evaluation core (host-tested): where is a tween from `from` to
 // `target` that started at `start`, evaluated at `now`?
@@ -683,19 +688,28 @@ float tweenEval(float from, float target, unsigned long start,
 
 float tweenValue(int sub, float target) {
   TweenSlot &t = tweenSlots[currentPageIdx * 2 + sub];
+  RollSlot &pair = rollSlots[currentPageIdx * 2 + sub];
   unsigned long now = millis();
   if (!t.init || t.pageIdx != currentPageIdx) {   // first show / page switch
     t.init = true;
     t.pageIdx = currentPageIdx;
     t.shown = t.target = target;
+    t.gateSeen = pair.lastRoll;
     if (t.active) { t.active = false; activeTweens--; }
     return t.shown;
   }
-  if (fabsf(target - t.target) > 0.001f) {        // retarget mid-flight OK
-    t.from = t.shown;
-    t.target = target;
-    t.start = now;
-    if (!t.active) { t.active = true; activeTweens++; }
+  // Gate: only adopt a new target when the paired digits fired. (The
+  // digits draw AFTER the arc within a frame, so the arc picks a fire
+  // up on the next frame -- 33ms later, invisible.) If the digits held
+  // because of their cooldown, the arc holds with them.
+  if (pair.lastRoll != t.gateSeen) {
+    t.gateSeen = pair.lastRoll;
+    if (fabsf(target - t.target) > 0.001f) {
+      t.from = t.shown;
+      t.target = target;
+      t.start = now;
+      if (!t.active) { t.active = true; activeTweens++; }
+    }
   }
   if (t.active) {
     bool still;

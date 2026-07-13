@@ -2,6 +2,17 @@
   "_comment": "Human-readable changelog for the dashboard's About tab -- written for people, not commit archaeologists. The dashboard fetches this from GitHub at page load (baked copy as fallback), so add an entry here with each release and every install sees it. Newest first. Dates are YYYY-MM-DD.",
   "entries": [
     {
+      "version": "0.9.8.3",
+      "date": "2026-07-12",
+      "title": "Dials and digits move as one (firmware 1.25)",
+      "notes": [
+        "New firmware 1.25: the ring gauges and dial now update in lockstep with their digits. When the number rolls, the arc sweeps -- same moment, same duration, same easing -- so each readout has one coherent update beat every few seconds instead of a needle that moves ahead of the numbers.",
+        "If a value changes while the digits are in their between-rolls hold, the gauge holds with them and they fire together when the hold ends.",
+        "Tiny fluctuations that don't change the displayed number no longer nudge the arc at all -- it stays planted until there's a real update to show.",
+        "Flash from the General tab after updating. No dashboard or server changes."
+      ]
+    },
+    {
       "version": "0.9.8.2",
       "date": "2026-07-12",
       "title": "Gauges sweep instead of snapping (firmware 1.24)",

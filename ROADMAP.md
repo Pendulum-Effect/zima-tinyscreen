@@ -6,7 +6,7 @@ eventually hit context limits). It carries the current state, what's
 done, and what's next, so any session can pick up where the last left
 off. **Delete this file at the final 1.0 release.**
 
-Snapshot as of **0.9.8.2** (2026-07-12).
+Snapshot as of **0.9.8.3** (2026-07-12).
 
 ## How to get oriented fast
 
@@ -456,6 +456,20 @@ None are worth a dedicated round; fold them into other work or skip.
         frames; dial color fade through zone boundaries; splash ->
         first data still snaps (no sweep from zero on page arrival --
         page-arrival snap is by design).
+
+- [x] **0.9.8.3** Gauge/digit lockstep (FIRMWARE 1.25), by user
+      request after seeing 1.24's free-running tweens: the tween now
+      retargets ONLY when its paired RollSlot's lastRoll timestamp
+      changes (the digits fired or the page armed) -- one gate, one
+      data snapshot, TWEEN_MS = ROLL_MS. The digits draw after the arc
+      within a frame, so a fire is adopted next frame (33ms,
+      invisible). String-invariant float wiggle no longer moves the
+      arc at all. Lockstep integration test drives the real
+      drawValueTextCentered + tweenValue pair against g_fake_millis
+      (hold together -> fire together -> planted on wiggle).
+  - [ ] HARDWARE VERIFY (1.25): ring + dial sweep starts as the digits
+        roll; nothing moves during the hold window; dial color fade
+        now also beats with the digits.
 
 ## Next up (suggested order)
 

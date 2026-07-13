@@ -395,6 +395,42 @@ int main() {
     pendingRestart = false;
   }
 
+  // ---- 1.25: gauge moves in lockstep with its digits ----
+  {
+    currentPageIdx = 0;
+    g_fake_millis = 100000;
+    // Fresh page: both snap. Text shows "45%", arc shows 45.
+    drawValueTextCentered(0, "45%", 120, 120);
+    float a0 = tweenValue(0, 45.0f);
+    CHECK(a0 == 45.0f);
+    // Value changes immediately (within the digits' cooldown): the
+    // digits HOLD -- and the arc must hold WITH them.
+    g_fake_millis += 1000;
+    drawValueTextCentered(0, "52%", 120, 120);
+    float a1 = tweenValue(0, 52.0f);
+    CHECK(a1 == 45.0f);
+    // Cooldown passes: the digits fire, and on the NEXT frame the arc
+    // adopts the same snapshot and starts sweeping.
+    g_fake_millis += 4000;
+    drawValueTextCentered(0, "52%", 120, 120);   // roll fires here
+    tweenValue(0, 52.0f);                        // arc sees the fire
+    g_fake_millis += ROLL_MS / 2;                // mid-sweep
+    float aMid = tweenValue(0, 52.0f);
+    CHECK(aMid > 45.5f && aMid < 51.5f);
+    g_fake_millis += ROLL_MS;                    // done
+    float aEnd = tweenValue(0, 52.0f);
+    CHECK(aEnd == 52.0f);
+    // Float wiggle that never changes the string: digits don't fire,
+    // arc stays planted.
+    g_fake_millis += 60000;
+    drawValueTextCentered(0, "52%", 120, 120);
+    float aW = tweenValue(0, 52.4f);
+    CHECK(aW == 52.0f);
+    // Reset shared animation state for any later tests
+    for (int i = 0; i < 12; i++) { rollSlots[i] = RollSlot(); tweenSlots[i] = TweenSlot(); }
+    activeRolls = 0; activeTweens = 0;
+  }
+
   // ---- 1.24: gauge tween evaluation ----
   {
     bool active;
