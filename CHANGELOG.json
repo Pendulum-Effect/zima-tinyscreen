@@ -2,6 +2,17 @@
   "_comment": "Human-readable changelog for the dashboard's About tab -- written for people, not commit archaeologists. The dashboard fetches this from GitHub at page load (baked copy as fallback), so add an entry here with each release and every install sees it. Newest first. Dates are YYYY-MM-DD.",
   "entries": [
     {
+      "version": "0.9.8.5",
+      "date": "2026-07-13",
+      "title": "Centered saver digits, tidier previews note, better About on phones (firmware 1.27)",
+      "notes": [
+        "New firmware 1.27: the Temperature screensaver's number now sits at the absolute center of the panel, with the degree symbol trailing off to the side -- the digits themselves are the optical center, which reads more natural than centering the pair as a block.",
+        "The hardware-preview note on the Layouts page tucked itself into a small info icon beside each style dropdown -- hover or tap it to read the message, click anywhere else to dismiss.",
+        "The About page breathes on phones: the tagline sits beside the logo, and the full description now spans the card's whole width below it instead of wrapping in a narrow column.",
+        "Flash from the General tab after updating for the screensaver change."
+      ]
+    },
+    {
       "version": "0.9.8.4",
       "date": "2026-07-13",
       "title": "Preview polish and a bigger, calmer screensaver (firmware 1.26)",

@@ -214,6 +214,25 @@
     min-width: 190px;
   }
   .style-select:disabled { opacity: 0.6; cursor: not-allowed; }
+  .select-row { display: flex; align-items: center; gap: 8px; }
+  .info-pop {
+    position: relative; flex-shrink: 0;
+    width: 22px; height: 22px; padding: 0;
+    background: none; border: none;
+    color: var(--subtext); cursor: pointer;
+    transition: color .15s ease;
+  }
+  .info-pop svg { width: 18px; height: 18px; display: block; margin: 0 auto; }
+  .info-pop:hover { color: var(--teal); }
+  .info-pop .tip {
+    display: none; position: absolute; right: -4px; top: 28px; z-index: 40;
+    width: 232px; padding: 10px 12px;
+    background: var(--panel-raised); border: 1px solid var(--border);
+    border-radius: 10px; box-shadow: 0 10px 26px rgba(0, 0, 0, 0.45);
+    color: var(--subtext); font-size: 12.5px; line-height: 1.45;
+    text-align: left; font-weight: 400;
+  }
+  .info-pop:hover .tip, .info-pop.open .tip { display: block; }
   .layout-hint { font-size: 12px; color: var(--subtext); margin-top: 6px; }
 
   .radio-btn, .interval-btn {
@@ -943,6 +962,9 @@
     brandImg.addEventListener('load', () => moveNavIndicator(false));
   }
 
+  document.addEventListener('click', () =>
+    document.querySelectorAll('.info-pop.open').forEach(x => x.classList.remove('open')));
+
   document.querySelectorAll('.nav-item').forEach(item => {
     item.addEventListener('click', () => {
       document.querySelectorAll('.nav-item').forEach(i => i.classList.remove('active'));
@@ -1520,17 +1542,26 @@
           markDirty();
           renderLayouts();  // previews (card + carousel) follow the choice
         });
-        side.appendChild(sel);
-        const hwNote = document.createElement('div');
-        hwNote.className = 'info-note';
-        hwNote.style.marginTop = '10px';
-        hwNote.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" ' +
+        const selRow = el('div', 'select-row');
+        selRow.appendChild(sel);
+        const pop = document.createElement('button');
+        pop.type = 'button';
+        pop.className = 'info-pop';
+        pop.setAttribute('aria-label', 'About this preview');
+        pop.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" ' +
           'stroke-width="2" stroke-linecap="round" aria-hidden="true">' +
           '<circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/>' +
           '<line x1="12" y1="8" x2="12.01" y2="8"/></svg>' +
-          '<span>Due to hardware limitations, colors, fonts, and animations may ' +
-          'appear different than previewed.</span>';
-        side.appendChild(hwNote);
+          '<span class="tip">Due to hardware limitations, colors, fonts, and ' +
+          'animations may appear different than previewed.</span>';
+        pop.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const wasOpen = pop.classList.contains('open');
+          document.querySelectorAll('.info-pop.open').forEach(x => x.classList.remove('open'));
+          if (!wasOpen) pop.classList.add('open');
+        });
+        selRow.appendChild(pop);
+        side.appendChild(selRow);
         if (options.length === 1) {
           const hint = document.createElement('div');
           hint.className = 'layout-hint';
@@ -2168,13 +2199,16 @@
       const titleWrap = el('div');
       titleWrap.appendChild(el('div', 'card-title', p.name || 'TinyScreen'));
       if (p.tagline) titleWrap.appendChild(el('div', 'card-desc', p.tagline));
-      if (p.description) {
-        const desc = el('div', 'card-desc', p.description);
-        desc.style.marginTop = '8px';
-        titleWrap.appendChild(desc);
-      }
       head.appendChild(titleWrap);
       c.appendChild(head);
+      if (p.description) {
+        // Full card width, below the hero row (0.9.8.5): keeping this
+        // in the icon's side column squeezed it into a sliver on
+        // phones.
+        const desc = el('div', 'card-desc', p.description);
+        desc.style.marginTop = '12px';
+        c.appendChild(desc);
+      }
       const meta = el('div', 'card-desc');
       meta.style.marginTop = '10px';
       meta.style.display = 'flex';

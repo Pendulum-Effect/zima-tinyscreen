@@ -42,7 +42,7 @@
 // "Software Version" field via the get_config command below. No
 // auto-update-checking mechanism exists yet (that's a separate, not-yet
 // -built feature) -- this just answers "what's currently on my device."
-#define FIRMWARE_VERSION "1.26"  // two-part scheme as of 1.19 (was x.y.z)
+#define FIRMWARE_VERSION "1.27"  // two-part scheme as of 1.19 (was x.y.z)
 
 // Note: screen dimensions are NOT fixed -- board 1 (1.69") is 240x280,
 // taller than board 0's 240x240. See screenW/screenH globals, set from
@@ -2019,15 +2019,21 @@ void drawSaverTemp() {
   // there's no layout to keep inside a cutout.
   canvas->fillScreen(COL_BG);
   char t[10];
-  snprintf(t, sizeof(t), "%.0f\xB0", stats.cpu_temp_c);
-  // Twice the face of the temperature page (0.9.8.4 request), and the
-  // same hold-and-roll rhythm the layouts use -- the saver number no
-  // longer flickers with every sample; it holds, then rolls, on its
-  // own dedicated slot.
+  snprintf(t, sizeof(t), "%.0f", stats.cpu_temp_c);
+  // The NUMBER is the absolute center of the panel (0.9.8.5) -- the
+  // degree sign trails off to the side as a satellite following the
+  // digits' live edge (the dial-% pattern), so the optical center is
+  // the digits themselves, which reads more natural than centering
+  // number+degree as one block. Same hold-and-roll rhythm as the
+  // layouts, on the saver's dedicated slot.
   canvas->setFont(&tiny_sans_bold_64);
   canvas->setTextColor(tempColorFor(stats.cpu_temp_c));
-  drawValueTextCenteredAt(SAVER_ROLL_SLOT, SAVER_OWNER, t,
-                          screenW / 2, screenH / 2);
+  int edge = drawValueTextCenteredAt(SAVER_ROLL_SLOT, SAVER_OWNER, t,
+                                     screenW / 2, screenH / 2);
+  int16_t x1, y1; uint16_t w, h;
+  canvas->getTextBounds(t, 0, 0, &x1, &y1, &w, &h);
+  canvas->setCursor(edge + SY(4), screenH / 2 - (int)h / 2 - y1);
+  canvas->print("\xB0");
   canvas->setFont();
   canvas->flush();
 }

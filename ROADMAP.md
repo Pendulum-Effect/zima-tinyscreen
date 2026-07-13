@@ -6,7 +6,7 @@ eventually hit context limits). It carries the current state, what's
 done, and what's next, so any session can pick up where the last left
 off. **Delete this file at the final 1.0 release.**
 
-Snapshot as of **0.9.8.4** (2026-07-13).
+Snapshot as of **0.9.8.5** (2026-07-13).
 
 ## How to get oriented fast
 
@@ -490,6 +490,19 @@ None are worth a dedicated round; fold them into other work or skip.
         E2E.
   - [ ] HARDWARE VERIFY (1.26): saver number size + roll rhythm; mist
         number position; preview corners on the real dashboard.
+
+- [x] **0.9.8.5** Saver centering + popover + About mobile (FW 1.27):
+  - [x] Saver temp: NUMBER at absolute panel center, degree trails as
+        a satellite at the digits' live right edge (dial-% pattern),
+        same hold-and-roll slot.
+  - [x] Layouts preview note -> .info-pop icon right of each dropdown:
+        :hover shows, click toggles (mobile), outside click closes
+        all. Old always-on note removed.
+  - [x] About: description moved OUT of the icon's side column to
+        full card width below the hero row (tagline stays beside the
+        logo). Verified at 400px: desc below icon, full width.
+  - [ ] HARDWARE VERIFY (1.27): saver optical centering with 2- and
+        3-digit temps; degree position during a roll.
 
 ## Next up (suggested order)
 
