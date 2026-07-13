@@ -2,6 +2,18 @@
   "_comment": "Human-readable changelog for the dashboard's About tab -- written for people, not commit archaeologists. The dashboard fetches this from GitHub at page load (baked copy as fallback), so add an entry here with each release and every install sees it. Newest first. Dates are YYYY-MM-DD.",
   "entries": [
     {
+      "version": "0.9.8.4",
+      "date": "2026-07-13",
+      "title": "Preview polish and a bigger, calmer screensaver (firmware 1.26)",
+      "notes": [
+        "The device preview on the General page now rounds the corners of the picture itself -- layouts with a glow (like the temperature mist) no longer end in a hard right angle inside the rounded frame.",
+        "New firmware 1.26: the Temperature screensaver's number is twice as big, and it now uses the same hold-and-roll rhythm as the layouts -- it holds steady and rolls to a fresh value every few seconds instead of flickering with every sample.",
+        "The temperature mist layout's big number sits a touch higher with a little more breathing room from the edge.",
+        "Every layout's style dropdown now carries a small note: due to hardware limitations, colors, fonts, and animations may appear different than previewed.",
+        "Flash from the General tab after updating for the screensaver and mist changes."
+      ]
+    },
+    {
       "version": "0.9.8.3",
       "date": "2026-07-12",
       "title": "Dials and digits move as one (firmware 1.25)",

@@ -42,7 +42,7 @@
 // "Software Version" field via the get_config command below. No
 // auto-update-checking mechanism exists yet (that's a separate, not-yet
 // -built feature) -- this just answers "what's currently on my device."
-#define FIRMWARE_VERSION "1.25"  // two-part scheme as of 1.19 (was x.y.z)
+#define FIRMWARE_VERSION "1.26"  // two-part scheme as of 1.19 (was x.y.z)
 
 // Note: screen dimensions are NOT fixed -- board 1 (1.69") is 240x280,
 // taller than board 0's 240x240. See screenW/screenH globals, set from
@@ -625,7 +625,9 @@ struct RollSlot {
   bool active;
   bool up;               // roll direction (value grew -> glyphs move up)
 };
-static RollSlot rollSlots[6 * 2];  // pages[6] x (primary, secondary)
+static RollSlot rollSlots[6 * 2 + 1];  // pages[6] x (primary, secondary)
+const int SAVER_ROLL_SLOT = 12;        // + one for the temp screensaver
+const int SAVER_OWNER = 100;           // pseudo page id for the saver
 static int activeRolls = 0;
 const unsigned long ROLL_MS = 420;
 const unsigned long ROLL_COOLDOWN_MS = 4000;
@@ -720,15 +722,17 @@ float tweenValue(int sub, float target) {
 }
 
 // State step shared by every anchor wrapper. Returns the slot, updated.
-RollSlot &rollStep(int sub, const char *s) {
-  RollSlot &r = rollSlots[currentPageIdx * 2 + sub];
+// ownerId identifies who owns the slot (page index, or SAVER_OWNER) so
+// ownership changes snap instead of rolling across contexts.
+RollSlot &rollStepAt(int slotIdx, int ownerId, const char *s) {
+  RollSlot &r = rollSlots[slotIdx];
   unsigned long now = millis();
   bool changed = strcmp(s, r.shown) != 0;
-  int action = decideRollAction(r.pageIdx == currentPageIdx, changed,
+  int action = decideRollAction(r.pageIdx == ownerId, changed,
                                 r.active, now, r.lastRoll, ROLL_COOLDOWN_MS);
   if (action == 2) {
     snprintf(r.shown, sizeof(r.shown), "%s", s);
-    r.pageIdx = currentPageIdx;
+    r.pageIdx = ownerId;
     if (r.active) { r.active = false; activeRolls--; }
     r.lastRoll = now;  // arriving on a page starts calm
   } else if (action == 1) {
@@ -745,6 +749,10 @@ RollSlot &rollStep(int sub, const char *s) {
     activeRolls--;
   }
   return r;
+}
+
+RollSlot &rollStep(int sub, const char *s) {
+  return rollStepAt(currentPageIdx * 2 + sub, currentPageIdx, s);
 }
 
 // Mid-roll frame renderer, v2 (1.23). Hardware review of v1 found two
@@ -894,8 +902,9 @@ int renderRollFrame(RollSlot &r, int anchor, int anchorX, int baseline) {
 
 // Anchor wrappers -- same anchor semantics as their drawText* cousins.
 // Each returns the readout's current right edge (static: natural edge).
-int drawValueTextCentered(int sub, const char *s, int cx, int cyCenter) {
-  RollSlot &r = rollStep(sub, s);
+int drawValueTextCenteredAt(int slotIdx, int ownerId, const char *s,
+                            int cx, int cyCenter) {
+  RollSlot &r = rollStepAt(slotIdx, ownerId, s);
   int16_t x1, y1; uint16_t w, h;
   canvas->getTextBounds(r.shown, 0, 0, &x1, &y1, &w, &h);
   if (!r.active) {
@@ -904,6 +913,11 @@ int drawValueTextCentered(int sub, const char *s, int cx, int cyCenter) {
   }
   int baseline = cyCenter - (int)h / 2 - y1;
   return renderRollFrame(r, 0, cx, baseline);
+}
+
+int drawValueTextCentered(int sub, const char *s, int cx, int cyCenter) {
+  return drawValueTextCenteredAt(currentPageIdx * 2 + sub, currentPageIdx,
+                                 s, cx, cyCenter);
 }
 
 int drawValueTextBottomRight(int sub, const char *s, int rightX,
@@ -1858,7 +1872,7 @@ void drawTempMist(bool animated) {
   snprintf(big, sizeof(big), "%.0f", stats.cpu_temp_c);
   canvas->setFont(strlen(big) <= 2 ? &tiny_sans_bold_128 : &tiny_sans_bold_64);
   canvas->setTextColor(tcol);
-  drawValueTextBottomRight(0, big, LX + LW - SY(12) + LY, cornerY - SY(10) + LY);
+  drawValueTextBottomRight(0, big, LX + LW - SY(16) + LY, cornerY - SY(18) + LY);
   canvas->setFont();
 }
 
@@ -2006,9 +2020,14 @@ void drawSaverTemp() {
   canvas->fillScreen(COL_BG);
   char t[10];
   snprintf(t, sizeof(t), "%.0f\xB0", stats.cpu_temp_c);
-  canvas->setFont(&tiny_sans_bold_32);
+  // Twice the face of the temperature page (0.9.8.4 request), and the
+  // same hold-and-roll rhythm the layouts use -- the saver number no
+  // longer flickers with every sample; it holds, then rolls, on its
+  // own dedicated slot.
+  canvas->setFont(&tiny_sans_bold_64);
   canvas->setTextColor(tempColorFor(stats.cpu_temp_c));
-  drawTextCentered(t, screenW / 2, screenH / 2);
+  drawValueTextCenteredAt(SAVER_ROLL_SLOT, SAVER_OWNER, t,
+                          screenW / 2, screenH / 2);
   canvas->setFont();
   canvas->flush();
 }

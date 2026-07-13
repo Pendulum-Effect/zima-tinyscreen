@@ -6,7 +6,7 @@ eventually hit context limits). It carries the current state, what's
 done, and what's next, so any session can pick up where the last left
 off. **Delete this file at the final 1.0 release.**
 
-Snapshot as of **0.9.8.3** (2026-07-12).
+Snapshot as of **0.9.8.4** (2026-07-13).
 
 ## How to get oriented fast
 
@@ -470,6 +470,26 @@ None are worth a dedicated round; fold them into other work or skip.
   - [ ] HARDWARE VERIFY (1.25): ring + dial sweep starts as the digits
         roll; nothing moves during the hold window; dial color fade
         now also beats with the digits.
+
+- [x] **0.9.8.4** Preview + saver polish (FIRMWARE 1.26):
+  - [x] .device-preview svg gets its own border-radius (12px tall /
+        8px square) -- the mist preview ended in a hard right angle
+        inside the rounded bezel.
+  - [x] Saver temp: tiny_sans_bold_64 (2x the page face) + the
+        layouts' hold-and-roll via a dedicated 13th roll slot
+        (SAVER_ROLL_SLOT, SAVER_OWNER pseudo page id). rollStep
+        refactored to rollStepAt(slotIdx, ownerId) with the page
+        wrapper preserved; drawValueTextCenteredAt exposed for
+        non-page callers. Color still tracks the live sample (same as
+        mist's behavior) while digits hold.
+  - [x] Mist big number: right pad SY(12)->SY(16), bottom
+        SY(10)->SY(18).
+  - [x] info-note under every layout style dropdown (hardware
+        colors/fonts/animations disclaimer); renders on all enabled
+        page cards (disabled cards have no dropdown), verified 3/3 in
+        E2E.
+  - [ ] HARDWARE VERIFY (1.26): saver number size + roll rhythm; mist
+        number position; preview corners on the real dashboard.
 
 ## Next up (suggested order)
 
