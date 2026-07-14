@@ -6,7 +6,7 @@ eventually hit context limits). It carries the current state, what's
 done, and what's next, so any session can pick up where the last left
 off. **Delete this file at the final 1.0 release.**
 
-Snapshot as of **0.9.9.0** (2026-07-13).
+Snapshot as of **0.9.9.1** (2026-07-13).
 
 ## How to get oriented fast
 
@@ -374,17 +374,27 @@ None are worth a dedicated round; fold them into other work or skip.
 
 ## Known bugs to fix before final release
 
-- [ ] **Mac/WebSerial configure still leaves the device unconfigured**
-      (0.9.7.5's boot-pause + verified retries did NOT fix it; the
-      ZimaBlade path recovers it every time). Next diagnostic: capture
-      the wizard's on-screen status during the configure step (did it
-      claim an ack? which attempt?) plus the boot console right after.
-      Suspects: the open-triggered reset taking longer than 1.8s on
-      this unit; the ack arriving on a DIFFERENT port instance after
-      re-enumeration; or writes landing while the CDC host buffer isn't
-      drained. Consider: configure step re-requesting the port fresh,
-      or moving first-config entirely to the ZimaBlade path in the
-      wizard copy.
+- [x] **Mac/WebSerial configure -- ROOT CAUSE FOUND AND FIXED (0.9.9.1)**:
+      `pushDefaultConfigViaWebSerial` -- including the entire 0.9.7.5
+      rewrite (boot pause, pumped reader, verified retries) -- was
+      NEVER CALLED. The computer path's Next button was a plain
+      `data-next`: the wizard flashed, then walked straight to the
+      completion step without configuring. The device stayed
+      factory-unconfigured; the ZimaBlade path worked because it runs
+      /api/configure server-side. Found by a caller grep during the
+      0.9.9.1 review. Shipped: the wire-in (Next runs configure, then
+      advances; failure re-enables retry + reveals an honest
+      "continue without configuring" escape hatch), full timestamped
+      diagnostics into a copyable panel (port events, serial
+      connect/disconnect listeners, every rx chunk, per-attempt tx/ack,
+      boot-pause byte accounting), and a post-ack get_config
+      VERIFICATION read -- an ack proves receipt, configured=true
+      proves persistence.
+  - [ ] HARDWARE CONFIRM: run the Mac path end-to-end on 0.9.9.1. The
+        original timing suspects (reset >1.8s, re-enumeration, CDC
+        buffering) have never actually been exercised -- this code has
+        never run against hardware. If it misfires, the diagnostics
+        panel tells us which suspect in one run.
 
 - [x] **0.9.8.0** Screen-feel round (FIRMWARE 1.22):
   - [x] Rolling numbers on every layout's primary readout: shared
@@ -563,6 +573,24 @@ None are worth a dedicated round; fold them into other work or skip.
 
 ## Next up (suggested order)
 
+- [ ] **THE BIG HARDWARE SESSION** -- one sitting clears the whole
+      verification backlog (details live in each release's Done entry):
+  1. Mac path end-to-end on 0.9.9.1 (THE 1.0 gate; see the fixed bug
+     entry above -- diagnostics panel reports everything).
+  2. Flash firmware 1.29, watch a ring page a minute: gauge/digit
+     LOCKSTEP (nothing moves in the hold, everything fires together;
+     1.25) and general roll feel (1.22/1.23 largely cleared by video
+     review already).
+  3. Let the temp saver kick in: double-size digits, absolute-center
+     number with trailing degree, hold-and-roll rhythm (1.26/1.27).
+  4. Reboot with the collector stopped: splash wordmark + "loading..."
+     (1.28, new art).
+  5. Drop the display behind the 1.3" cutout: compact aspect mode --
+     200px came from math, not measurement; report if it wants a nudge.
+  6. Backlog from older rounds: saver brightness on glass (0.9.6.1),
+     unplug/replug recovery with the app running (0.9.6.0), PIN layer
+     on real hardware + phone (0.9.5.x).
+
 - [ ] **Hardware round for 0.9.6.1**: flash firmware 1.19, set saver to
       Temperature with brightness ~30%, confirm it dims (and that night
       mode still wins if darker); check the phone General tab; skim the
@@ -579,11 +607,15 @@ None are worth a dedicated round; fold them into other work or skip.
       iframe -- the new frame-denial headers would blank the dashboard
       inside an embedding UI (relax to a frame-ancestors allowlist of
       the ZimaOS origin if so; see _security_headers in server.py).
-- [ ] **Placeholder metadata pass** -- `docker-compose.customapp.yml`
+- [x] **Placeholder metadata pass** -- DONE in 0.9.8.7 (canonical
+  x-casaos split, real identity, per-field labels, official icon) and
+  0.9.9.0 corrections (master-branch icon URL, "TinyScreen" title).
+  Originally: `docker-compose.customapp.yml`
       x-casaos block has `author: you` / placeholder icon URL; verify an
       icon asset actually exists at the referenced path so the ZimaOS
       store tile isn't broken.
-- [ ] **RELEASING.md** -- short checklist: bump VERSION + CHANGELOG
+- [x] **RELEASING.md** -- shipped in 0.9.9.1. Originally: short
+  checklist: bump VERSION + CHANGELOG
       (CI enforces they match), bump FIRMWARE_VERSION only when firmware
       actually changed, sync firmware_arduino/, push, verify tags on
       Docker Hub.

@@ -304,11 +304,17 @@
           <span slot="unsupported">Your browser doesn't support Web Serial. Please use Chrome or Edge.</span>
           <span slot="not-allowed">Web Serial isn't allowed here (must be HTTPS or localhost).</span>
         </esp-web-install-button>
-        <p class="status-msg" id="computer-flash-status">Once you see "Installation complete" above, click Next.</p>
+        <p class="status-msg" id="computer-flash-status">Once you see "Installation complete" above, close the flashing dialog, then click Next — the wizard will ask for the port again to send the initial settings.</p>
+        <details class="diag-details" id="cfg-diag" style="display:none;">
+          <summary>Configure diagnostics</summary>
+          <pre class="progress-log visible" id="cfg-diag-log" style="max-height:180px;"></pre>
+          <button type="button" class="link-btn" id="cfg-diag-copy">Copy log</button>
+        </details>
       </div>
       <div class="footer">
         <button class="link-btn" data-back>Back</button>
-        <button class="btn" id="computer-flash-next" data-next>Next</button>
+        <button class="link-btn" id="computer-config-skip" style="display:none;">Continue without configuring</button>
+        <button class="btn" id="computer-flash-next">Next</button>
       </div>
     </section>
 
@@ -446,6 +452,39 @@
     );
   }
 
+  // --- Configure diagnostics (0.9.9.1) -------------------------------
+  // Root cause of the long-standing "Mac configure leaves the device
+  // unconfigured" bug: pushDefaultConfigViaWebSerial was never wired to
+  // the Next button -- the computer path flashed and then walked
+  // straight to the completion step. The 0.9.7.5 rewrite (boot pause,
+  // pumped reader, verified retries) was dead code. It's wired in now,
+  // and because this code has therefore NEVER run against real
+  // hardware, every step is timestamped into a visible, copyable log --
+  // one run tells us exactly what happened if anything still misfires.
+  let cfgDiagT0 = 0;
+  function cfgDiagReset() {
+    cfgDiagT0 = Date.now();
+    const pre = document.getElementById('cfg-diag-log');
+    const box = document.getElementById('cfg-diag');
+    if (pre) pre.textContent = '';
+    if (box) box.style.display = 'block';
+  }
+  function cfgDiagPreview(str) {
+    return String(str).slice(0, 110).replace(/[^\x20-\x7e]/g,
+      ch => '\\x' + ch.charCodeAt(0).toString(16).padStart(2, '0'));
+  }
+  function cfgDiagAppend(event, detail) {
+    const pre = document.getElementById('cfg-diag-log');
+    if (!pre) return;
+    const t = ((Date.now() - cfgDiagT0) / 1000).toFixed(2);
+    pre.textContent += '[+' + t + 's] ' + event + (detail ? '  ' + detail : '') + '\n';
+    pre.scrollTop = pre.scrollHeight;
+  }
+  document.getElementById('cfg-diag-copy').addEventListener('click', () => {
+    const pre = document.getElementById('cfg-diag-log');
+    if (pre && navigator.clipboard) navigator.clipboard.writeText(pre.textContent);
+  });
+
   function defaultConfigFor(boardId) {
     return { board: boardId, pages: ['temp'], cycle_mode: 'static', cycle_seconds: 10, brightness: 100 };
   }
@@ -455,26 +494,38 @@
       statusCb('Web Serial not supported in this browser.', 'err');
       return false;
     }
+    cfgDiagReset();
+    cfgDiagAppend('start', 'board=' + boardId + '  ua=' + cfgDiagPreview(navigator.userAgent));
+    const onDisc = () => cfgDiagAppend('serial_disconnect', '(a serial device left the system)');
+    const onConn = () => cfgDiagAppend('serial_connect', '(a serial device arrived)');
+    try { navigator.serial.addEventListener('disconnect', onDisc); } catch (e) {}
+    try { navigator.serial.addEventListener('connect', onConn); } catch (e) {}
     let port;
     try {
+      cfgDiagAppend('port_request');
       port = await navigator.serial.requestPort();
+      const info = port.getInfo ? port.getInfo() : {};
+      cfgDiagAppend('port_chosen', 'vid=0x' + (info.usbVendorId || 0).toString(16) +
+                    ' pid=0x' + (info.usbProductId || 0).toString(16));
       await port.open({ baudRate: 115200 });
+      cfgDiagAppend('port_opened', '115200 baud');
     } catch (e) {
+      cfgDiagAppend('port_open_FAILED', cfgDiagPreview(e.message));
       statusCb('Could not open the serial port: ' + e.message + ' \u2014 close the ' +
         'flashing dialog first if it\u2019s still open (it can keep holding the port).', 'err');
+      try { navigator.serial.removeEventListener('disconnect', onDisc); } catch (e2) {}
+      try { navigator.serial.removeEventListener('connect', onConn); } catch (e2) {}
       return false;
     }
     // Two hard-won lessons in here (0.9.7.5, both from real hardware):
     // 1) OPENING the port can RESET a native-USB board -- the USB-serial
     //    peripheral doubles as its reset control -- and anything written
-    //    while the firmware is still booting is silently lost. The old
-    //    code wrote immediately, saw no ack, and reported "likely
-    //    worked"; the device arrived at the ZimaBlade unconfigured.
-    //    So: pause after open, then send-and-verify with retries (the
+    //    while the firmware is still booting is silently lost. So:
+    //    pause after open, then send-and-verify with retries (the
     //    command is idempotent).
-    // 2) The old read loop raced reads against timeouts, which can
-    //    orphan a pending read and swallow the very chunk holding the
-    //    ack. One background pump into a buffer loses nothing.
+    // 2) A read loop that races reads against timeouts can orphan a
+    //    pending read and swallow the very chunk holding the ack. One
+    //    background pump into a buffer loses nothing.
     const reader = port.readable.getReader();
     const writer = port.writable.getWriter();
     const decoder = new TextDecoder();
@@ -483,45 +534,131 @@
       try {
         for (;;) {
           const { value, done } = await reader.read();
-          if (done) break;
-          if (value) buf += decoder.decode(value, { stream: true });
+          if (done) { cfgDiagAppend('rx_stream_done'); break; }
+          if (value) {
+            const text = decoder.decode(value, { stream: true });
+            buf += text;
+            cfgDiagAppend('rx', value.length + 'B  "' + cfgDiagPreview(text) + '"');
+          }
         }
-      } catch (e) { /* cancelled on cleanup */ }
+      } catch (e) { cfgDiagAppend('rx_stream_end', cfgDiagPreview(e.message)); }
     })();
     try {
       statusCb('Waiting for the display to finish booting\u2026', '');
+      cfgDiagAppend('boot_pause_start', '1800ms (bytes arriving DURING the pause = boot ' +
+                    'banner; bytes arriving AFTER = the reset outlived the pause)');
       await new Promise(r => setTimeout(r, 1800));
+      cfgDiagAppend('boot_pause_end', 'buffered so far: ' + buf.length + 'B');
       const payload = JSON.stringify({ cmd: 'set_config', ...defaultConfigFor(boardId) }) + '\n';
       let acked = false;
+      let ackAt = -1;
       for (let attempt = 1; attempt <= 3 && !acked; attempt++) {
         statusCb('Sending settings' + (attempt > 1 ? ' (attempt ' + attempt + ' of 3)' : '') + '\u2026', '');
+        cfgDiagAppend('tx_set_config', 'attempt ' + attempt + '/3  ' + payload.length + 'B  "' +
+                      cfgDiagPreview(payload.trim()) + '"');
         await writer.write(new TextEncoder().encode(payload));
         const deadline = Date.now() + 2500;
         while (Date.now() < deadline && !acked) {
           await new Promise(r => setTimeout(r, 150));
-          if (buf.includes('"ack":"set_config"')) acked = true;
+          const idx = buf.indexOf('"ack":"set_config"');
+          if (idx >= 0) { acked = true; ackAt = idx; }
+        }
+        cfgDiagAppend(acked ? 'ack_set_config_FOUND' : 'ack_wait_timeout',
+                      acked ? 'attempt ' + attempt : 'attempt ' + attempt +
+                      '  buffered: ' + buf.length + 'B');
+      }
+      if (!acked) {
+        cfgDiagAppend('RESULT', 'FAILED -- no set_config ack in 3 attempts');
+        statusCb('The display never confirmed the settings \u2014 nothing was saved. ' +
+                 'Unplug it, plug it back in, and run this step again. If it keeps ' +
+                 'failing, expand \u201cConfigure diagnostics\u201d below, copy the log, and ' +
+                 'send it along \u2014 it records exactly what happened.', 'err');
+        return false;
+      }
+      // Verification read (new in 0.9.9.1): an ack means the firmware
+      // RECEIVED the command; get_config proves the settings STUCK.
+      statusCb('Verifying\u2026', '');
+      const searchFrom = ackAt + 1;
+      cfgDiagAppend('tx_get_config', 'verification');
+      await writer.write(new TextEncoder().encode('{"cmd":"get_config"}\n'));
+      let verified = null;
+      const vDeadline = Date.now() + 2500;
+      while (Date.now() < vDeadline && verified === null) {
+        await new Promise(r => setTimeout(r, 150));
+        const vIdx = buf.indexOf('"ack":"get_config"', searchFrom);
+        if (vIdx >= 0) {
+          const lineStart = buf.lastIndexOf('\n', vIdx) + 1;
+          const lineEnd = buf.indexOf('\n', vIdx);
+          const line = buf.slice(lineStart, lineEnd < 0 ? undefined : lineEnd);
+          try {
+            const cfg = JSON.parse(line);
+            verified = { configured: !!cfg.configured, board: cfg.board };
+          } catch (e) { /* partial line; keep waiting */ }
         }
       }
-      if (acked) {
-        statusCb('Settings applied \u2713 \u2014 the screen should light up in a few ' +
-                 'seconds (it restarts once to bring the display up).', 'ok');
-        return true;
+      if (verified) {
+        cfgDiagAppend('verify_read', 'configured=' + verified.configured +
+                      ' board=' + verified.board);
+      } else {
+        cfgDiagAppend('verify_timeout', 'no get_config reply in 2500ms');
       }
-      statusCb('The display never confirmed the settings \u2014 nothing was saved. ' +
-               'Unplug it, plug it back in, and run this step again. If it keeps ' +
-               'failing, open the flasher\u2019s \u201cLogs & console\u201d and check what the ' +
-               'device prints after reset.', 'err');
-      return false;
+      if (verified && !verified.configured) {
+        cfgDiagAppend('RESULT', 'FAILED -- device acked but reports configured=false ' +
+                      '(settings did not persist)');
+        statusCb('The display acknowledged the settings but still reports itself as ' +
+                 'unconfigured \u2014 they didn\u2019t stick. Expand \u201cConfigure ' +
+                 'diagnostics\u201d below, copy the log, and send it along.', 'err');
+        return false;
+      }
+      cfgDiagAppend('RESULT', verified ? 'OK -- configured and verified'
+                                       : 'OK (ack received; verification read timed out)');
+      statusCb('Settings applied \u2713 \u2014 the screen should light up in a few ' +
+               'seconds (it restarts once to bring the display up).', 'ok');
+      return true;
     } catch (e) {
+      cfgDiagAppend('EXCEPTION', cfgDiagPreview(e.message));
       statusCb('Error while sending settings: ' + e.message, 'err');
       return false;
     } finally {
+      try { navigator.serial.removeEventListener('disconnect', onDisc); } catch (e) {}
+      try { navigator.serial.removeEventListener('connect', onConn); } catch (e) {}
       try { writer.releaseLock(); } catch (e) {}
       try { await reader.cancel(); } catch (e) {}
       try { reader.releaseLock(); } catch (e) {}
       try { await port.close(); } catch (e) {}
+      cfgDiagAppend('port_closed');
     }
   }
+
+  // THE WIRE-IN (0.9.9.1): the computer path's Next button now actually
+  // runs the configure step. Success advances; failure re-enables the
+  // button for a retry and reveals an honest escape hatch (the
+  // dashboard's first-time setup can configure later -- since 0.9.7.4
+  // an unconfigured device renders honestly there).
+  document.getElementById('computer-flash-next').addEventListener('click', async () => {
+    const btn = document.getElementById('computer-flash-next');
+    const skip = document.getElementById('computer-config-skip');
+    const statusEl = document.getElementById('computer-flash-status');
+    const cb = (msg, cls) => {
+      statusEl.textContent = msg;
+      statusEl.className = 'status-msg' + (cls ? ' ' + cls : '');
+    };
+    btn.disabled = true;
+    let ok = false;
+    try {
+      ok = await pushDefaultConfigViaWebSerial(selectedBoard, cb);
+    } finally {
+      btn.disabled = false;
+    }
+    if (ok) {
+      goTo(stepIndex + 1);
+    } else {
+      skip.style.display = '';
+    }
+  });
+  document.getElementById('computer-config-skip').addEventListener('click', () => {
+    goTo(stepIndex + 1);
+  });
 
   // Best-effort status update -- NOT the sole way to proceed, since ESP
   // Web Tools' own UI already shows clear completion/error feedback

@@ -2,6 +2,18 @@
   "_comment": "Human-readable changelog for the dashboard's About tab -- written for people, not commit archaeologists. The dashboard fetches this from GitHub at page load (baked copy as fallback), so add an entry here with each release and every install sees it. Newest first. Dates are YYYY-MM-DD.",
   "entries": [
     {
+      "version": "0.9.9.1",
+      "date": "2026-07-13",
+      "title": "The Mac setup bug, found and fixed",
+      "notes": [
+        "The long-standing bug where setting up via a computer left the display unconfigured is fixed -- and the cause was humbling: the wizard's configure step was never actually connected to the Next button. The wizard flashed the firmware, then walked straight to 'You're all set' without ever sending the settings. The ZimaBlade path always worked because it configures server-side.",
+        "The computer path's Next button now runs the configure step for real: it asks for the port again, waits out the boot, sends the settings with retries, and -- new -- reads the configuration back to verify it actually persisted before declaring success. If it fails, you can retry or continue and configure later from the dashboard.",
+        "Every step of that process is now recorded into a 'Configure diagnostics' panel with a copy button -- if anything still misbehaves on your hardware, one copied log pinpoints it.",
+        "New RELEASING.md documents the release checklist, and the ROADMAP's hardware-verification backlog is consolidated into one big session list.",
+        "No firmware change -- this was app-side all along."
+      ]
+    },
+    {
       "version": "0.9.9.0",
       "date": "2026-07-13",
       "title": "The housekeeping release (firmware 1.29)",
