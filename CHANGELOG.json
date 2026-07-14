@@ -2,6 +2,17 @@
   "_comment": "Human-readable changelog for the dashboard's About tab -- written for people, not commit archaeologists. The dashboard fetches this from GitHub at page load (baked copy as fallback), so add an entry here with each release and every install sees it. Newest first. Dates are YYYY-MM-DD.",
   "entries": [
     {
+      "version": "0.9.8.6",
+      "date": "2026-07-13",
+      "title": "Fresh brand assets everywhere (firmware 1.28)",
+      "notes": [
+        "New TinyScreen logos throughout, generated from the official vector artwork: the sidebar wordmark, the About page icon, every favicon size, and the ZimaOS app icon.",
+        "New firmware 1.28: the boot splash screen carries the new wordmark. Flash from the General tab after updating to see it.",
+        "The vector source files now ship in the repository, so every raster asset can be regenerated from one source of truth.",
+        "Browsers cache images aggressively -- if you still see the old logo after updating, do a hard refresh."
+      ]
+    },
+    {
       "version": "0.9.8.5",
       "date": "2026-07-13",
       "title": "Centered saver digits, tidier previews note, better About on phones (firmware 1.27)",

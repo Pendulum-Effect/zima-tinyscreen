@@ -6,7 +6,7 @@ eventually hit context limits). It carries the current state, what's
 done, and what's next, so any session can pick up where the last left
 off. **Delete this file at the final 1.0 release.**
 
-Snapshot as of **0.9.8.5** (2026-07-13).
+Snapshot as of **0.9.8.6** (2026-07-13).
 
 ## How to get oriented fast
 
@@ -503,6 +503,25 @@ None are worth a dedicated round; fold them into other work or skip.
         logo). Verified at 400px: desc below icon, full width.
   - [ ] HARDWARE VERIFY (1.27): saver optical centering with 2- and
         3-digit temps; degree position during a roll.
+
+- [x] **0.9.8.6** New brand assets from SVG sources (FIRMWARE 1.28):
+  - SVGs rasterized via headless Chromium (no rsvg/cairosvg in the
+    toolchain; Playwright renders SVG natively with transparent
+    screenshots) -- keep this trick for future asset rounds.
+  - Regenerated: branding/TinyScreen_Logo.png (1544x790 native
+    aspect), branding/TinyScreen_Icon.png (1200), favicon-16..512
+    (LANCZOS from the 1200 master), legacy webflasher/logo.png
+    (unreferenced but shipped -- refreshed rather than stranded),
+    NEW assets/icon.png (512, ZimaOS convention), and
+    firmware tiny_logo.h (180x92 RGB565 splash -> firmware 1.28).
+  - SVG sources ship in webflasher/branding/ as the single source of
+    truth.
+  - app/docker-compose.customapp.filled.yml icon URL now points at
+    the real assets/icon.png raw URL (was a your-repo placeholder).
+  - NOTE: the new icon has a WHITE inner fill (old was dark) -- looks
+    intentional in the new artwork; check the About page + ZimaOS
+    tile once deployed.
+  - [ ] HARDWARE VERIFY (1.28): splash wordmark on boot.
 
 ## Next up (suggested order)
 
