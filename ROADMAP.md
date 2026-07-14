@@ -6,7 +6,7 @@ eventually hit context limits). It carries the current state, what's
 done, and what's next, so any session can pick up where the last left
 off. **Delete this file at the final 1.0 release.**
 
-Snapshot as of **0.9.9.3** (2026-07-14).
+Snapshot as of **0.9.9.4** (2026-07-14).
 
 ## How to get oriented fast
 
@@ -582,14 +582,22 @@ None are worth a dedicated round; fold them into other work or skip.
      number with trailing degree, hold-and-roll rhythm (1.26/1.27).
   4. Reboot with the collector stopped: splash wordmark + "loading..."
      (1.28, new art).
-  5. [IN PROGRESS] 1.3" compact mode: user session found elements
-     overflowing -- root cause was full-size type in a scaled box,
-     fixed in 1.30 with 200/240-ratio companion faces (faceFor()).
-     A TEMPORARY amber border marks the box in compact mode for photo
-     verification of all layouts. REMOVE THE BORDER BEFORE 1.0
-     (drawCurrentScreen, the aspectMode == 2 drawRect). If the box
-     itself sits wrong against the physical cutout, the 200px constant
-     in computeLayoutBox is the nudge point.
+  5. [ROUND 2] 1.3" compact mode: 1.30's font fix was necessary but
+     the photo review (13 shots against the amber border) exposed the
+     deeper bug, fixed in 1.31: SY() is a POSITION function (bakes in
+     LY) and was used for LENGTHS all over -- ring/dial radii
+     (SY(76) = 103px in compact instead of 63), the dial %-gap, net
+     value-to-arrow gaps, bars dot radius (SY(2) = 42px blobs!), bar
+     y/height. New SL() length scaler + every LY-cancellation idiom
+     (`- SY(n) + LY` etc.) mechanically rewritten to SL. Host test
+     guards the SY/SL distinction. NET UTIL up row now kGraphPurple
+     (was COL_TEAL_2, indistinguishable from teal on glass).
+     Correct-by-luck on LY=0 modes explains why full-screen and real
+     1.3" boards never showed it. The amber border STAYS for one
+     re-verification round -- REMOVE BEFORE 1.0 (drawCurrentScreen,
+     aspectMode == 2 drawRect). If the border sits wrong against the
+     physical cutout, the 200px constant in computeLayoutBox is the
+     nudge point.
   6. Backlog from older rounds: saver brightness on glass (0.9.6.1),
      unplug/replug recovery with the app running (0.9.6.0), PIN layer
      on real hardware + phone (0.9.5.x).

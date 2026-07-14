@@ -2,6 +2,18 @@
   "_comment": "Human-readable changelog for the dashboard's About tab -- written for people, not commit archaeologists. The dashboard fetches this from GitHub at page load (baked copy as fallback), so add an entry here with each release and every install sees it. Newest first. Dates are YYYY-MM-DD.",
   "entries": [
     {
+      "version": "0.9.9.4",
+      "date": "2026-07-14",
+      "title": "The compact-mode geometry bug, found by thirteen photos (firmware 1.31)",
+      "notes": [
+        "New firmware 1.31, fixing every fit issue the photo review found. The root cause was a single subtle mistake repeated across layouts: the position helper (which includes the layout box's offset) was being used to compute lengths -- radii, gaps, bar sizes. Every such length was silently inflated by the box offset, which is zero on full-screen and 1.3\" displays (why those always looked right) but 20px in 1:1 on the 1.69\" and 40px in compact mode.",
+        "Fixed by that one insight: ring and dial radii no longer balloon past their bounds; the dial's percent sign sits next to its digits; network values sit next to their arrows; the bars page's decorative dots are dots again instead of giant blobs (they were being drawn with a 42-pixel radius); and the bars sit where they belong instead of drifting down the screen.",
+        "The NET UTIL layout's upload row is now purple instead of a second, nearly identical teal -- the two directions are actually distinguishable on glass, matching the network graph's color pairing.",
+        "The amber verification border stays on in compact mode for one more round -- flash 1.31 and re-walk the layouts to confirm, then it comes off.",
+        "Flash from the General tab after updating."
+      ]
+    },
+    {
       "version": "0.9.9.3",
       "date": "2026-07-14",
       "title": "Compact mode gets matching type, plus a temporary verification border (firmware 1.30)",

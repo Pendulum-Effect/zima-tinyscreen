@@ -395,6 +395,18 @@ int main() {
     pendingRestart = false;
   }
 
+  // ---- 1.31: SL scales lengths without the box offset ----
+  {
+    int sLX = LX, sLY = LY, sLW = LW, sLH = LH;
+    // compact box on the 1.69" panel: the case that exposed the bug
+    LX = 20; LY = 40; LW = 200; LH = 200;
+    CHECK(SL(76) == 76 * 200 / 240);       // ring radius: 63, not 103
+    CHECK(SY(76) == 40 + 76 * 200 / 240);  // SY is a position: offset included
+    LY = 0; LH = 240;                      // full-height box: SL == SY - LY
+    CHECK(SL(76) == 76 && SY(76) == 76);
+    LX = sLX; LY = sLY; LW = sLW; LH = sLH;
+  }
+
   // ---- 1.30: compact-mode companion faces ----
   {
     int savedLW = LW;
