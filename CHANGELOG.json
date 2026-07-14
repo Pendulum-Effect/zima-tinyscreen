@@ -2,6 +2,17 @@
   "_comment": "Human-readable changelog for the dashboard's About tab -- written for people, not commit archaeologists. The dashboard fetches this from GitHub at page load (baked copy as fallback), so add an entry here with each release and every install sees it. Newest first. Dates are YYYY-MM-DD.",
   "entries": [
     {
+      "version": "0.9.9.0",
+      "date": "2026-07-13",
+      "title": "The housekeeping release (firmware 1.29)",
+      "notes": [
+        "A full review-and-cleanup pass ahead of 1.0: Python checked for unused imports (none found), the firmware compiled clean under the strictest warning flags (one latent warning found and fixed), and no leftover debug statements or TODO markers anywhere.",
+        "New firmware 1.29: removes one dead helper function left behind by the rolling-numbers work, and fixes the compiler warning above. No behavior changes -- flash at your leisure.",
+        "Repository cleanup: Python bytecode caches and an old unused logo file are gone from releases (they were never needed), and the README now opens with the TinyScreen wordmark.",
+        "The product calls itself TinyScreen -- one word -- everywhere now."
+      ]
+    },
+    {
       "version": "0.9.8.7",
       "date": "2026-07-13",
       "title": "A friendlier ZimaOS install",

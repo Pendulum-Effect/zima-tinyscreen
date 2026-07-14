@@ -6,7 +6,7 @@ eventually hit context limits). It carries the current state, what's
 done, and what's next, so any session can pick up where the last left
 off. **Delete this file at the final 1.0 release.**
 
-Snapshot as of **0.9.8.7** (2026-07-13).
+Snapshot as of **0.9.9.0** (2026-07-13).
 
 ## How to get oriented fast
 
@@ -538,6 +538,28 @@ None are worth a dedicated round; fold them into other work or skip.
     everything it asks about is now pre-filled and labeled.
   - [ ] VERIFY on ZimaOS: fresh import -> confirmation screen shows
         the labels; tile shows the new icon after install.
+
+- [x] **0.9.9.0** Pre-1.0 review + housekeeping (FIRMWARE 1.29):
+  - Review results: Python AST-checked for unused imports across
+    app/collector/tools -- all clean; firmware compiles with ZERO
+    warnings under -Wall -Wextra (one -Wrestrict on the roll engine's
+    shown->from copy found and fixed via strncpy); no console.log /
+    debugger / TODO / FIXME anywhere in shipped code.
+  - Removed: dead drawTextBottomRight (orphaned when mist moved to
+    drawValueTextBottomRight), webflasher/logo.png (236KB,
+    unreferenced since 0.9.7.0), all __pycache__ litter.
+  - Folder structure reviewed and deliberately UNCHANGED: app/
+    collector/ firmware/ firmware_arduino/ tests/ tools/ webflasher/
+    assets/ is logical; moving things would churn CI + Dockerfile
+    paths for zero gain.
+  - README opens with the wordmark; product name unified to
+    "TinyScreen" (one word) everywhere.
+  - Release zips no longer contain __pycache__ (user notified to
+    git rm -r --cached them on GitHub; .gitignore already covers
+    them).
+  - Honest scope note: dashboard.html/wizard.html got targeted checks
+    (debug statements, dead patterns), not a line-by-line dead-CSS/JS
+    audit -- the single-file design is deliberate and documented.
 
 ## Next up (suggested order)
 

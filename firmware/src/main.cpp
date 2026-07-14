@@ -42,7 +42,7 @@
 // "Software Version" field via the get_config command below. No
 // auto-update-checking mechanism exists yet (that's a separate, not-yet
 // -built feature) -- this just answers "what's currently on my device."
-#define FIRMWARE_VERSION "1.28"  // two-part scheme as of 1.19 (was x.y.z)
+#define FIRMWARE_VERSION "1.29"  // two-part scheme as of 1.19 (was x.y.z)
 
 // Note: screen dimensions are NOT fixed -- board 1 (1.69") is 240x280,
 // taller than board 0's 240x240. See screenW/screenH globals, set from
@@ -736,7 +736,11 @@ RollSlot &rollStepAt(int slotIdx, int ownerId, const char *s) {
     if (r.active) { r.active = false; activeRolls--; }
     r.lastRoll = now;  // arriving on a page starts calm
   } else if (action == 1) {
-    snprintf(r.from, sizeof(r.from), "%s", r.shown);
+    // shown -> from within the same struct: distinct members, but
+    // snprintf's restrict contract makes GCC nervous; strncpy states
+    // the intent without the warning.
+    strncpy(r.from, r.shown, sizeof(r.from) - 1);
+    r.from[sizeof(r.from) - 1] = '\0';
     snprintf(r.shown, sizeof(r.shown), "%s", s);
     r.up = strtof(r.shown, nullptr) >= strtof(r.from, nullptr);
     r.animStart = now;
@@ -987,12 +991,6 @@ void drawTextTopRight(const char *s, int rightX, int topY) {
   canvas->print(s);
 }
 
-void drawTextBottomRight(const char *s, int rightX, int bottomY) {
-  int16_t x1, y1; uint16_t w, h;
-  canvas->getTextBounds(s, 0, 0, &x1, &y1, &w, &h);
-  canvas->setCursor(rightX - (int)w - x1, bottomY - (int)h - y1);
-  canvas->print(s);
-}
 
 // The gauge pages, restyled (1.5.0) to match the dashboard previews:
 // small-caps title up top, a dark full-circle track, the accent arc with

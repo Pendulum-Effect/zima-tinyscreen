@@ -1,4 +1,7 @@
-# Tiny Screen
+<p align="center">
+  <img src="webflasher/branding/TinyScreen_Logo.png" alt="TinyScreen" width="380">
+</p>
+
 
 A tiny external status display for a ZimaBlade / ZimaBoard: a Python
 collector reads vital stats and streams them over USB serial to an
