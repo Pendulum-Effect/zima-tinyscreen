@@ -395,6 +395,25 @@ int main() {
     pendingRestart = false;
   }
 
+  // ---- 1.30: compact-mode companion faces ----
+  {
+    int savedLW = LW;
+    LW = 240;  // full/square: identity
+    CHECK(faceFor(&tiny_sans_bold_32) == &tiny_sans_bold_32);
+    CHECK(faceFor(&tiny_sans_18) == &tiny_sans_18);
+    LW = 200;  // compact: every face steps to its 200/240 companion
+    CHECK(faceFor(&tiny_sans_18) == &tiny_sans_15);
+    CHECK(faceFor(&tiny_sans_bold_20) == &tiny_sans_bold_17);
+    CHECK(faceFor(&tiny_sans_bold_24) == &tiny_sans_bold_20);
+    CHECK(faceFor(&tiny_sans_bold_32) == &tiny_sans_bold_27);
+    CHECK(faceFor(&tiny_sans_bold_36) == &tiny_sans_bold_30);
+    CHECK(faceFor(&tiny_sans_bold_64) == &tiny_sans_bold_53);
+    CHECK(faceFor(&tiny_sans_bold_128) == &tiny_sans_bold_107);
+    // unknown faces pass through untouched
+    CHECK(faceFor(&tiny_sans_bold_107) == &tiny_sans_bold_107);
+    LW = savedLW;
+  }
+
   // ---- 1.25: gauge moves in lockstep with its digits ----
   {
     currentPageIdx = 0;

@@ -6,7 +6,7 @@ eventually hit context limits). It carries the current state, what's
 done, and what's next, so any session can pick up where the last left
 off. **Delete this file at the final 1.0 release.**
 
-Snapshot as of **0.9.9.1** (2026-07-13).
+Snapshot as of **0.9.9.3** (2026-07-14).
 
 ## How to get oriented fast
 
@@ -390,11 +390,8 @@ None are worth a dedicated round; fold them into other work or skip.
       boot-pause byte accounting), and a post-ack get_config
       VERIFICATION read -- an ack proves receipt, configured=true
       proves persistence.
-  - [ ] HARDWARE CONFIRM: run the Mac path end-to-end on 0.9.9.1. The
-        original timing suspects (reset >1.8s, re-enumeration, CDC
-        buffering) have never actually been exercised -- this code has
-        never run against hardware. If it misfires, the diagnostics
-        panel tells us which suspect in one run.
+  - [x] HARDWARE CONFIRMED (0.9.9.3): the Mac path works end-to-end
+        on real hardware. The 1.0 blocker is closed.
 
 - [x] **0.9.8.0** Screen-feel round (FIRMWARE 1.22):
   - [x] Rolling numbers on every layout's primary readout: shared
@@ -575,8 +572,8 @@ None are worth a dedicated round; fold them into other work or skip.
 
 - [ ] **THE BIG HARDWARE SESSION** -- one sitting clears the whole
       verification backlog (details live in each release's Done entry):
-  1. Mac path end-to-end on 0.9.9.1 (THE 1.0 gate; see the fixed bug
-     entry above -- diagnostics panel reports everything).
+  1. [DONE 0.9.9.3] Mac path end-to-end -- confirmed working on real
+     hardware. The 1.0 gate is cleared.
   2. Flash firmware 1.29, watch a ring page a minute: gauge/digit
      LOCKSTEP (nothing moves in the hold, everything fires together;
      1.25) and general roll feel (1.22/1.23 largely cleared by video
@@ -585,8 +582,14 @@ None are worth a dedicated round; fold them into other work or skip.
      number with trailing degree, hold-and-roll rhythm (1.26/1.27).
   4. Reboot with the collector stopped: splash wordmark + "loading..."
      (1.28, new art).
-  5. Drop the display behind the 1.3" cutout: compact aspect mode --
-     200px came from math, not measurement; report if it wants a nudge.
+  5. [IN PROGRESS] 1.3" compact mode: user session found elements
+     overflowing -- root cause was full-size type in a scaled box,
+     fixed in 1.30 with 200/240-ratio companion faces (faceFor()).
+     A TEMPORARY amber border marks the box in compact mode for photo
+     verification of all layouts. REMOVE THE BORDER BEFORE 1.0
+     (drawCurrentScreen, the aspectMode == 2 drawRect). If the box
+     itself sits wrong against the physical cutout, the 200px constant
+     in computeLayoutBox is the nudge point.
   6. Backlog from older rounds: saver brightness on glass (0.9.6.1),
      unplug/replug recovery with the app running (0.9.6.0), PIN layer
      on real hardware + phone (0.9.5.x).

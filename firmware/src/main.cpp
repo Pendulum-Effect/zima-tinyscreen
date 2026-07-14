@@ -42,7 +42,7 @@
 // "Software Version" field via the get_config command below. No
 // auto-update-checking mechanism exists yet (that's a separate, not-yet
 // -built feature) -- this just answers "what's currently on my device."
-#define FIRMWARE_VERSION "1.29"  // two-part scheme as of 1.19 (was x.y.z)
+#define FIRMWARE_VERSION "1.30"  // two-part scheme as of 1.19 (was x.y.z)
 
 // Note: screen dimensions are NOT fixed -- board 1 (1.69") is 240x280,
 // taller than board 0's 240x240. See screenW/screenH globals, set from
@@ -406,6 +406,26 @@ int mapSwipeDeltaX(int rawDx, int rawDy, int rotationDeg) {
 // bottom or leave a big gap -- X doesn't need this since all boards so
 // far share the same 240 width.
 int SY(int y) { return LY + y * LH / 240; }
+
+// Compact-mode companion faces (1.30). In the 1.3" compact box every
+// COORDINATE scales by LH/240 (~0.83) through SY() and the LW-derived
+// radii, but the type was still full-size -- 20% oversized relative to
+// its own layout, which read as "elements not staying within their
+// bounds" on real glass. Each face maps to a companion generated at
+// the same 200/240 ratio (see tools/genfont.py), so compact mode
+// renders a pixel-faithful miniature. The screensaver and splash
+// deliberately bypass this: they ignore the aspect box by design.
+const GFXfont *faceFor(const GFXfont *f) {
+  if (LW >= 220) return f;               // full + square: untouched
+  if (f == &tiny_sans_18)       return &tiny_sans_15;
+  if (f == &tiny_sans_bold_20)  return &tiny_sans_bold_17;
+  if (f == &tiny_sans_bold_24)  return &tiny_sans_bold_20;
+  if (f == &tiny_sans_bold_32)  return &tiny_sans_bold_27;
+  if (f == &tiny_sans_bold_36)  return &tiny_sans_bold_30;
+  if (f == &tiny_sans_bold_64)  return &tiny_sans_bold_53;
+  if (f == &tiny_sans_bold_128) return &tiny_sans_bold_107;
+  return f;
+}
 int SYB(int fromBottom) { return LY + LH - fromBottom * LH / 240; }
 int CX() { return LX + LW / 2; }
 
@@ -1005,7 +1025,7 @@ void drawRingGauge(const char *title, float pct, uint16_t color,
   int sweep = (int)(pct * 3.6f);
 
   // Title, preview-style: uppercase, subtext, spaced from the top edge
-  canvas->setFont(&tiny_sans_18);
+  canvas->setFont(faceFor(&tiny_sans_18));
   canvas->setTextColor(COL_SUBTEXT);
   drawTextCentered(title, cx, SY(26));
 
@@ -1024,13 +1044,13 @@ void drawRingGauge(const char *title, float pct, uint16_t color,
   }
 
   // Percentage, centered in the ring -- rolls when it changes (1.22)
-  canvas->setFont(&tiny_sans_bold_32);
+  canvas->setFont(faceFor(&tiny_sans_bold_32));
   canvas->setTextColor(COL_TEXT);
   drawValueTextCentered(0, bigText, cx, cy);
 
   // Secondary line under the ring (watts, GB, ...)
   if (sub && sub[0]) {
-    canvas->setFont(&tiny_sans_18);
+    canvas->setFont(faceFor(&tiny_sans_18));
     canvas->setTextColor(COL_TEXT);
     drawTextCentered(sub, cx, SY(216));
   }
@@ -1087,7 +1107,7 @@ void drawDialGauge(const char *label, float pct, const char *sub) {
   char num[8];
   snprintf(num, sizeof(num), "%d", (int)round(pct));
   int16_t nx1, ny1, px1, py1; uint16_t nw, nh, pw, ph;
-  canvas->setFont(&tiny_sans_bold_36);        // 1.5x the 24px rows below
+  canvas->setFont(faceFor(&tiny_sans_bold_36));        // 1.5x the 24px rows below
   canvas->getTextBounds(num, 0, 0, &nx1, &ny1, &nw, &nh);
   int baseY = cy - (int)nh / 2 - ny1;         // center the digits on cy
   canvas->setTextColor(COL_TEXT);
@@ -1095,19 +1115,19 @@ void drawDialGauge(const char *label, float pct, const char *sub) {
   // it to the target width made it sit still while rolling digits
   // glided underneath -- the "the % moves around" report.
   int numRight = drawValueTextCentered(0, num, cx, cy);
-  canvas->setFont(&tiny_sans_18);
+  canvas->setFont(faceFor(&tiny_sans_18));
   canvas->getTextBounds("%", 0, 0, &px1, &py1, &pw, &ph);
   canvas->setCursor(numRight + SY(4) - px1, baseY);
   canvas->print("%");
 
   // Page label in the dial's bottom gap
-  canvas->setFont(&tiny_sans_bold_24);
+  canvas->setFont(faceFor(&tiny_sans_bold_24));
   canvas->setTextColor(COL_TEXT);
   drawTextCentered(label, cx, SY(168));
 
   // Stats line under everything (watts/temp, used GB, ...)
   if (sub && sub[0]) {
-    canvas->setFont(&tiny_sans_bold_24);
+    canvas->setFont(faceFor(&tiny_sans_bold_24));
     canvas->setTextColor(COL_TEXT);
     drawTextCentered(sub, cx, SY(212));
   }
@@ -1145,7 +1165,7 @@ void drawAppRing(const char *title, const char *headline,
                  const char *secondary, float pct) {
   int left = LX + 16 * LW / 240;
 
-  canvas->setFont(&tiny_sans_18);
+  canvas->setFont(faceFor(&tiny_sans_18));
   canvas->setTextColor(COL_SUBTEXT);
   drawTextTopLeft(title, left, LY + SY(16) - LY);
 
@@ -1153,7 +1173,7 @@ void drawAppRing(const char *title, const char *headline,
   // strings are novels: "Intel(R) Atom(TM) Pr..")
   char head[40];
   snprintf(head, sizeof(head), "%s", headline);
-  canvas->setFont(&tiny_sans_bold_24);
+  canvas->setFont(faceFor(&tiny_sans_bold_24));
   int maxW = LW - 32 * LW / 240;
   int16_t x1, y1; uint16_t w, h;
   canvas->getTextBounds(head, 0, 0, &x1, &y1, &w, &h);
@@ -1187,13 +1207,13 @@ void drawAppRing(const char *title, const char *headline,
 
   // Secondary stat (grey, e.g. watts), then the big percentage
   if (secondary && secondary[0]) {
-    canvas->setFont(&tiny_sans_bold_20);
+    canvas->setFont(faceFor(&tiny_sans_bold_20));
     canvas->setTextColor(COL_SUBTEXT);
     drawTextTopLeft(secondary, left, LY + SY(126) - LY);
   }
   char big[8];
   snprintf(big, sizeof(big), "%d%%", (int)round(pct));
-  canvas->setFont(&tiny_sans_bold_36);
+  canvas->setFont(faceFor(&tiny_sans_bold_36));
   canvas->setTextColor(COL_TEXT);
   drawTextTopLeft(big, left, LY + SY(182) - LY);
   canvas->setFont();
@@ -1270,10 +1290,10 @@ void drawStorageDots(const char *title, const char *name,
                      float totalGb, float pct) {
   int left = LX + SY(16) - LY;
 
-  canvas->setFont(&tiny_sans_18);
+  canvas->setFont(faceFor(&tiny_sans_18));
   canvas->setTextColor(COL_SUBTEXT);
   drawTextTopLeft(title, left, LY + SY(16) - LY);
-  canvas->setFont(&tiny_sans_bold_24);
+  canvas->setFont(faceFor(&tiny_sans_bold_24));
   canvas->setTextColor(COL_TEXT);
   drawTextTopLeft(name, left, LY + SY(42) - LY);
 
@@ -1300,12 +1320,12 @@ void drawStorageDots(const char *title, const char *name,
   }
 
   // Available space, the number people actually plan around
-  canvas->setFont(&tiny_sans_18);
+  canvas->setFont(faceFor(&tiny_sans_18));
   canvas->setTextColor(COL_SUBTEXT);
   drawTextTopLeft("Available", left, LY + SY(166) - LY);
   char avail[16];
   snprintf(avail, sizeof(avail), "%.1f GB", totalGb * (100.0f - pct) / 100.0f);
-  canvas->setFont(&tiny_sans_bold_36);
+  canvas->setFont(faceFor(&tiny_sans_bold_36));
   canvas->setTextColor(COL_TEXT);
   drawTextTopLeft(avail, left, LY + SY(186) - LY);
   canvas->setFont();
@@ -1320,7 +1340,7 @@ void drawDriveCard(const char *title, const char *health,
   int left = LX + 16 * LW / 240;
   int right = LX + LW - 16 * LW / 240;
 
-  canvas->setFont(&tiny_sans_bold_24);
+  canvas->setFont(faceFor(&tiny_sans_bold_24));
   canvas->setTextColor(COL_TEXT);
   drawTextTopLeft(title, left, LY + SY(14) - LY);
 
@@ -1354,7 +1374,7 @@ void drawDriveCard(const char *title, const char *health,
     const char *label = "Healthy";
     if (strcmp(health, "warning") == 0) { hc = rgb565(255, 184, 84); label = "Warning"; }
     else if (strcmp(health, "critical") == 0) { hc = rgb565(255, 92, 74); label = "Critical"; }
-    canvas->setFont(&tiny_sans_18);
+    canvas->setFont(faceFor(&tiny_sans_18));
     int16_t x1, y1; uint16_t w, h;
     canvas->getTextBounds(label, 0, 0, &x1, &y1, &w, &h);
     int padX = 10 * LW / 240, pillH = 26 * LH / 240;
@@ -1371,7 +1391,7 @@ void drawDriveCard(const char *title, const char *health,
   bool hasPill = health && health[0];
   float usedGb = totalGb * pct / 100.0f;
   char line[28];
-  canvas->setFont(&tiny_sans_18);
+  canvas->setFont(faceFor(&tiny_sans_18));
   canvas->setTextColor(COL_TEXT);
   snprintf(line, sizeof(line), usedGb < 99.95f ? "Used: %.1f GB" : "Used: %.0f GB", usedGb);
   drawTextTopLeft(line, colX, SY(hasPill ? 104 : 78));
@@ -1506,14 +1526,14 @@ void drawNetBars() {
   int left = LX + SY(16) - LY;
   int right = LX + LW - SY(16) + LY;
 
-  canvas->setFont(&tiny_sans_18);
+  canvas->setFont(faceFor(&tiny_sans_18));
   canvas->setTextColor(COL_SUBTEXT);
   drawTextTopLeft("Network", left, LY + SY(16) - LY);
   // the widget's little ... affordance, purely decorative
   for (int i = 0; i < 3; i++) {
     canvas->fillCircle(right - SY(20) + i * SY(8), LY + SY(22) - LY, SY(2), COL_SUBTEXT);
   }
-  canvas->setFont(&tiny_sans_bold_24);
+  canvas->setFont(faceFor(&tiny_sans_bold_24));
   canvas->setTextColor(COL_TEXT);
   const char *iface = stats.net_iface.length() ? stats.net_iface.c_str() : "--";
   drawTextTopLeft(iface, left, LY + SY(42) - LY);
@@ -1530,15 +1550,15 @@ void drawNetBars() {
     // A triple-digit "289 Mbps" can crowd "Download" -- measure both
     // and fall back to the short label instead of colliding.
     int16_t x1, y1; uint16_t lw, lh, vw, vh;
-    canvas->setFont(&tiny_sans_bold_24);
+    canvas->setFont(faceFor(&tiny_sans_bold_24));
     canvas->getTextBounds(val, 0, 0, &x1, &y1, &vw, &vh);
-    canvas->setFont(&tiny_sans_18);
+    canvas->setFont(faceFor(&tiny_sans_18));
     canvas->getTextBounds(rows[i].label, 0, 0, &x1, &y1, &lw, &lh);
     const char *label = ((int)lw + (int)vw + SY(10) - LY > right - left)
                           ? rows[i].shortLabel : rows[i].label;
     canvas->setTextColor(COL_SUBTEXT);
     drawTextTopLeft(label, left, rows[i].labelY);
-    canvas->setFont(&tiny_sans_bold_24);
+    canvas->setFont(faceFor(&tiny_sans_bold_24));
     canvas->setTextColor(COL_TEXT);
     drawValueTextTopRight(i, val, right, rows[i].labelY - SY(4));
 
@@ -1584,7 +1604,7 @@ void drawNetGraph() {
   int slots[2] = {CX() - 104 * LW / 240, CX() + 10 * LW / 240};
   const char *vals[2] = {rxs, txs};
   const uint16_t cols[2] = {kGraphTeal, kGraphPurple};
-  canvas->setFont(&tiny_sans_bold_20);
+  canvas->setFont(faceFor(&tiny_sans_bold_20));
   for (int s = 0; s < 2; s++) {
     int acx = slots[s] + aw / 2;
     for (int o = 0; o < 2; o++) {             // double-strike for weight
@@ -1643,7 +1663,7 @@ void drawPageNet() {
   }
   // Matches the dashboard preview: NET UTIL. title, then down/up rates
   // with little arrowheads, in the smooth fonts.
-  canvas->setFont(&tiny_sans_18);
+  canvas->setFont(faceFor(&tiny_sans_18));
   canvas->setTextColor(COL_SUBTEXT);
   drawTextCentered("NET UTIL.", CX(), SY(26));
 
@@ -1660,7 +1680,7 @@ void drawPageNet() {
   int ax = LX + SY(34) - LY;
   canvas->fillTriangle(ax, rowY + 10, ax + 12, rowY + 10, ax + 6, rowY + 20, COL_TEAL);
   canvas->fillRect(ax + 4, rowY, 5, 10, COL_TEAL);
-  canvas->setFont(&tiny_sans_bold_32);
+  canvas->setFont(faceFor(&tiny_sans_bold_32));
   canvas->setTextColor(COL_TEAL);
   drawTextTopLeft(rx, ax + SY(24), rowY - SY(6));
 
@@ -1668,7 +1688,7 @@ void drawPageNet() {
   rowY = SY(150);
   canvas->fillTriangle(ax, rowY + 10, ax + 12, rowY + 10, ax + 6, rowY, COL_TEAL_2);
   canvas->fillRect(ax + 4, rowY + 10, 5, 10, COL_TEAL_2);
-  canvas->setFont(&tiny_sans_bold_32);
+  canvas->setFont(faceFor(&tiny_sans_bold_32));
   canvas->setTextColor(COL_TEAL_2);
   drawTextTopLeft(tx, ax + SY(24), rowY - SY(6));
 
@@ -1851,15 +1871,15 @@ void drawTempMist(bool animated) {
 
   // Labels, widget-style, in the smooth fonts
   int padX = LX + SY(14) - LY;
-  canvas->setFont(&tiny_sans_18);
+  canvas->setFont(faceFor(&tiny_sans_18));
   canvas->setTextColor(COL_SUBTEXT);
   drawTextTopLeft("CPU", padX, LY + SY(14) - LY);
-  canvas->setFont(&tiny_sans_bold_20);
+  canvas->setFont(faceFor(&tiny_sans_bold_20));
   canvas->setTextColor(COL_TEXT);
   drawTextTopLeft("Temperature", padX, LY + SY(34) - LY);
 
   // Degree unit, top-right -- DejaVu has a real degree glyph (0xB0)
-  canvas->setFont(&tiny_sans_18);
+  canvas->setFont(faceFor(&tiny_sans_18));
   canvas->setTextColor(COL_TEXT);
   drawTextTopRight("\xB0""C", LX + LW - SY(14) + LY, LY + SY(14) - LY);
 
@@ -1907,6 +1927,12 @@ void drawCurrentScreen() {
   canvas->fillScreen(COL_BG);
   drawPage(config.pages[currentPageIdx]);
   drawStaleBanner();
+  // TEMPORARY diagnostic (0.9.9.3, remove before 1.0): in compact 1.3"
+  // mode, outline the layout box so photos of each layout have a
+  // visible landmark exactly at the cutout boundary.
+  if (config.aspectMode == 2) {
+    canvas->drawRect(LX, LY, LW, LH, 0xFD20);  // amber, 1px
+  }
   canvas->flush();
 }
 

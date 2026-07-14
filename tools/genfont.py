@@ -31,6 +31,16 @@ FONTS = [
     # the face to just those characters (others become zero-size glyphs)
     # -- used to keep huge display faces from bloating the header.
     ("tiny_sans_18",       DEJAVU,      18,  None),
+    # Compact-mode companions (firmware 1.30): the 1.3" compact aspect
+    # box scales every coordinate by 200/240; these faces are the same
+    # scale applied to the type, so compact mode renders a faithful
+    # miniature instead of full-size text overflowing shrunken bounds.
+    ("tiny_sans_15",       DEJAVU,      15,  None),
+    ("tiny_sans_bold_17",  DEJAVU_BOLD, 17,  None),
+    ("tiny_sans_bold_27",  DEJAVU_BOLD, 27,  None),
+    ("tiny_sans_bold_30",  DEJAVU_BOLD, 30,  None),
+    ("tiny_sans_bold_53",  DEJAVU_BOLD, 53,  None),
+    ("tiny_sans_bold_107", DEJAVU_BOLD, 107, "0123456789-. \xb0"),
     ("tiny_sans_bold_20",  DEJAVU_BOLD, 20,  None),
     ("tiny_sans_bold_24",  DEJAVU_BOLD, 24,  None),
     ("tiny_sans_bold_32",  DEJAVU_BOLD, 32,  None),

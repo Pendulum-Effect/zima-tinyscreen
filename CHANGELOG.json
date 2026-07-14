@@ -2,6 +2,18 @@
   "_comment": "Human-readable changelog for the dashboard's About tab -- written for people, not commit archaeologists. The dashboard fetches this from GitHub at page load (baked copy as fallback), so add an entry here with each release and every install sees it. Newest first. Dates are YYYY-MM-DD.",
   "entries": [
     {
+      "version": "0.9.9.3",
+      "date": "2026-07-14",
+      "title": "Compact mode gets matching type, plus a temporary verification border (firmware 1.30)",
+      "notes": [
+        "New firmware 1.30, fixing the 1.3\" compact mode's overflow: every coordinate in that mode scales down to the 200-pixel box, but the text was still rendering at full size -- about 20% too large for its own layout, which is why elements collided and spilled past their bounds. Every typeface now has a companion generated at exactly the compact ratio, so compact mode renders a faithful miniature of the full layout.",
+        "The screensaver and boot splash are deliberately unaffected -- they ignore the compact box by design and keep their full-size type.",
+        "TEMPORARY: in compact mode, a thin amber border now outlines the exact layout box. It marks where the 1.3\" cutout boundary sits so photos of each layout can verify the fix against a visible landmark. It will be removed before 1.0.",
+        "The Mac setup path is confirmed working on real hardware -- the 1.0 blocker is officially closed.",
+        "Flash from the General tab after updating."
+      ]
+    },
+    {
       "version": "0.9.9.1",
       "date": "2026-07-13",
       "title": "The Mac setup bug, found and fixed",
