@@ -153,12 +153,12 @@ x-casaos:
     description:
       en_us: "Streams live CPU/RAM/MMC/network/temperature stats from this ZimaOS device to a small ESP32-S3 round display, and hosts a one-click WebSerial flasher for the ESP32-S3 firmware."
     developer: Pendulum-Effect
-    icon: https://raw.githubusercontent.com/your-repo/tinyscreen/main/icon.png
+    icon: https://raw.githubusercontent.com/Pendulum-Effect/zima-tinyscreen/master/assets/icon.png
     screenshot_link: []
     tagline:
       en_us: "A tiny external dashboard for your ZimaBoard/ZimaBlade"
     title:
-      en_us: "Tiny Screen Dashboard"
+      en_us: "TinyScreen"
     port_map: "8989"
     scheme: http
     index: /
