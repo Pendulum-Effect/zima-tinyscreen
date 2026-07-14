@@ -2,6 +2,17 @@
   "_comment": "Human-readable changelog for the dashboard's About tab -- written for people, not commit archaeologists. The dashboard fetches this from GitHub at page load (baked copy as fallback), so add an entry here with each release and every install sees it. Newest first. Dates are YYYY-MM-DD.",
   "entries": [
     {
+      "version": "0.9.8.7",
+      "date": "2026-07-13",
+      "title": "A friendlier ZimaOS install",
+      "notes": [
+        "The custom-app compose files now carry complete ZimaOS metadata: the WebUI port, scheme, and path are declared up front, and every port, volume, and environment variable on ZimaOS's import confirmation screen has its own plain-language label explaining what it's for and whether to touch it.",
+        "ZimaOS still shows its standard 'please confirm' notice when importing any custom app -- that dialog is ZimaOS's own and appears for every import -- but everything it asks about now arrives pre-filled and labeled, so it's read, OK, done.",
+        "The official TinyScreen app icon ships in the repository, and the compose points ZimaOS at it -- a clean tile in the app drawer instead of a placeholder.",
+        "No app, dashboard, or firmware changes -- compose files and one icon only. Existing installs don't need to reinstall; the metadata matters when importing fresh."
+      ]
+    },
+    {
       "version": "0.9.8.6",
       "date": "2026-07-13",
       "title": "Fresh brand assets everywhere (firmware 1.28)",

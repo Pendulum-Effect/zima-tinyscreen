@@ -98,21 +98,68 @@ services:
         source: /DATA/AppData/tinyscreen-dashboard/state
         target: /opt/tinyscreen/state
     privileged: true
-
+    # Labels for ZimaOS's import/confirmation form: every port, volume,
+    # and env var the form lists carries its own explanation, so the
+    # post-import "please confirm" screen needs reading, not research.
     x-casaos:
-      architectures:
-        - amd64
-      main: tinyscreen-dashboard
-      author: you
-      category: Utilities
-      description:
-        en_us: "Streams live CPU/RAM/MMC/network/temperature stats from this ZimaOS device to a small ESP32-S3 round display, and hosts a one-click WebSerial flasher for the ESP32-S3 firmware."
-      developer: you
-      icon: https://raw.githubusercontent.com/your-repo/tinyscreen/main/icon.png
-      screenshot_link: []
-      tagline:
-        en_us: "A tiny external dashboard for your ZimaBoard/ZimaBlade"
-      title:
-        en_us: "Tiny Screen Dashboard"
-      port_map: "8989"
-      index: /
+      ports:
+        - container: "8989"
+          description:
+            en_us: "Dashboard WebUI (HTTP)"
+        - container: "8990"
+          description:
+            en_us: "Dashboard over HTTPS -- needed by the browser-based firmware flasher (WebSerial requires a secure context)"
+      volumes:
+        - container: /dev
+          description:
+            en_us: "Host device nodes, so the app can talk to the ESP32-S3 display over USB serial (survives replugs; requires privileged)"
+        - container: /host_net_dev
+          description:
+            en_us: "Read-only view of the host's network counters (/proc/1/net/dev) for accurate network stats without host networking"
+        - container: /host_data
+          description:
+            en_us: "Read-only view of /DATA for storage usage stats (onboard MMC and storage pools)"
+        - container: /opt/tinyscreen/certs
+          description:
+            en_us: "Persists the HTTPS certificate across restarts (AppData)"
+        - container: /var/run/docker.sock
+          description:
+            en_us: "Docker control socket -- powers the one-click self-updater"
+        - container: /opt/tinyscreen/state
+          description:
+            en_us: "Persists app state and update history across container swaps (AppData)"
+      envs:
+        - container: TINYSCREEN_SERIAL_PORT
+          description:
+            en_us: "Leave empty for auto-detect; set e.g. /dev/ttyACM0 only if auto-detect picks the wrong serial device"
+        - container: TINYSCREEN_STATUS_FILE
+          description:
+            en_us: "Internal path for collector stats -- leave as-is"
+        - container: TINYSCREEN_HOST_NET_DEV
+          description:
+            en_us: "Internal path of the mounted host network counters -- leave as-is"
+        - container: TINYSCREEN_DATA_PATH
+          description:
+            en_us: "Internal path of the mounted /DATA view -- leave as-is"
+
+# App-level metadata for ZimaOS/CasaOS (canonical: root level).
+# The service-level x-casaos above carries per-field labels instead.
+x-casaos:
+    architectures:
+      - amd64
+    main: tinyscreen-dashboard
+    author: Pendulum-Effect
+    category: Utilities
+    description:
+      en_us: "Streams live CPU/RAM/MMC/network/temperature stats from this ZimaOS device to a small ESP32-S3 round display, and hosts a one-click WebSerial flasher for the ESP32-S3 firmware."
+    developer: Pendulum-Effect
+    icon: https://raw.githubusercontent.com/your-repo/tinyscreen/main/icon.png
+    screenshot_link: []
+    tagline:
+      en_us: "A tiny external dashboard for your ZimaBoard/ZimaBlade"
+    title:
+      en_us: "Tiny Screen Dashboard"
+    port_map: "8989"
+    scheme: http
+    index: /
+    store_app_id: tinyscreen-dashboard

@@ -6,7 +6,7 @@ eventually hit context limits). It carries the current state, what's
 done, and what's next, so any session can pick up where the last left
 off. **Delete this file at the final 1.0 release.**
 
-Snapshot as of **0.9.8.6** (2026-07-13).
+Snapshot as of **0.9.8.7** (2026-07-13).
 
 ## How to get oriented fast
 
@@ -522,6 +522,22 @@ None are worth a dedicated round; fold them into other work or skip.
     intentional in the new artwork; check the About page + ZimaOS
     tile once deployed.
   - [ ] HARDWARE VERIFY (1.28): splash wordmark on boot.
+
+- [x] **0.9.8.7** ZimaOS install polish (compose + icon only):
+  - x-casaos restructured to the CANONICAL split: app metadata at
+    ROOT level (was service-level; a service-level duplicate-key
+    collision from the first attempt was the tell), per-field labels
+    at SERVICE level (2 ports, 6 volumes, 4 envs, each with plain-
+    language en_us descriptions). Added scheme: http,
+    store_app_id, real author/developer. Both customapp compose
+    files kept in sync.
+  - assets/icon.png replaced with the official TinyScreen_AppIcon
+    (1200x1200, dark tile); compose icon URL already points at it.
+  - NOTE (honesty): ZimaOS's "Attention" dialog on custom-app import
+    is unconditional -- it appears for every import. The win is that
+    everything it asks about is now pre-filled and labeled.
+  - [ ] VERIFY on ZimaOS: fresh import -> confirmation screen shows
+        the labels; tile shows the new icon after install.
 
 ## Next up (suggested order)
 
