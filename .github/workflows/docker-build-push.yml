@@ -231,3 +231,4 @@ jobs:
           tags: |
             ${{ secrets.DOCKERHUB_USERNAME }}/tinyscreen-dashboard:latest
             ${{ secrets.DOCKERHUB_USERNAME }}/tinyscreen-dashboard:${{ env.APP_VERSION }}
+
