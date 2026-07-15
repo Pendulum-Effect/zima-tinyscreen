@@ -2,6 +2,18 @@
   "_comment": "Human-readable changelog for the dashboard's About tab -- written for people, not commit archaeologists. The dashboard fetches this from GitHub at page load (baked copy as fallback), so add an entry here with each release and every install sees it. Newest first. Dates are YYYY-MM-DD.",
   "entries": [
     {
+      "version": "0.9.9.5",
+      "date": "2026-07-14",
+      "title": "Bars values come home, and the README gets a face (firmware 1.32)",
+      "notes": [
+        "New firmware 1.32, one fix: on the ZimaOS Bars network layout, the speed readouts sat exactly one box-offset too high in 1:1 and 1.3\" compact modes -- the last surviving member of the position-versus-length bug family, hiding as a subtraction of two positions. Values now sit on their label lines everywhere.",
+        "The README grew a visual tour: live-preview renders of all eighteen page-and-style combinations in a gallery, plus screenshots of the dashboard's General tab and the setup wizard's board-choice step.",
+        "Two reserved sections were added to the README -- AI Disclosure and About the Author -- awaiting words from the author.",
+        "The amber compact-mode verification border is still on for this round; it comes off once the bars fix is confirmed on glass.",
+        "Flash from the General tab after updating."
+      ]
+    },
+    {
       "version": "0.9.9.4",
       "date": "2026-07-14",
       "title": "The compact-mode geometry bug, found by thirteen photos (firmware 1.31)",

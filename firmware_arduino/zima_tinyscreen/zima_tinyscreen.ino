@@ -42,7 +42,7 @@
 // "Software Version" field via the get_config command below. No
 // auto-update-checking mechanism exists yet (that's a separate, not-yet
 // -built feature) -- this just answers "what's currently on my device."
-#define FIRMWARE_VERSION "1.31"  // two-part scheme as of 1.19 (was x.y.z)
+#define FIRMWARE_VERSION "1.32"  // two-part scheme as of 1.19 (was x.y.z)
 
 // Note: screen dimensions are NOT fixed -- board 1 (1.69") is 240x280,
 // taller than board 0's 240x240. See screenW/screenH globals, set from
@@ -1578,7 +1578,11 @@ void drawNetBars() {
     drawTextTopLeft(label, left, rows[i].labelY);
     canvas->setFont(faceFor(&tiny_sans_bold_24));
     canvas->setTextColor(COL_TEXT);
-    drawValueTextTopRight(i, val, right, rows[i].labelY - SY(4));
+    // labelY - SL(4): subtracting SY(4) here cancelled the box offset
+    // out of a POSITION (pos - pos = length) -- the 0.9.9.4 review's
+    // one survivor, caught by round-2 photos: values sat exactly LY
+    // too high in 1:1 and compact.
+    drawValueTextTopRight(i, val, right, rows[i].labelY - SL(4));
 
     int barY = rows[i].labelY + SL(28);
     int barH = SL(10), barW = right - left;

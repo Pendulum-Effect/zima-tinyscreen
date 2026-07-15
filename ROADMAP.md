@@ -6,7 +6,7 @@ eventually hit context limits). It carries the current state, what's
 done, and what's next, so any session can pick up where the last left
 off. **Delete this file at the final 1.0 release.**
 
-Snapshot as of **0.9.9.4** (2026-07-14).
+Snapshot as of **0.9.9.5** (2026-07-14).
 
 ## How to get oriented fast
 
@@ -597,7 +597,12 @@ None are worth a dedicated round; fold them into other work or skip.
      re-verification round -- REMOVE BEFORE 1.0 (drawCurrentScreen,
      aspectMode == 2 drawRect). If the border sits wrong against the
      physical cutout, the 200px constant in computeLayoutBox is the
-     nudge point.
+     nudge point. ROUND 3 (0.9.9.5): user's full sweep confirmed 1.31
+     everywhere except ONE survivor -- bars value anchors sat LY too
+     high in 1:1/compact (labelY - SY(4): pos minus pos = length where
+     a position was needed; the inverse of the 1.31 class, and a line
+     the 1.31 audit explicitly misjudged). Fixed with SL. Border still
+     on; remove after this round confirms.
   6. Backlog from older rounds: saver brightness on glass (0.9.6.1),
      unplug/replug recovery with the app running (0.9.6.0), PIN layer
      on real hardware + phone (0.9.5.x).

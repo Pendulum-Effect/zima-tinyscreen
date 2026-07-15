@@ -38,6 +38,16 @@ else is runtime config.
   look with live previews), Screen (brightness, rotation, night mode,
   screensaver), and About.
 
+<p align="center">
+  <img src="assets/readme/dashboard-general.png" alt="The dashboard's General tab" width="720">
+</p>
+<p align="center"><em>The dashboard's General tab: device health, firmware, and updates at a glance.</em></p>
+
+<p align="center">
+  <img src="assets/readme/wizard-step2.png" alt="The setup wizard's board-choice step" width="560">
+</p>
+<p align="center"><em>The first-time setup wizard walking through board selection.</em></p>
+
 ## Screen layouts
 
 Every stat page has a default look plus alternates, picked per-page in
@@ -56,6 +66,65 @@ The ZimaOS Drive layout shows real drive health: the system eMMC via the
 kernel's JEDEC health registers, and SATA/NVMe pool drives via
 `smartctl` (bundled in the app image). Health is polled every ten
 minutes; when it can't be determined, the pill simply isn't shown.
+
+### Gallery
+
+Every page and style, rendered by the dashboard's live preview:
+
+
+**CPU Utilization**
+
+<table><tr>
+<td align="center"><img src="assets/readme/layout-cpu-utilization--tinyscreen-default.png" width="170"><br><sub>TinyScreen (default)</sub></td>
+<td align="center"><img src="assets/readme/layout-cpu-utilization--zimaos-dial.png" width="170"><br><sub>ZimaOS Dial</sub></td>
+<td align="center"><img src="assets/readme/layout-cpu-utilization--zima-app-ring.png" width="170"><br><sub>Zima App Ring</sub></td>
+</tr></table>
+
+
+**CPU Temperature**
+
+<table><tr>
+<td align="center"><img src="assets/readme/layout-cpu-temperature--tinyscreen-default.png" width="170"><br><sub>TinyScreen (default)</sub></td>
+<td align="center"><img src="assets/readme/layout-cpu-temperature--zima-app-mist.png" width="170"><br><sub>Zima App Mist</sub></td>
+<td align="center"><img src="assets/readme/layout-cpu-temperature--zima-app-mist-animated.png" width="170"><br><sub>Zima App Mist (animated)</sub></td>
+</tr></table>
+
+
+**Network Utilization**
+
+<table><tr>
+<td align="center"><img src="assets/readme/layout-network-utilization--tinyscreen-default.png" width="170"><br><sub>TinyScreen (default)</sub></td>
+<td align="center"><img src="assets/readme/layout-network-utilization--zima-app-bars.png" width="170"><br><sub>Zima App Bars</sub></td>
+<td align="center"><img src="assets/readme/layout-network-utilization--zimaos-graph.png" width="170"><br><sub>ZimaOS Graph</sub></td>
+</tr></table>
+
+
+**RAM Utilization**
+
+<table><tr>
+<td align="center"><img src="assets/readme/layout-ram-utilization--tinyscreen-default.png" width="170"><br><sub>TinyScreen (default)</sub></td>
+<td align="center"><img src="assets/readme/layout-ram-utilization--zimaos-dial.png" width="170"><br><sub>ZimaOS Dial</sub></td>
+<td align="center"><img src="assets/readme/layout-ram-utilization--zima-app-ring.png" width="170"><br><sub>Zima App Ring</sub></td>
+</tr></table>
+
+
+**MMC Usage**
+
+<table><tr>
+<td align="center"><img src="assets/readme/layout-mmc-usage--tinyscreen-default.png" width="170"><br><sub>TinyScreen (default)</sub></td>
+<td align="center"><img src="assets/readme/layout-mmc-usage--zima-app-dots.png" width="170"><br><sub>Zima App Dots</sub></td>
+<td align="center"><img src="assets/readme/layout-mmc-usage--zimaos-drive.png" width="170"><br><sub>ZimaOS Drive</sub></td>
+</tr></table>
+
+
+**NAS Usage**
+
+<table><tr>
+<td align="center"><img src="assets/readme/layout-nas-usage--tinyscreen-default.png" width="170"><br><sub>TinyScreen (default)</sub></td>
+<td align="center"><img src="assets/readme/layout-nas-usage--zima-app-dots.png" width="170"><br><sub>Zima App Dots</sub></td>
+<td align="center"><img src="assets/readme/layout-nas-usage--zimaos-drive.png" width="170"><br><sub>ZimaOS Drive</sub></td>
+</tr></table>
+
 
 ## Repo map
 
@@ -261,3 +330,11 @@ copying the closest existing layout, registering it in the layout
 whitelist (`handleSetConfig`) and the dashboard's `PAGE_LAYOUTS`, and
 drawing. The panel is RGB565 (16-bit); smooth gradients need dithering
 -- see the mist layout for the pattern.
+
+## AI Disclosure
+
+<!-- Section reserved -- content by the author. -->
+
+## About the Author
+
+<!-- Section reserved -- content by the author. -->
