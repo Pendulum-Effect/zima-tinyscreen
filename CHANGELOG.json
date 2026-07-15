@@ -2,6 +2,18 @@
   "_comment": "Human-readable changelog for the dashboard's About tab -- written for people, not commit archaeologists. The dashboard fetches this from GitHub at page load (baked copy as fallback), so add an entry here with each release and every install sees it. Newest first. Dates are YYYY-MM-DD.",
   "entries": [
     {
+      "version": "0.9.9.6",
+      "date": "2026-07-14",
+      "title": "Border off, hostname on the saver, and a README ready for company (firmware 1.33)",
+      "notes": [
+        "New firmware 1.33. The amber verification border is gone -- it did its job across three rounds of photo evidence and retires with honors.",
+        "New screensaver style: Hostname & IP. The two things you actually want from an idle homelab box across the room -- who it is and where it lives. The hostname sizes itself to fit, the IP sits beneath, and both come fresh from the collector each second.",
+        "The Layouts tab's style menus now read in one consistent order everywhere: TinyScreen first, ZimaOS second, Zima App third. The README's table and gallery follow suit.",
+        "The README got its final pre-1.0 polish: your section icons throughout, an illustrated step-by-step ZimaOS install guide with a direct link to the compose file, the wizard screenshot reframed with its window, and a full accuracy pass -- the protocol reference now documents every field the collector actually sends, including the new identity pair.",
+        "Flash from the General tab after updating to get the new saver and lose the border."
+      ]
+    },
+    {
       "version": "0.9.9.5",
       "date": "2026-07-14",
       "title": "Bars values come home, and the README gets a face (firmware 1.32)",

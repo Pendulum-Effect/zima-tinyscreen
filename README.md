@@ -9,7 +9,7 @@ ESP32-S3, which draws them on a small LCD. Packaged as a one-click ZimaOS
 app that also hosts a browser settings dashboard and a WebSerial firmware
 flasher -- no toolchain needed to set up the ESP32-S3.
 
-## Hardware: one firmware, two boards
+## <img src="assets/readme/icons/Hardware.png" width="26" align="top"> Hardware: one firmware, two boards
 
 The same firmware supports both boards; which one you have is chosen in
 the settings, not at compile time:
@@ -26,7 +26,7 @@ Arduino IDE -- the opposite of board 0. This is compile-time, which is
 why CI builds two binaries (see `firmware/platformio.ini`); everything
 else is runtime config.
 
-## The two web pages
+## <img src="assets/readme/icons/Webpages.png" width="26" align="top"> The two web pages
 
 - **`wizard.html`** -- first-time setup: pick your board, flash the
   firmware, send the initial settings. Works two ways: through your
@@ -35,8 +35,11 @@ else is runtime config.
   ZimaBlade itself, plain HTTP is fine).
 - **`dashboard.html`** -- the daily driver: General (device status, app
   updates, debugging, HTTPS certificate), Layouts (choose each page's
-  look with live previews), Screen (brightness, rotation, night mode,
-  screensaver), and About.
+  look with live previews), Screen (brightness, rotation, aspect
+  ratio -- including a 1.3" compact mode for 240x280 panels behind
+  smaller cutouts -- night mode, and a screensaver with four styles:
+  drifting clock, temperature, hostname & IP, or screen off), and
+  About.
 
 <p align="center">
   <img src="assets/readme/dashboard-general.png" alt="The dashboard's General tab" width="720">
@@ -48,19 +51,19 @@ else is runtime config.
 </p>
 <p align="center"><em>The first-time setup wizard walking through board selection.</em></p>
 
-## Screen layouts
+## <img src="assets/readme/icons/ScreenLayouts.png" width="26" align="top"> Screen layouts
 
 Every stat page has a default look plus alternates, picked per-page in
 the dashboard's Layouts tab:
 
-| Page        | Layouts                                                |
-| ----------- | ------------------------------------------------------ |
-| Temperature | TinyScreen default, Zima App Mist (+ animated)          |
-| CPU         | default, ZimaOS Dial, Zima App Ring                     |
-| RAM         | default, ZimaOS Dial, Zima App Ring                     |
-| Network     | default, Zima App Bars, ZimaOS Graph (rolling history)  |
-| System disk | default, Zima App Dots, ZimaOS Drive (with health pill) |
-| NAS pool    | default, Zima App Dots, ZimaOS Drive (with health pill) |
+| Page        | Layouts                                                 |
+| ----------- | ------------------------------------------------------- |
+| CPU         | TinyScreen default, ZimaOS Dial, Zima App Ring           |
+| RAM         | TinyScreen default, ZimaOS Dial, Zima App Ring           |
+| Temperature | TinyScreen default, Zima App Mist (+ animated)           |
+| Network     | TinyScreen default, ZimaOS Graph (rolling history), Zima App Bars |
+| System disk | TinyScreen default, ZimaOS Drive (with health pill), Zima App Dots |
+| NAS pool    | TinyScreen default, ZimaOS Drive (with health pill), Zima App Dots |
 
 The ZimaOS Drive layout shows real drive health: the system eMMC via the
 kernel's JEDEC health registers, and SATA/NVMe pool drives via
@@ -80,6 +83,13 @@ Every page and style, rendered by the dashboard's live preview:
 <td align="center"><img src="assets/readme/layout-cpu-utilization--zima-app-ring.png" width="170"><br><sub>Zima App Ring</sub></td>
 </tr></table>
 
+**RAM Utilization**
+
+<table><tr>
+<td align="center"><img src="assets/readme/layout-ram-utilization--tinyscreen-default.png" width="170"><br><sub>TinyScreen (default)</sub></td>
+<td align="center"><img src="assets/readme/layout-ram-utilization--zimaos-dial.png" width="170"><br><sub>ZimaOS Dial</sub></td>
+<td align="center"><img src="assets/readme/layout-ram-utilization--zima-app-ring.png" width="170"><br><sub>Zima App Ring</sub></td>
+</tr></table>
 
 **CPU Temperature**
 
@@ -89,44 +99,31 @@ Every page and style, rendered by the dashboard's live preview:
 <td align="center"><img src="assets/readme/layout-cpu-temperature--zima-app-mist-animated.png" width="170"><br><sub>Zima App Mist (animated)</sub></td>
 </tr></table>
 
-
 **Network Utilization**
 
 <table><tr>
 <td align="center"><img src="assets/readme/layout-network-utilization--tinyscreen-default.png" width="170"><br><sub>TinyScreen (default)</sub></td>
-<td align="center"><img src="assets/readme/layout-network-utilization--zima-app-bars.png" width="170"><br><sub>Zima App Bars</sub></td>
 <td align="center"><img src="assets/readme/layout-network-utilization--zimaos-graph.png" width="170"><br><sub>ZimaOS Graph</sub></td>
+<td align="center"><img src="assets/readme/layout-network-utilization--zima-app-bars.png" width="170"><br><sub>Zima App Bars</sub></td>
 </tr></table>
-
-
-**RAM Utilization**
-
-<table><tr>
-<td align="center"><img src="assets/readme/layout-ram-utilization--tinyscreen-default.png" width="170"><br><sub>TinyScreen (default)</sub></td>
-<td align="center"><img src="assets/readme/layout-ram-utilization--zimaos-dial.png" width="170"><br><sub>ZimaOS Dial</sub></td>
-<td align="center"><img src="assets/readme/layout-ram-utilization--zima-app-ring.png" width="170"><br><sub>Zima App Ring</sub></td>
-</tr></table>
-
 
 **MMC Usage**
 
 <table><tr>
 <td align="center"><img src="assets/readme/layout-mmc-usage--tinyscreen-default.png" width="170"><br><sub>TinyScreen (default)</sub></td>
-<td align="center"><img src="assets/readme/layout-mmc-usage--zima-app-dots.png" width="170"><br><sub>Zima App Dots</sub></td>
 <td align="center"><img src="assets/readme/layout-mmc-usage--zimaos-drive.png" width="170"><br><sub>ZimaOS Drive</sub></td>
+<td align="center"><img src="assets/readme/layout-mmc-usage--zima-app-dots.png" width="170"><br><sub>Zima App Dots</sub></td>
 </tr></table>
-
 
 **NAS Usage**
 
 <table><tr>
 <td align="center"><img src="assets/readme/layout-nas-usage--tinyscreen-default.png" width="170"><br><sub>TinyScreen (default)</sub></td>
-<td align="center"><img src="assets/readme/layout-nas-usage--zima-app-dots.png" width="170"><br><sub>Zima App Dots</sub></td>
 <td align="center"><img src="assets/readme/layout-nas-usage--zimaos-drive.png" width="170"><br><sub>ZimaOS Drive</sub></td>
+<td align="center"><img src="assets/readme/layout-nas-usage--zima-app-dots.png" width="170"><br><sub>Zima App Dots</sub></td>
 </tr></table>
 
-
-## Repo map
+## <img src="assets/readme/icons/RepoStructure.png" width="26" align="top"> Repo map
 
 ```
 zima-tinyscreen/
@@ -142,6 +139,11 @@ zima-tinyscreen/
 │                         "Testing" below
 ├── tools/genfont.py      Regenerates tiny_fonts.h from DejaVu TTFs
 ├── webflasher/           wizard.html + dashboard.html + firmware binaries
+├── assets/               App icon (ZimaOS tile) and README media
+│                         (screenshots, layout gallery, section icons)
+├── .github/workflows/    CI: firmware-tree drift guard, all test suites,
+│                         both firmware builds, Docker image push
+├── RELEASING.md          The release checklist
 ├── about.json            Content for the dashboard's About tab
 ├── CHANGELOG.json        Version history shown in the dashboard
 ├── ROADMAP.md            Working handover doc on the road to 1.0
@@ -151,18 +153,42 @@ zima-tinyscreen/
 
 ## Install as a ZimaOS app
 
-The GitHub Actions workflow (`.github/workflows/docker-build-push.yml`)
-builds the image -- including both firmware variants -- and pushes it to
-Docker Hub on every push to `master`. On the ZimaOS box: **App Store → +
-→ Install a Custom App → Docker Compose tab**, paste
-`app/docker-compose.customapp.yml` (with your Docker Hub username filled
-in), Install. Later updates are one click inside the dashboard itself
-(General → Software Version), which pulls the new image and swaps the
-container via a helper.
+Installation is a copy-paste of one file into ZimaOS -- no SSH needed.
 
-For local development: `cd app && docker compose up -d --build`.
+1. Grab the ready-to-paste compose file:
+   [`app/docker-compose.customapp.filled.yml`](app/docker-compose.customapp.filled.yml)
+   (open it on GitHub, hit the copy-file button).
+2. In ZimaOS, open the **App Store**, click the **+** next to the
+   search bar, and pick **Install a customized app**. The settings
+   form opens:
 
-## Flashing and configuring
+<p align="center">
+  <img src="assets/readme/zimaos-custom-app.png" alt="ZimaOS custom app settings form" width="620">
+</p>
+
+3. Don't fill it in by hand -- click the **import** icon in the
+   dialog's top-right corner and choose **Docker Compose**:
+
+<p align="center">
+  <img src="assets/readme/zimaos-import.png" alt="ZimaOS Docker Compose import dialog" width="620">
+</p>
+
+4. Paste the compose file into the text box (or drop the file itself)
+   and hit **Submit**. ZimaOS pre-fills everything -- image, ports,
+   volumes, icon, and per-field explanations of what each mount is
+   for. Skim the confirmation, click **Install**, and TinyScreen
+   appears in your app drawer.
+
+ZimaOS shows a general "please confirm your settings" notice on every
+custom-app import; with this compose file there's nothing to change --
+everything arrives pre-filled and labeled. For more on custom apps,
+see the [ZimaOS documentation](https://www.zimaspace.com/docs/).
+
+The app updates itself afterward: **General -> Check for Update** pulls
+the newest image and swaps the container (with automatic rollback if
+the new one fails to come up).
+
+## <img src="assets/readme/icons/FlashingConfiguring.png" width="26" align="top"> Flashing and configuring
 
 Plugged into your computer: open `https://<zima-ip>:8990/wizard.html`
 (HTTPS matters -- browsers only allow WebSerial on secure origins).
@@ -179,7 +205,7 @@ Encrypt or any CA, PEM). New connections switch to it immediately, and
 `/api/upload_cert` also accepts multipart POSTs so a certbot deploy hook
 can push renewals automatically. Reverting to self-signed is one click.
 
-## Building the firmware yourself
+## <img src="assets/readme/icons/BuildFirmware.png" width="26" align="top"> Building the firmware yourself
 
 Arduino IDE: open `firmware_arduino/zima_tinyscreen/` (folder name must
 match the .ino). Remember the CDC-on-boot setting for your board (above).
@@ -202,7 +228,7 @@ by `tools/genfont.py` into `firmware/src/tiny_fonts.h`. Add sizes or
 characters there, rerun it, and copy the header into the Arduino sketch
 folder too.
 
-## The protocol
+## <img src="assets/readme/icons/Protocol.png" width="26" align="top"> The protocol
 
 The collector sends one JSON line per second over USB serial (115200
 baud). Current fields:
@@ -213,7 +239,7 @@ baud). Current fields:
  "mmc_total_gb":28.0,"mmc_pct":61.2,"mmc_label":"ZimaOS-HD","mmc_health":"healthy",
  "nas_available":true,"nas_total_gb":268.0,"nas_pct":5.3,"nas_label":"SSD",
  "nas_health":"healthy","net_rx_mbps":12.4,"net_tx_mbps":3.1,"net_iface":"eth0",
- "utc_min":857,"local_min":557}
+ "utc_min":857,"local_min":557,"hostname":"zimablade","ip":"192.168.1.42"}
 ```
 
 Units worth knowing: **RAM is GiB** (÷1024³ -- matching how operating
@@ -223,20 +249,23 @@ ZimaOS and drive vendors label disks). `cpu_watts` comes from Intel RAPL
 and is -1 when unavailable; health fields are "healthy" / "warning" /
 "critical" / "" (unknown). `local_min` is minutes-since-midnight in the
 dashboard-configured time zone, DST-corrected by the collector.
+`hostname` and `ip` identify the host for the Hostname & IP
+screensaver (the IP is the primary outbound interface's address).
 
 Commands share the same channel -- any line with a `"cmd"` field is a
 command, not stats:
 
 ```
 {"cmd":"set_config","board":1,"pages":["cpu","temp"],"layouts":{"cpu":"ring"},
- "cycle_mode":"auto","cycle_seconds":10,"brightness":80}
+ "cycle_mode":"auto","cycle_seconds":10,"brightness":80,
+ "aspect_mode":0,"saver_enabled":true,"saver_minutes":10,"saver_style":"hostip"}
 ```
 
 The firmware acks with `{"ack":"set_config","ok":true}` and persists to
 NVS. The dashboard (WebSerial) and `server.py`'s `/api/configure`
 (direct serial) both speak this same protocol.
 
-## Security model
+## <img src="assets/readme/icons/SecurityModel.png" width="26" align="top"> Security model
 
 Written down so the trust decisions are explicit rather than accidental.
 
@@ -290,13 +319,15 @@ dependency set is pinned and small. If your threat model can't accept
 that, don't mount the socket -- the app runs fine without it, you just
 lose the self-update button.
 
-## Testing
+## <img src="assets/readme/icons/Testing.png" width="26" align="top"> Testing
 
 Everything testable without hardware is tested without hardware:
 
 ```
 # firmware logic (compiles main.cpp against stub Arduino/GFX/JSON headers)
-g++ -std=c++17 -I tests/firmware_stubs -o /tmp/fw_test tests/test_firmware_logic.cpp && /tmp/fw_test
+g++ -std=c++17 -Wall -Wextra -Wno-unused-parameter -I tests/firmware_stubs \
+    -o /tmp/fw_test tests/test_firmware_logic.cpp && /tmp/fw_test
+# (zero warnings expected -- CI treats the strict flags as the baseline)
 
 # server endpoints (updater, cert manager) and collector health logic
 python3 tests/test_updater.py
@@ -321,7 +352,7 @@ behavior (enumeration, bootloader entry, a board actually surviving a
 flash) -- the serial *protocol* and the collector pause/resume
 choreography around it are now covered by the pty-pair suite above.
 
-## Customizing the look
+## <img src="assets/readme/icons/CustomizeLook.png" width="26" align="top"> Customizing the look
 
 Colors live at the top of `firmware/src/main.cpp` (`COL_BG`, `COL_TEAL`,
 pure helpers like `rgb565()` / `lerpColor565()`), and each layout is a
@@ -331,10 +362,10 @@ whitelist (`handleSetConfig`) and the dashboard's `PAGE_LAYOUTS`, and
 drawing. The panel is RGB565 (16-bit); smooth gradients need dithering
 -- see the mist layout for the pattern.
 
-## AI Disclosure
+## <img src="assets/readme/icons/AIDisclosure.png" width="26" align="top"> AI Disclosure
 
 <!-- Section reserved -- content by the author. -->
 
-## About the Author
+## <img src="assets/readme/icons/AboutAuthor.png" width="26" align="top"> About the Author
 
 <!-- Section reserved -- content by the author. -->

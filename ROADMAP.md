@@ -6,7 +6,7 @@ eventually hit context limits). It carries the current state, what's
 done, and what's next, so any session can pick up where the last left
 off. **Delete this file at the final 1.0 release.**
 
-Snapshot as of **0.9.9.5** (2026-07-14).
+Snapshot as of **0.9.9.6** (2026-07-14).
 
 ## How to get oriented fast
 
@@ -601,8 +601,18 @@ None are worth a dedicated round; fold them into other work or skip.
      everywhere except ONE survivor -- bars value anchors sat LY too
      high in 1:1/compact (labelY - SY(4): pos minus pos = length where
      a position was needed; the inverse of the 1.31 class, and a line
-     the 1.31 audit explicitly misjudged). Fixed with SL. Border still
-     on; remove after this round confirms.
+     the 1.31 audit explicitly misjudged). Fixed with SL. ROUND 4
+     (0.9.9.6): user's full sweep across all boards/aspects came back
+     clean -- BORDER REMOVED in 1.33. The compact-mode saga is CLOSED.
+     Also in 1.33: hostname & IP saver (collector ships hostname/ip;
+     firmware fits the name to width), style menus reordered
+     TinyScreen -> ZimaOS -> Zima App everywhere, README finalized
+     (section icons, illustrated install guide, accuracy pass incl.
+     the protocol doc gaining hostname/ip and aspect_mode/saver
+     fields). THE BIG HARDWARE SESSION is effectively complete via the
+     photo rounds. Remaining before 1.0: nothing known -- 1.0.0.0 is
+     the odometer roll plus the author's words for the two reserved
+     README sections.
   6. Backlog from older rounds: saver brightness on glass (0.9.6.1),
      unplug/replug recovery with the app running (0.9.6.0), PIN layer
      on real hardware + phone (0.9.5.x).

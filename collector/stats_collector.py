@@ -16,6 +16,7 @@ serial device.
 import argparse
 import glob
 import json
+import socket
 import os
 import platform
 import re
@@ -120,6 +121,8 @@ class Stats:
     # zone name comes from timezone.txt in the state dir, written by the
     # server whenever the dashboard saves settings. -1 = no zone known.
     local_min: int
+    hostname: str = ""      # for the firmware's Hostname & IP saver (1.33)
+    ip: str = ""
 
 
 # --------------------------------------------------------------------------
@@ -690,6 +693,31 @@ def _handle_sigint_ignore(signum, frame):
     print(f"[debug] Received SIGINT (signal {signum}) -- ignoring, staying alive", file=sys.stderr)
 
 
+def get_host_identity():
+    """Hostname + primary outbound IP, for the Hostname & IP screensaver.
+
+    The UDP-connect trick: connecting a datagram socket sends NOTHING,
+    but the kernel picks the outbound interface and getsockname() tells
+    us its address -- no dependency on interface names or `ip` binaries.
+    Falls back to blanks; the firmware renders "--" for those.
+    """
+    try:
+        hostname = socket.gethostname() or ""
+    except Exception:
+        hostname = ""
+    ip = ""
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        try:
+            s.connect(("192.0.2.1", 80))  # TEST-NET; nothing is sent
+            ip = s.getsockname()[0]
+        finally:
+            s.close()
+    except Exception:
+        pass
+    return hostname, ip
+
+
 def main():
     # server.py's CollectorManager stops this process with SIGTERM when it
     # needs exclusive access to the serial port (for flashing or pushing a
@@ -752,7 +780,10 @@ def main():
                 time.sleep(args.interval)
                 continue
 
+            host_name, host_ip = get_host_identity()
             stats = Stats(
+                hostname=host_name,
+                ip=host_ip,
                 cpu_name=cpu_name,
                 cpu_pct=round(cpu_pct, 1),
                 cpu_temp_c=cpu_temp,

@@ -42,7 +42,7 @@
 // "Software Version" field via the get_config command below. No
 // auto-update-checking mechanism exists yet (that's a separate, not-yet
 // -built feature) -- this just answers "what's currently on my device."
-#define FIRMWARE_VERSION "1.32"  // two-part scheme as of 1.19 (was x.y.z)
+#define FIRMWARE_VERSION "1.33"  // two-part scheme as of 1.19 (was x.y.z)
 
 // Note: screen dimensions are NOT fixed -- board 1 (1.69") is 240x280,
 // taller than board 0's 240x240. See screenW/screenH globals, set from
@@ -609,6 +609,8 @@ struct SystemStats {
   float net_rx_mbps = 0;
   float net_tx_mbps = 0;
   String net_iface = "";
+  String hostname = "";       // for the Hostname & IP saver (1.33)
+  String host_ip = "";
   bool nas_available = false;
   float nas_total_gb = 0;
   float nas_pct = 0;
@@ -1950,12 +1952,6 @@ void drawCurrentScreen() {
   canvas->fillScreen(COL_BG);
   drawPage(config.pages[currentPageIdx]);
   drawStaleBanner();
-  // TEMPORARY diagnostic (0.9.9.3, remove before 1.0): in compact 1.3"
-  // mode, outline the layout box so photos of each layout have a
-  // visible landmark exactly at the cutout boundary.
-  if (config.aspectMode == 2) {
-    canvas->drawRect(LX, LY, LW, LH, 0xFD20);  // amber, 1px
-  }
   canvas->flush();
 }
 
@@ -2057,6 +2053,32 @@ void drawScreensaver() {
   canvas->flush();
 }
 
+// "Hostname & IP" screensaver (1.33): who am I and where do I live --
+// the two things you actually want from an idle homelab box across the
+// room. Hostname big, IP beneath; absolute screen center like the
+// other savers (the aspect box is deliberately ignored).
+void drawSaverHostIP() {
+  canvas->fillScreen(COL_BG);
+  const char *name = stats.hostname.length() ? stats.hostname.c_str() : "--";
+  const char *ip = stats.host_ip.length() ? stats.host_ip.c_str() : "--";
+  // Fit the hostname: step the face down until it fits the panel width.
+  const GFXfont *faces[] = { &tiny_sans_bold_32, &tiny_sans_bold_24,
+                             &tiny_sans_bold_20, &tiny_sans_18 };
+  int16_t x1, y1; uint16_t w, h;
+  for (int i = 0; i < 4; i++) {
+    canvas->setFont(faces[i]);
+    canvas->getTextBounds(name, 0, 0, &x1, &y1, &w, &h);
+    if ((int)w <= screenW - 16) break;
+  }
+  canvas->setTextColor(COL_TEXT);
+  drawTextCentered(name, screenW / 2, screenH / 2 - SL(16));
+  canvas->setFont(&tiny_sans_18);
+  canvas->setTextColor(COL_SUBTEXT);
+  drawTextCentered(ip, screenW / 2, screenH / 2 + SL(18));
+  canvas->setFont();
+  canvas->flush();
+}
+
 void drawSaverTemp() {
   // "temp" screensaver (1.19, retyped 1.22): nothing but the CPU
   // temperature in the same font and degree format as the Temperature
@@ -2148,7 +2170,8 @@ void handleSetConfig(JsonDocument &doc) {
   if (doc["saver_brightness"].is<int>()) config.saverBrightness = constrain((int)doc["saver_brightness"], 0, 100);
   if (doc["saver_style"].is<const char *>()) {
     const char *s = doc["saver_style"];
-    if (strcmp(s, "clock") == 0 || strcmp(s, "blank") == 0 || strcmp(s, "temp") == 0)
+    if (strcmp(s, "clock") == 0 || strcmp(s, "blank") == 0 ||
+        strcmp(s, "temp") == 0 || strcmp(s, "hostip") == 0)
       strcpy(config.saverStyle, s);
   }
   // Per-page layout selections: {"temp": "mist", ...}. Applied against
@@ -2331,6 +2354,8 @@ void handleLine(const String &line) {
   stats.net_rx_mbps    = doc["net_rx_mbps"] | stats.net_rx_mbps;
   stats.net_tx_mbps    = doc["net_tx_mbps"] | stats.net_tx_mbps;
   stats.net_iface      = doc["net_iface"] | stats.net_iface;
+  stats.hostname       = doc["hostname"] | stats.hostname;
+  stats.host_ip        = doc["ip"] | stats.host_ip;
   if (doc["net_rx_mbps"].is<float>() || doc["net_tx_mbps"].is<float>()) {
     netGraphPush(stats.net_rx_mbps, stats.net_tx_mbps);
   }
@@ -2488,6 +2513,7 @@ void loop() {
       // once a minute; the temperature tracks the live stats stream).
       if (strcmp(config.saverStyle, "clock") == 0) drawScreensaver();
       else if (strcmp(config.saverStyle, "temp") == 0) drawSaverTemp();
+      else if (strcmp(config.saverStyle, "hostip") == 0) drawSaverHostIP();
     } else {
       drawCurrentScreen();
     }

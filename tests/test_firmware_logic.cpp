@@ -395,6 +395,22 @@ int main() {
     pendingRestart = false;
   }
 
+  // ---- 1.33: hostip saver style accepted, garbage rejected ----
+  {
+    strcpy(config.saverStyle, "clock");
+    JsonDocument doc;
+    doc["cmd"] = "set_config";
+    doc["saver_style"] = "hostip";
+    handleSetConfig(doc);
+    CHECK(strcmp(config.saverStyle, "hostip") == 0);
+    JsonDocument doc2;
+    doc2["cmd"] = "set_config";
+    doc2["saver_style"] = "disco";
+    handleSetConfig(doc2);
+    CHECK(strcmp(config.saverStyle, "hostip") == 0);  // unchanged
+    pendingRestart = false;
+  }
+
   // ---- 1.31: SL scales lengths without the box offset ----
   {
     int sLX = LX, sLY = LY, sLW = LW, sLH = LH;
