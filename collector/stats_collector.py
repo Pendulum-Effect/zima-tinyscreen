@@ -47,6 +47,7 @@ HWMON_TEMP_LABELS = ("Package id 0", "Tctl", "Tdie", "CPU")
 
 STATE_DIR = os.environ.get("TINYSCREEN_STATE_DIR", "/opt/tinyscreen/state")
 TZ_FILE = os.path.join(STATE_DIR, "timezone.txt")
+IDENTITY_FILE = os.path.join(STATE_DIR, "host_identity.json")
 _tz_cache = {"mtime": None, "zone": None}
 
 
@@ -694,27 +695,43 @@ def _handle_sigint_ignore(signum, frame):
 
 
 def get_host_identity():
-    """Hostname + primary outbound IP, for the Hostname & IP screensaver.
+    """Hostname + IP of the HOST, for the Hostname & IP screensaver.
 
-    The UDP-connect trick: connecting a datagram socket sends NOTHING,
-    but the kernel picks the outbound interface and getsockname() tells
-    us its address -- no dependency on interface names or `ip` binaries.
-    Falls back to blanks; the firmware renders "--" for those.
+    Primary source: host_identity.json in the state dir, written by
+    the server (hostname from the Docker daemon, IP from the address
+    users actually reach the dashboard at) -- the same server-to-
+    collector handoff as timezone.txt. Inside the container our own
+    gethostname() is the container ID and the UDP trick yields the
+    bridge IP, both wrong for identifying the ZimaBlade, so inside
+    Docker we return blanks (the firmware shows "--") rather than
+    confidently wrong answers. Outside Docker (developing on a
+    laptop), the local fallbacks are correct and used.
     """
+    hostname, ip = "", ""
     try:
-        hostname = socket.gethostname() or ""
-    except Exception:
-        hostname = ""
-    ip = ""
-    try:
-        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        try:
-            s.connect(("192.0.2.1", 80))  # TEST-NET; nothing is sent
-            ip = s.getsockname()[0]
-        finally:
-            s.close()
-    except Exception:
+        with open(IDENTITY_FILE) as f:
+            data = json.load(f)
+        hostname = str(data.get("hostname", "")) or ""
+        ip = str(data.get("ip", "")) or ""
+    except (OSError, ValueError):
         pass
+    if (hostname and ip) or os.path.exists("/.dockerenv"):
+        return hostname, ip
+    if not hostname:
+        try:
+            hostname = socket.gethostname() or ""
+        except Exception:
+            pass
+    if not ip:
+        try:
+            s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            try:
+                s.connect(("192.0.2.1", 80))  # TEST-NET; nothing is sent
+                ip = s.getsockname()[0]
+            finally:
+                s.close()
+        except Exception:
+            pass
     return hostname, ip
 
 

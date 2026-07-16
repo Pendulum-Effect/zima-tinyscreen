@@ -2,6 +2,18 @@
   "_comment": "Human-readable changelog for the dashboard's About tab -- written for people, not commit archaeologists. The dashboard fetches this from GitHub at page load (baked copy as fallback), so add an entry here with each release and every install sees it. Newest first. Dates are YYYY-MM-DD.",
   "entries": [
     {
+      "version": "1.0.0",
+      "date": "2026-07-14",
+      "title": "One point oh (firmware 1.34)",
+      "notes": [
+        "TinyScreen 1.0. Ninety-odd releases, one never-called function, a 42-pixel dot, and a compact-mode saga later: everything works, everywhere we can test it, and the paint is where it belongs.",
+        "The Hostname & IP screensaver now shows the ZimaBlade's identity instead of the container's. The server knows both truths -- the host's real name from the Docker daemon, and the address you actually reach the dashboard at -- and hands them to the collector the same way the timezone travels. Inside the container, wrong answers are suppressed in favor of honest dashes; the identity appears after your first dashboard visit and persists from then on.",
+        "New firmware 1.34: the Zima App Dots layout sizes the volume name one step smaller and caps it at fifteen characters, so long names no longer wrap into the dots grid.",
+        "The README's AI Disclosure section is written, and the ROADMAP -- the working handover document that steered development since the early days -- is retired from the repository, exactly as it always said it would be at release.",
+        "Flash from the General tab after updating. Thanks for riding along to 1.0."
+      ]
+    },
+    {
       "version": "0.9.9.6",
       "date": "2026-07-14",
       "title": "Border off, hostname on the saver, and a README ready for company (firmware 1.33)",

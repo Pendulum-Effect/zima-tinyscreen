@@ -752,6 +752,45 @@ def serve_firmware(filename):
 _host_name_cache = {"fetched": False, "name": None}
 
 
+# ---------------------------------------------------------------------
+# Host identity for the firmware's Hostname & IP screensaver.
+#
+# The collector runs inside the container, so gethostname() is the
+# container ID and the UDP trick yields the bridge IP -- both wrong for
+# a screensaver meant to identify the ZimaBlade. The two right answers
+# both live here in the server: the Docker daemon knows the host's real
+# name (docker info -> Name, same source as the dashboard's health
+# pill), and every dashboard request carries the address the user
+# actually reaches this box at (the Host header). Written to
+# host_identity.json in the state dir on change, read by the collector
+# each tick -- the same handoff pattern as timezone.txt.
+# ---------------------------------------------------------------------
+_host_identity_cache = {"ip": None}
+
+_IPV4_RE = re.compile(r"^\d{1,3}(\.\d{1,3}){3}$")
+
+def _note_request_identity():
+    host = (request.host or "").rsplit(":", 1)[0].strip("[]")
+    if not _IPV4_RE.match(host):
+        return  # mDNS names etc.: keep the last known IP
+    if host == _host_identity_cache["ip"]:
+        return
+    _host_identity_cache["ip"] = host
+    try:
+        STATE_DIR.mkdir(parents=True, exist_ok=True)
+        tmp = STATE_DIR / "host_identity.json.tmp"
+        tmp.write_text(json.dumps({"hostname": get_host_name() or "",
+                                   "ip": host}))
+        os.replace(tmp, STATE_DIR / "host_identity.json")
+    except OSError:
+        pass  # identity is a nicety; never let it break a request
+
+
+@app.before_request
+def _identity_hook():
+    _note_request_identity()
+
+
 def get_host_name():
     if not _host_name_cache["fetched"]:
         _host_name_cache["fetched"] = True

@@ -42,7 +42,7 @@
 // "Software Version" field via the get_config command below. No
 // auto-update-checking mechanism exists yet (that's a separate, not-yet
 // -built feature) -- this just answers "what's currently on my device."
-#define FIRMWARE_VERSION "1.33"  // two-part scheme as of 1.19 (was x.y.z)
+#define FIRMWARE_VERSION "1.34"  // two-part scheme as of 1.19 (was x.y.z)
 
 // Note: screen dimensions are NOT fixed -- board 1 (1.69") is 240x280,
 // taller than board 0's 240x240. See screenW/screenH globals, set from
@@ -1313,9 +1313,15 @@ void drawStorageDots(const char *title, const char *name,
   canvas->setFont(faceFor(&tiny_sans_18));
   canvas->setTextColor(COL_SUBTEXT);
   drawTextTopLeft(title, left, SY(16));
-  canvas->setFont(faceFor(&tiny_sans_bold_24));
+  // One face smaller than the other storage layouts (1.34): long
+  // volume names were wrapping into the dots grid. Capped at 15 chars
+  // on top -- past that the tail is noise on a 240px panel anyway.
+  char nameBuf[16];
+  strncpy(nameBuf, name, sizeof(nameBuf) - 1);
+  nameBuf[sizeof(nameBuf) - 1] = '\0';
+  canvas->setFont(faceFor(&tiny_sans_bold_20));
   canvas->setTextColor(COL_TEXT);
-  drawTextTopLeft(name, left, SY(42));
+  drawTextTopLeft(nameBuf, left, SY(42));
 
   // 12 columns x 4 rows, filling column-major (each column top to
   // bottom, columns left to right) so partial fill reads as a level.

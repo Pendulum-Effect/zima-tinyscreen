@@ -9,12 +9,6 @@ ESP32-S3, which draws them on a small LCD. Packaged as a one-click ZimaOS
 app that also hosts a browser settings dashboard and a WebSerial firmware
 flasher -- no toolchain needed to set up the ESP32-S3.
 
-This project started out as what was supposed to be a small piece of a much larger puzzle: An enclosure I designed in Solidworks, reminiscent of a Unifi AI Key, that would house a small, single board computer with a tiny display that showed key device metrics. I could mount several of them inside a rack enclosure and start hosting DNS, PLEX, AdGuard, and anything else my ADHD had in mind. What was going to be a simple Python script turned into a full-blown app.
-
-It could have been just that, a Python script, that piped a rudimentary graph onto an external monitor. But I wanted something that would be available all the time and not occupy the mini HDMI port on the ZimaBlade. So what was supposed to be an afternoon project turned into an education on ESP32-S3 boards, baud rates, Arduino IDE, and serial interfaces.. Then realizing I was out of my depth and used Claud Fable 5 to help realize my vision. 
-
-I designed the wireframes, directed the overall project scope, generated ideas and troubleshot what I could. I even designed the logo in 10 minutes while I waited for breadsticks to heat up in the air fryer (3/4 of a square, the words tiny + screen aligned strategically is nothing galaxy brain anyway). Most everything else is AI. I attributed credit where possible and this project will remain open and free to use.
-
 ## <img src="assets/readme/icons/Hardware.png" width="26" align="top"> Hardware: one firmware, two boards
 
 The same firmware supports both boards; which one you have is chosen in
@@ -47,17 +41,15 @@ else is runtime config.
   drifting clock, temperature, hostname & IP, or screen off), and
   About.
 
+<p align="center">
+  <img src="assets/readme/dashboard-general.png" alt="The dashboard's General tab" width="720">
+</p>
+<p align="center"><em>The dashboard's General tab: device health, firmware, and updates at a glance.</em></p>
 
 <p align="center">
   <img src="assets/readme/wizard-step2.png" alt="The setup wizard's board-choice step" width="560">
 </p>
-<p align="center"><em>The first-time setup wizard walking through board selection.</em></p><br>
-
-<p align="center">
-  <img src="assets/readme/dashboard-general.png" alt="The dashboard's General tab" width="720">
-</p>
-<p align="center"><em>The dashboard's General tab: device health, firmware, and updates at a glance.</em></p><br>
-
+<p align="center"><em>The first-time setup wizard walking through board selection.</em></p>
 
 ## <img src="assets/readme/icons/ScreenLayouts.png" width="26" align="top"> Screen layouts
 
@@ -86,49 +78,49 @@ Every page and style, rendered by the dashboard's live preview:
 **CPU Utilization**
 
 <table><tr>
-<td align="center"><img src="assets/readme/layout-cpu-utilization--tinyscreen-default.png" width="170"><br><sub>TinyScreen<p>(default)</p></sub></td>
-<td align="center"><img src="assets/readme/layout-cpu-utilization--zimaos-dial.png" width="170"><br><sub>ZimaOS <p>Dial</p></sub></td>
-<td align="center"><img src="assets/readme/layout-cpu-utilization--zima-app-ring.png" width="170"><br><sub>Zima App <p>Ring</p></sub></td>
+<td align="center"><img src="assets/readme/layout-cpu-utilization--tinyscreen-default.png" width="170"><br><sub>TinyScreen (default)</sub></td>
+<td align="center"><img src="assets/readme/layout-cpu-utilization--zimaos-dial.png" width="170"><br><sub>ZimaOS Dial</sub></td>
+<td align="center"><img src="assets/readme/layout-cpu-utilization--zima-app-ring.png" width="170"><br><sub>Zima App Ring</sub></td>
 </tr></table>
 
 **RAM Utilization**
 
 <table><tr>
-<td align="center"><img src="assets/readme/layout-ram-utilization--tinyscreen-default.png" width="170"><br><sub>TinyScreen <p>(default)</p></sub></td>
-<td align="center"><img src="assets/readme/layout-ram-utilization--zimaos-dial.png" width="170"><br><sub>ZimaOS <p>Dial</p></sub></td>
-<td align="center"><img src="assets/readme/layout-ram-utilization--zima-app-ring.png" width="170"><br><sub>Zima App <p>Ring</p></sub></td>
+<td align="center"><img src="assets/readme/layout-ram-utilization--tinyscreen-default.png" width="170"><br><sub>TinyScreen (default)</sub></td>
+<td align="center"><img src="assets/readme/layout-ram-utilization--zimaos-dial.png" width="170"><br><sub>ZimaOS Dial</sub></td>
+<td align="center"><img src="assets/readme/layout-ram-utilization--zima-app-ring.png" width="170"><br><sub>Zima App Ring</sub></td>
 </tr></table>
 
 **CPU Temperature**
 
 <table><tr>
-<td align="center"><img src="assets/readme/layout-cpu-temperature--tinyscreen-default.png" width="170"><br><sub>TinyScreen <p>(default)</p></sub></td>
-<td align="center"><img src="assets/readme/layout-cpu-temperature--zima-app-mist.png" width="170"><br><sub>Zima App <p>Mist</p></sub></td>
-<td align="center"><img src="assets/readme/layout-cpu-temperature--zima-app-mist-animated.png" width="170"><br><sub>Zima App <p>Mist (animated)</p></sub></td>
+<td align="center"><img src="assets/readme/layout-cpu-temperature--tinyscreen-default.png" width="170"><br><sub>TinyScreen (default)</sub></td>
+<td align="center"><img src="assets/readme/layout-cpu-temperature--zima-app-mist.png" width="170"><br><sub>Zima App Mist</sub></td>
+<td align="center"><img src="assets/readme/layout-cpu-temperature--zima-app-mist-animated.png" width="170"><br><sub>Zima App Mist (animated)</sub></td>
 </tr></table>
 
 **Network Utilization**
 
 <table><tr>
-<td align="center"><img src="assets/readme/layout-network-utilization--tinyscreen-default.png" width="170"><br><sub>TinyScreen <p>(default)</p></sub></td>
-<td align="center"><img src="assets/readme/layout-network-utilization--zimaos-graph.png" width="170"><br><sub>ZimaOS <p>Graph</p></sub></td>
-<td align="center"><img src="assets/readme/layout-network-utilization--zima-app-bars.png" width="170"><br><sub>Zima App <p>Bars</p></sub></td>
+<td align="center"><img src="assets/readme/layout-network-utilization--tinyscreen-default.png" width="170"><br><sub>TinyScreen (default)</sub></td>
+<td align="center"><img src="assets/readme/layout-network-utilization--zimaos-graph.png" width="170"><br><sub>ZimaOS Graph</sub></td>
+<td align="center"><img src="assets/readme/layout-network-utilization--zima-app-bars.png" width="170"><br><sub>Zima App Bars</sub></td>
 </tr></table>
 
 **MMC Usage**
 
 <table><tr>
-<td align="center"><img src="assets/readme/layout-mmc-usage--tinyscreen-default.png" width="170"><br><sub>TinyScreen <p>(default)</p></sub></td>
-<td align="center"><img src="assets/readme/layout-mmc-usage--zimaos-drive.png" width="170"><br><sub>ZimaOS <p>Drive</p></sub></td>
-<td align="center"><img src="assets/readme/layout-mmc-usage--zima-app-dots.png" width="170"><br><sub>Zima App <p>Dots</p></sub></td>
+<td align="center"><img src="assets/readme/layout-mmc-usage--tinyscreen-default.png" width="170"><br><sub>TinyScreen (default)</sub></td>
+<td align="center"><img src="assets/readme/layout-mmc-usage--zimaos-drive.png" width="170"><br><sub>ZimaOS Drive</sub></td>
+<td align="center"><img src="assets/readme/layout-mmc-usage--zima-app-dots.png" width="170"><br><sub>Zima App Dots</sub></td>
 </tr></table>
 
 **NAS Usage**
 
 <table><tr>
-<td align="center"><img src="assets/readme/layout-nas-usage--tinyscreen-default.png" width="170"><br><sub>TinyScreen <p>(default)</p></sub></td>
-<td align="center"><img src="assets/readme/layout-nas-usage--zimaos-drive.png" width="170"><br><sub>ZimaOS <p>Drive</p></sub></td>
-<td align="center"><img src="assets/readme/layout-nas-usage--zima-app-dots.png" width="170"><br><sub>Zima App <p>Dots</p></sub></td>
+<td align="center"><img src="assets/readme/layout-nas-usage--tinyscreen-default.png" width="170"><br><sub>TinyScreen (default)</sub></td>
+<td align="center"><img src="assets/readme/layout-nas-usage--zimaos-drive.png" width="170"><br><sub>ZimaOS Drive</sub></td>
+<td align="center"><img src="assets/readme/layout-nas-usage--zima-app-dots.png" width="170"><br><sub>Zima App Dots</sub></td>
 </tr></table>
 
 ## <img src="assets/readme/icons/RepoStructure.png" width="26" align="top"> Repo map
@@ -154,8 +146,6 @@ zima-tinyscreen/
 ├── RELEASING.md          The release checklist
 ├── about.json            Content for the dashboard's About tab
 ├── CHANGELOG.json        Version history shown in the dashboard
-├── ROADMAP.md            Working handover doc on the road to 1.0
-│                         (state, done, next up -- removed at release)
 └── VERSION               Project version (firmware has its own, in main.cpp)
 ```
 
@@ -372,8 +362,27 @@ drawing. The panel is RGB565 (16-bit); smooth gradients need dithering
 
 ## <img src="assets/readme/icons/AIDisclosure.png" width="26" align="top"> AI Disclosure
 
-<!-- Section reserved -- content by the author. -->
+This project was built in close collaboration with an AI assistant
+(Anthropic's Claude). The honest division of labor: I set the
+direction, made the design calls, created the visual identity, and
+did every round of testing on real hardware -- and Claude wrote the
+large majority of the code, tests, and documentation across many
+iterative releases.
+
+Nothing shipped on trust alone. Every release ran a five-suite test
+battery (firmware logic compiled against stub headers with strict
+compiler warnings, server endpoints, serial protocol against a fake
+device, authentication, collector health), and the parts a test suite
+can't see -- how things actually look and behave on the glass -- were
+verified by hand, on the physical displays, every round. Some of this
+project's best bug hunts worked exactly that way: photographs of the
+screen against a diagnostic border, with the AI reading the pixels
+and the code side by side until the geometry confessed.
+
+I believe in being transparent about how things are made. This is how
+this one was made, and I'm happy with both the process and the
+result.
 
 ## <img src="assets/readme/icons/AboutAuthor.png" width="26" align="top"> About the Author
 
-The author of this project attempts to learn and do as much as possible. Sometimes he gets over his head. This is one such time.
+<!-- Section reserved -- content by the author. -->
