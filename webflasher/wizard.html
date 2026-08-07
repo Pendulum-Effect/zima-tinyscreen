@@ -101,7 +101,8 @@
 
   .step-body { flex: 1; }
 
-  .screen-choice { display: flex; gap: 18px; margin-top: 8px; }
+  .screen-choice {
+    flex-wrap: wrap; display: flex; gap: 18px; margin-top: 8px; }
   .screen-card {
     flex: 1;
     border: 1px solid var(--border);
@@ -235,6 +236,12 @@
             <div class="glyph-wrap"><div class="glyph"></div></div>
             <div class="name">ESP32-S3-TOUCH-1.69</div>
             <div class="dims">240×280 · 1.69"</div>
+            <div class="kind">Touch-enabled display</div>
+          </div>
+          <div class="screen-card amoled" data-board="2">
+            <div class="glyph-wrap"><div class="glyph"></div></div>
+            <div class="name">ESP32-S3-TOUCH-AMOLED-1.64</div>
+            <div class="dims">280×456 · 1.64" AMOLED</div>
             <div class="kind">Touch-enabled display</div>
           </div>
         </div>
