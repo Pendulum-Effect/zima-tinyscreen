@@ -681,10 +681,14 @@ None are worth a dedicated round; fold them into other work or skip.
       panel, so its defaults should hold). If the image lands shifted
       with a garbage strip on one edge, set colOffset1 (try 20) in
       board 2's BOARD_PROFILES entry.
-- [ ] HARDWARE VERIFY (1.36): 456x280 canvas allocation on real
-      hardware (255 KB framebuffer + rotation path; PSRAM is enabled in
-      both build envs, confirm no alloc failure and flush cadence holds
-      33ms with the particle saver running).
+- [x] HARDWARE VERIFY (1.36): 456x280 canvas allocation -- FAILED on
+      first contact exactly as feared, and productively: octal PSRAM
+      (N16R8) was never enabled by the devkitc-1 defaults, the ~255 KB
+      framebuffer alloc died, and the boot crash-loop flapped native
+      USB into reflash write-timeouts. Fixed: memory_type qio_opi in
+      both envs + a guarded alloc that parks in a serial-error loop
+      instead of crash-looping. Still to confirm on glass: flush
+      cadence holds 33ms with the particle saver running from PSRAM.
 - [ ] HARDWARE VERIFY (1.36): brightness register vs backlight -- 0%
       and the "blank" saver should read fully dark on the AMOLED; night
       mode dimming curve feels comparable to the LCD boards.

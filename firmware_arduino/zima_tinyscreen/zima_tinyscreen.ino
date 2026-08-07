@@ -406,6 +406,13 @@ Arduino_GFX *gfx = nullptr;
 // profile has no lcd_bl GPIO.
 Arduino_CO5300 *amoledGfx = nullptr;
 Arduino_Canvas *canvas = nullptr;
+// Set when the canvas framebuffer allocation fails at init (board 2's
+// 456x280 canvas is ~255 KB and needs PSRAM). setup() checks this and
+// parks in a loud serial-error loop instead of letting draw calls
+// dereference a dead framebuffer -- a crash-loop on a native-USB board
+// flaps the CDC port and makes even REFLASHING fail with write
+// timeouts, so staying alive and complaining is strictly better.
+bool displayInitFailed = false;
 int screenW = 240;   // physical panel size AFTER rotation
 int screenH = 240;
 // Visible window: the part of the panel the person can actually see.
@@ -637,7 +644,10 @@ void initDisplay() {
   }
 
   gfx->begin();
-  canvas->begin();
+  if (!canvas->begin()) {
+    displayInitFailed = true;
+    return;  // setup() parks in a serial-error loop; do not touch canvas
+  }
   canvas->fillScreen(0x0000);
   canvas->flush();
   if (p.lcd_bl < 0) {
@@ -2789,6 +2799,19 @@ void setup() {
     // hands-off on GPIO (see handleSetConfig() for why: board 0's default
     // pins can collide with another board's USB data lines).
     initDisplay();
+    if (displayInitFailed) {
+      // Framebuffer alloc failed. Stay alive (USB keeps enumerating,
+      // logs are readable, reflash works) and say why, forever.
+      for (;;) {
+        Serial.printf("[tinyscreen] FATAL: display framebuffer allocation failed "
+                      "(board %d, %dx%d, PSRAM %s). Check board_build.arduino."
+                      "memory_type=qio_opi in platformio.ini / PSRAM: OPI in "
+                      "Arduino IDE.\n",
+                      config.boardId, screenW, screenH,
+                      psramFound() ? "present" : "MISSING");
+        delay(2000);
+      }
+    }
   }
   serialBuf.reserve(256);
 }

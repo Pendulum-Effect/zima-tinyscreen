@@ -52,7 +52,9 @@ class String {
 inline String operator+(String a, const String &b) { a += b; return a; }
 
 // -- Serial --------------------------------------------------------------
+inline bool psramFound() { return true; }  // host stub: pretend PSRAM exists
 struct StubSerial {
+  template <typename... A> void printf(const char *, A...) {}
   void begin(long) {}
   void setRxBufferSize(int) {}
   int available() { return 0; }
