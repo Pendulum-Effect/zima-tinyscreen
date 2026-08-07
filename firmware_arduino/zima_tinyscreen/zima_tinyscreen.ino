@@ -42,32 +42,45 @@
 // "Software Version" field via the get_config command below. No
 // auto-update-checking mechanism exists yet (that's a separate, not-yet
 // -built feature) -- this just answers "what's currently on my device."
-#define FIRMWARE_VERSION "1.34"  // two-part scheme as of 1.19 (was x.y.z)
+#define FIRMWARE_VERSION "1.36"  // two-part scheme as of 1.19 (was x.y.z)
 
 // Note: screen dimensions are NOT fixed -- board 1 (1.69") is 240x280,
-// taller than board 0's 240x240. See screenW/screenH globals, set from
-// the active BoardProfile in initDisplay(), and the SY() helper below
-// used to scale the Y-axis layout proportionally across boards.
+// taller than board 0's 240x240, and board 2 (AMOLED-1.64) is 280x456,
+// usually mounted sideways (rotation 90 -> logical 456x280) with only a
+// ~296px-wide window visible through the case cutout (viewport
+// anchoring -- see visX/visW and computeViewport). See screenW/screenH
+// globals, set from the active BoardProfile in initDisplay(), and the
+// SY() helper below used to scale the Y-axis layout proportionally
+// across boards.
 
 // ---------------------------------------------------------------------
 // Board profiles -- pin maps for each supported physical board
 // ---------------------------------------------------------------------
 
+// Display driver selects both the controller init AND the bus type:
+// ST7789/GC9A01 are classic 4-wire SPI LCDs; CO5300 is a QSPI AMOLED
+// (4 data lines, no D/C pin, no backlight GPIO -- brightness is a
+// register write into the controller itself).
+enum BoardDriver : uint8_t { DRV_ST7789 = 0, DRV_GC9A01 = 1, DRV_CO5300 = 2 };
+
 struct BoardProfile {
   const char *name;
   bool hasTouch;
   int width, height;
-  int lcd_cs, lcd_dc, lcd_sck, lcd_mosi, lcd_rst, lcd_bl;
-  int tp_sda, tp_scl, tp_rst; // -1 if no touch
-  bool driverIsGC9A01;        // false = ST7789
-  int colOffset1, rowOffset1, colOffset2, rowOffset2; // ST7789 GRAM alignment
+  int lcd_cs, lcd_dc, lcd_sck, lcd_mosi, lcd_rst, lcd_bl; // dc/bl: -1 if absent
+  int lcd_d1, lcd_d2, lcd_d3; // QSPI SIO1..3; -1 on plain-SPI boards (mosi = SIO0)
+  int tp_sda, tp_scl, tp_rst; // -1 if no touch (or no dedicated reset line)
+  uint8_t tpAddr;             // I2C address of the touch controller
+  uint8_t driver;             // BoardDriver
+  int colOffset1, rowOffset1, colOffset2, rowOffset2; // controller GRAM alignment
 };
 
 const BoardProfile BOARD_PROFILES[] = {
   // Board 0: ESP32-S3-LCD-1.3 (square, no touch) -- pins from schematic PDF
   { "ESP32-S3-LCD-1.3 (square, no touch)", false, 240, 240,
     /*cs*/39, /*dc*/38, /*sck*/40, /*mosi*/41, /*rst*/42, /*bl*/20,
-    /*sda*/-1, /*scl*/-1, /*tprst*/-1, /*gc9a01*/false,
+    /*d1..d3*/-1, -1, -1,
+    /*sda*/-1, /*scl*/-1, /*tprst*/-1, /*tpaddr*/0x00, DRV_ST7789,
     /*offsets*/ 0, 0, 0, 0 },
   // Board 1: ESP32-S3-Touch-LCD-1.69 (240x280, touch) -- pins from schematic PDF.
   // Note: this board uses the ESP32-S3's NATIVE USB peripheral (no separate
@@ -83,11 +96,34 @@ const BoardProfile BOARD_PROFILES[] = {
   // graphical artifacts along the bottom edge.
   { "ESP32-S3-Touch-LCD-1.69 (240x280, touch)", true, 240, 280,
     /*cs*/5, /*dc*/4, /*sck*/6, /*mosi*/7, /*rst*/8, /*bl*/15,
-    /*sda*/11, /*scl*/10, /*tprst*/13, /*gc9a01*/false,
+    /*d1..d3*/-1, -1, -1,
+    /*sda*/11, /*scl*/10, /*tprst*/13, /*tpaddr*/0x15 /* CST816 */, DRV_ST7789,
     /*offsets*/ 0, 20, 0, 20 },
+  // Board 2: ESP32-S3-Touch-AMOLED-1.64 (280x456, touch) -- pins read off
+  // the schematic PDF's netlist: OLED_CS=IO9, OLED_CLK=IO10, OLED_SIO0..3 =
+  // IO11/12/13/14, OLED_RESET=IO21; touch (FT3168) + IMU share the I2C bus
+  // on TP_SDA=IO47 / TP_SCL=IO48. The touch controller has no dedicated
+  // reset GPIO (tied to the panel reset), and there is NO backlight pin at
+  // all: AMOLED brightness is written to the CO5300's own brightness
+  // register (Arduino_CO5300::setBrightness). Native USB, like board 1.
+  //
+  // FT3168 note: FocalTech's register map (0x02 touch-count, 0x03..0x06
+  // XH/XL/YH/YL) matches the layout the CST816 poll below already reads --
+  // only the I2C address differs (0x38 vs 0x15), so touch is "just" a
+  // profile field, not a second driver.
+  //
+  // HARDWARE VERIFY: GRAM offsets ship as 0 (the Arduino_GFX CO5300 driver
+  // was added for this exact panel, so its defaults should be correct). If
+  // real glass shows the image shifted with a garbage strip along one edge,
+  // colOffset1 = 20 is the first value to try -- same class of fix as
+  // board 1's rowOffset saga above.
+  { "ESP32-S3-Touch-AMOLED-1.64 (280x456, touch)", true, 280, 456,
+    /*cs*/9, /*dc*/-1, /*sck*/10, /*mosi (SIO0)*/11, /*rst*/21, /*bl*/-1,
+    /*d1..d3*/12, 13, 14,
+    /*sda*/47, /*scl*/48, /*tprst*/-1, /*tpaddr*/0x38 /* FT3168 */, DRV_CO5300,
+    /*offsets*/ 0, 0, 0, 0 },
 };
 const int NUM_BOARD_PROFILES = sizeof(BOARD_PROFILES) / sizeof(BOARD_PROFILES[0]);
-#define TOUCH_I2C_ADDR 0x15  // shared address convention for CST816-family touch chips
 
 // ---------------------------------------------------------------------
 // Config (persisted to NVS via Preferences)
@@ -141,6 +177,16 @@ struct Config {
   bool squareFit = false;   // legacy (<=1.21); kept for NVS/protocol compat
   int aspectMode = 0;       // 0 full, 1 square 1:1, 2 compact 1.3" (1.22)
 
+  // Viewport anchoring (1.36, built for the AMOLED-1.64 mounted sideways
+  // behind a case cutout narrower than the panel): only a viewW-pixel-wide
+  // window of the (post-rotation) panel is treated as visible; everything
+  // renders inside it and the rest of the panel stays black -- which on an
+  // AMOLED literally means OFF. viewOffX positions the window's left edge
+  // in panel pixels; -1 centers it. viewW = 0 means "full panel" (every
+  // board's default, so nothing changes for boards 0/1).
+  int viewW = 0;
+  int viewOffX = -1;
+
   // Per-page layout style, parallel to pages[] slot-for-slot. "default"
   // is the classic TinyScreen ring look; pages may offer alternates
   // (currently CPU Temperature's "mist" / "mist_anim"). Unknown ids
@@ -182,6 +228,8 @@ void loadConfig() {
   config.squareFit = prefs.getBool("squareFit", false);
   // Migration: devices configured before 1.22 only have squareFit.
   config.aspectMode = prefs.getInt("aspectMode", config.squareFit ? 1 : 0);
+  config.viewW = prefs.getInt("viewW", 0);
+  config.viewOffX = prefs.getInt("viewOffX", -1);
   String pagesCsv = prefs.getString("pages", "temp");
   String layoutsCsv = prefs.getString("layouts", "");
   prefs.end();
@@ -252,6 +300,8 @@ void saveConfig() {
   prefs.putInt("rotation", config.rotation);
   prefs.putBool("squareFit", config.squareFit);
   prefs.putInt("aspectMode", config.aspectMode);
+  prefs.putInt("viewW", config.viewW);
+  prefs.putInt("viewOffX", config.viewOffX);
   String layoutsCsv = "";
   for (int i = 0; i < config.numPages; i++) {
     if (i > 0) layoutsCsv += ",";
@@ -350,9 +400,51 @@ int effectiveBrightnessPct() {
 
 Arduino_DataBus *bus = nullptr;
 Arduino_GFX *gfx = nullptr;
+// Set (aliasing gfx) only when the active board is a CO5300 AMOLED --
+// the one driver whose brightness is a controller register instead of a
+// backlight PWM pin. applyBrightness() routes through this when the
+// profile has no lcd_bl GPIO.
+Arduino_CO5300 *amoledGfx = nullptr;
 Arduino_Canvas *canvas = nullptr;
 int screenW = 240;   // physical panel size AFTER rotation
 int screenH = 240;
+// Visible window: the part of the panel the person can actually see.
+// Same as the physical screen normally; with viewport anchoring (viewW)
+// it's a viewW-wide horizontal slice, for panels mounted behind a case
+// cutout narrower than the glass (the AMOLED-1.64 sideways). Pages
+// render through the layout box, which is computed INSIDE this window;
+// savers and the splash draw against vis* directly. visShiftX is the
+// slow burn-in wander (OLED boards only) -- a few px of drift inside
+// the hidden margin, applied on top of the configured offset.
+int visX = 0, visY = 0, visW = 240, visH = 240;
+int visShiftX = 0;
+
+// Pure for host-side unit testing: clamp a configured window width and
+// offset into a physical panel width. viewW <= 0 or >= physW means
+// "full panel"; viewOff < 0 means "centered".
+void computeViewport(int physW, int viewW, int viewOff, int *vx, int *vw) {
+  if (viewW <= 0 || viewW >= physW) {
+    *vx = 0;
+    *vw = physW;
+    return;
+  }
+  *vw = viewW;
+  if (viewOff < 0) *vx = (physW - viewW) / 2;
+  else if (viewOff > physW - viewW) *vx = physW - viewW;
+  else *vx = viewOff;
+}
+
+// Pure for host-side unit testing: where the wander shift lands the
+// window, clamped so it never leaves the panel. shift only applies when
+// there IS a hidden margin to wander into.
+int applyWanderShift(int baseVx, int vw, int physW, int shift) {
+  if (vw >= physW) return baseVx;
+  int vx = baseVx + shift;
+  if (vx < 0) vx = 0;
+  if (vx > physW - vw) vx = physW - vw;
+  return vx;
+}
+
 // Layout box: where pages actually render. Same as the physical screen
 // normally; with square-fit on a non-square panel it's a centered
 // min-dimension square (e.g. 240x240 letterboxed inside 240x280). All
@@ -385,6 +477,21 @@ void computeLayoutBox(int physW, int physH, int aspectMode,
   } else {
     *lx = 0; *ly = 0; *lw = physW; *lh = physH;
   }
+}
+
+// (Re)derive the visible window and layout box, with a burn-in wander
+// shift folded in. shift 0 at init; the OLED pixel-shift in loop()'s
+// housekeeping nudges it a few px either way on a slow cycle.
+void recomputeVisibleWindow(int shiftX) {
+  int baseVx;
+  computeViewport(screenW, config.viewW, config.viewOffX, &baseVx, &visW);
+  visX = applyWanderShift(baseVx, visW, screenW, shiftX);
+  visY = 0;
+  visH = screenH;
+  visShiftX = shiftX;
+  computeLayoutBox(visW, visH, config.aspectMode, &LX, &LY, &LW, &LH);
+  LX += visX;
+  LY += visY;
 }
 
 // Horizontal swipe delta in DISPLAY space from raw touch deltas -- the
@@ -477,41 +584,78 @@ void pwmWriteBacklight(int pin, int duty) {
 #endif
 }
 
+void applyBrightness();  // defined below; initDisplay needs it for AMOLED boards
+
 void initDisplay() {
   const BoardProfile &p = BOARD_PROFILES[config.boardId];
-  // Arduino_GFX takes rotation as quarter-turns (0-3) and handles the
-  // panel offset bookkeeping per rotation itself; we pass the PANEL
-  // native dims and swap our own working dims for 90/270.
   int rot = ((config.rotation % 360) + 360) % 360 / 90;
   bool swapped = (rot == 1 || rot == 3);
   screenW = swapped ? p.height : p.width;
   screenH = swapped ? p.width : p.height;
-  computeLayoutBox(screenW, screenH, config.aspectMode, &LX, &LY, &LW, &LH);
-  bus = new Arduino_ESP32SPI(p.lcd_dc, p.lcd_cs, p.lcd_sck, p.lcd_mosi, -1 /* no MISO */);
-  if (p.driverIsGC9A01) {
-    gfx = new Arduino_GC9A01(bus, p.lcd_rst, rot, true /* IPS */);
-  } else {
-    gfx = new Arduino_ST7789(bus, p.lcd_rst, rot, true /* IPS */, p.width, p.height,
-                              p.colOffset1, p.rowOffset1, p.colOffset2, p.rowOffset2);
-  }
-  canvas = new Arduino_Canvas(screenW, screenH, gfx);
 
-  pinMode(p.lcd_bl, OUTPUT);
-  pwmAttachBacklight(p.lcd_bl);
-  pwmWriteBacklight(p.lcd_bl, map(config.brightness, 0, 100, 0, 255));
+  if (p.driver == DRV_CO5300) {
+    // QSPI AMOLED. Two things are different from the SPI LCDs:
+    // 1) The bus: 4 data lines, no D/C pin (commands are framed by the
+    //    QSPI protocol itself) -- Arduino_ESP32QSPI(cs, sck, d0..d3).
+    // 2) Rotation: the CO5300's MADCTL can only FLIP axes, not swap
+    //    them ("CO5300 does not support rotation" -- Arduino_GFX
+    //    source), so 90/270 must happen in software. Arduino_Canvas
+    //    grew a rotation parameter for exactly this: the canvas holds
+    //    the LOGICAL (post-rotation) dims and rotates during flush,
+    //    while the panel driver stays at rotation 0 with its NATIVE
+    //    dims. LCD boards keep the old path (hardware MADCTL rotation,
+    //    canvas rotation 0) -- their flush stays a straight memcpy.
+    bus = new Arduino_ESP32QSPI(p.lcd_cs, p.lcd_sck, p.lcd_mosi /* SIO0 */,
+                                p.lcd_d1, p.lcd_d2, p.lcd_d3);
+    amoledGfx = new Arduino_CO5300(bus, p.lcd_rst, 0 /* rotation: see above */,
+                                   p.width, p.height,
+                                   p.colOffset1, p.rowOffset1,
+                                   p.colOffset2, p.rowOffset2);
+    gfx = amoledGfx;
+    canvas = new Arduino_Canvas(screenW, screenH, gfx, 0, 0, rot);
+  } else {
+    // Arduino_GFX takes rotation as quarter-turns (0-3) and handles the
+    // panel offset bookkeeping per rotation itself; we pass the PANEL
+    // native dims and swap our own working dims for 90/270.
+    bus = new Arduino_ESP32SPI(p.lcd_dc, p.lcd_cs, p.lcd_sck, p.lcd_mosi, -1 /* no MISO */);
+    if (p.driver == DRV_GC9A01) {
+      gfx = new Arduino_GC9A01(bus, p.lcd_rst, rot, true /* IPS */);
+    } else {
+      gfx = new Arduino_ST7789(bus, p.lcd_rst, rot, true /* IPS */, p.width, p.height,
+                                p.colOffset1, p.rowOffset1, p.colOffset2, p.rowOffset2);
+    }
+    canvas = new Arduino_Canvas(screenW, screenH, gfx);
+  }
+
+  // Visible window (viewport anchoring), then the layout box INSIDE it.
+  recomputeVisibleWindow(0);
+
+  if (p.lcd_bl >= 0) {
+    pinMode(p.lcd_bl, OUTPUT);
+    pwmAttachBacklight(p.lcd_bl);
+    pwmWriteBacklight(p.lcd_bl, map(config.brightness, 0, 100, 0, 255));
+  }
 
   gfx->begin();
   canvas->begin();
   canvas->fillScreen(0x0000);
   canvas->flush();
+  if (p.lcd_bl < 0) {
+    // No backlight GPIO: brightness lives in the display controller.
+    // Set it AFTER the first all-black flush so the panel never flashes
+    // stale GRAM content at full brightness on boot.
+    applyBrightness();
+  }
 
   if (p.hasTouch) {
     Wire.begin(p.tp_sda, p.tp_scl);
-    pinMode(p.tp_rst, OUTPUT);
-    digitalWrite(p.tp_rst, LOW);
-    delay(20);
-    digitalWrite(p.tp_rst, HIGH);
-    delay(50);
+    if (p.tp_rst >= 0) {
+      pinMode(p.tp_rst, OUTPUT);
+      digitalWrite(p.tp_rst, LOW);
+      delay(20);
+      digitalWrite(p.tp_rst, HIGH);
+      delay(50);
+    }
   }
 }
 
@@ -534,7 +678,16 @@ int wantedBacklightPct() {
 
 void applyBrightness() {
   int pct = wantedBacklightPct();
-  pwmWriteBacklight(BOARD_PROFILES[config.boardId].lcd_bl, map(pct, 0, 100, 0, 255));
+  const BoardProfile &p = BOARD_PROFILES[config.boardId];
+  if (p.lcd_bl >= 0) {
+    pwmWriteBacklight(p.lcd_bl, map(pct, 0, 100, 0, 255));
+  } else if (amoledGfx != nullptr) {
+    // AMOLED: brightness is a register write into the display controller
+    // (CO5300 0x51). 0 maps to 0 -- on an emissive panel that's dark, so
+    // the "blank" saver and "0% turns the screen off" behave the same as
+    // a backlight cut on the LCD boards.
+    amoledGfx->setBrightness((uint8_t)map(pct, 0, 100, 0, 255));
+  }
   lastAppliedBrightness = pct;
 }
 
@@ -631,6 +784,9 @@ int currentPageIdx = 0;              // index into config.pages
 unsigned long lastDrawMs = 0;
 unsigned long lastCycleMs = 0;
 unsigned long lastGesturePollMs = 0;
+unsigned long lastWanderMs = 0;
+int wanderIdx = 0;
+const unsigned long WANDER_INTERVAL_MS = 5UL * 60UL * 1000UL;
 const unsigned long FRAME_INTERVAL_MS = 200;
 const unsigned long GESTURE_POLL_MS = 20; // touch feels much more responsive polled this often
 
@@ -1939,13 +2095,16 @@ const char *layoutForPage(const char *pageId) {
 // plus "loading..." reads like a product booting.
 void drawSplash() {
   canvas->fillScreen(COL_BG);
-  int lx = (screenW - TINY_LOGO_W) / 2;
-  int ly = (screenH - TINY_LOGO_H) / 2 - SL(16);
+  // Centered in the VISIBLE window, not the physical panel -- identical
+  // on boards 0/1 (window == panel), but on an anchored panel the case
+  // cutout is the whole world the person can see.
+  int lx = visX + (visW - TINY_LOGO_W) / 2;
+  int ly = visY + (visH - TINY_LOGO_H) / 2 - SL(16);
   canvas->draw16bitRGBBitmap(lx, ly, (uint16_t *)TINY_LOGO_DATA,
                              TINY_LOGO_W, TINY_LOGO_H);
   canvas->setFont(&tiny_sans_18);
   canvas->setTextColor(COL_SUBTEXT);
-  drawTextCentered("loading...", screenW / 2, ly + TINY_LOGO_H + SL(28));
+  drawTextCentered("loading...", visX + visW / 2, ly + TINY_LOGO_H + SL(28));
   canvas->setFont();
   canvas->flush();
 }
@@ -1986,11 +2145,15 @@ const int SWIPE_THRESHOLD_PX = 40;
 // completes (finger release) -- inherently edge-triggered by
 // construction, so callers don't need their own debounce/edge logic.
 int pollTouchSwipe() {
-  Wire.beginTransmission(TOUCH_I2C_ADDR);
+  // Same register window on both touch families we support: CST816
+  // (boards 1) at 0x15 and FocalTech FT3168 (board 2) at 0x38 both put
+  // the active-touch count at 0x02 with XH/XL/YH/YL right behind it.
+  uint8_t addr = BOARD_PROFILES[config.boardId].tpAddr;
+  Wire.beginTransmission(addr);
   Wire.write(0x02); // FingerNum register; X/Y registers follow immediately after
   if (Wire.endTransmission(false) != 0) return GESTURE_NONE;
-  if (Wire.requestFrom(TOUCH_I2C_ADDR, 5) != 5) return GESTURE_NONE;
-  uint8_t fingerNum = Wire.read();
+  if (Wire.requestFrom(addr, (uint8_t)5) != 5) return GESTURE_NONE;
+  uint8_t fingerNum = Wire.read() & 0x0F; // FT3168 keeps count in the low nibble
   uint8_t xh = Wire.read();
   uint8_t xl = Wire.read();
   uint8_t yh = Wire.read();
@@ -2074,13 +2237,13 @@ void drawSaverHostIP() {
   for (int i = 0; i < 4; i++) {
     canvas->setFont(faces[i]);
     canvas->getTextBounds(name, 0, 0, &x1, &y1, &w, &h);
-    if ((int)w <= screenW - 16) break;
+    if ((int)w <= visW - 16) break;
   }
   canvas->setTextColor(COL_TEXT);
-  drawTextCentered(name, screenW / 2, screenH / 2 - SL(16));
+  drawTextCentered(name, visX + visW / 2, visY + visH / 2 - SL(16));
   canvas->setFont(&tiny_sans_18);
   canvas->setTextColor(COL_SUBTEXT);
-  drawTextCentered(ip, screenW / 2, screenH / 2 + SL(18));
+  drawTextCentered(ip, visX + visW / 2, visY + visH / 2 + SL(18));
   canvas->setFont();
   canvas->flush();
 }
@@ -2089,9 +2252,11 @@ void drawSaverTemp() {
   // "temp" screensaver (1.19, retyped 1.22): nothing but the CPU
   // temperature in the same font and degree format as the Temperature
   // layout page (was: the blocky scaled classic font), in the shared
-  // green->amber->red ramp, at the ABSOLUTE center of the physical
-  // panel -- the saver deliberately ignores the aspect-ratio box, since
-  // there's no layout to keep inside a cutout.
+  // green->amber->red ramp, at the ABSOLUTE center of the visible
+  // window -- the saver deliberately ignores the aspect-ratio box
+  // (there's no layout to keep inside a 1.3"-cutout square), but it
+  // must still respect viewport anchoring: on an anchored AMOLED,
+  // pixels outside the window are behind the faceplate.
   canvas->fillScreen(COL_BG);
   char t[10];
   snprintf(t, sizeof(t), "%.0f", stats.cpu_temp_c);
@@ -2104,12 +2269,183 @@ void drawSaverTemp() {
   canvas->setFont(&tiny_sans_bold_64);
   canvas->setTextColor(tempColorFor(stats.cpu_temp_c));
   int edge = drawValueTextCenteredAt(SAVER_ROLL_SLOT, SAVER_OWNER, t,
-                                     screenW / 2, screenH / 2);
+                                     visX + visW / 2, visY + visH / 2);
   int16_t x1, y1; uint16_t w, h;
   canvas->getTextBounds(t, 0, 0, &x1, &y1, &w, &h);
-  canvas->setCursor(edge + SL(4), screenH / 2 - (int)h / 2 - y1);
+  canvas->setCursor(edge + SL(4), visY + visH / 2 - (int)h / 2 - y1);
   canvas->print("\xB0");
   canvas->setFont();
+  canvas->flush();
+}
+
+// ---------------------------------------------------------------------
+// "Particle flow" screensaver (firmware 1.35): a port of the idle
+// animation on UniFi LCM devices, following the reverse-engineered
+// replica at github.com/authrequest/UniFi-LCM-Screensaver (MIT).
+// Particles spawn on a ring around the panel center, drift to a random
+// nearby endpoint, and run a black -> color -> plateau -> black fade
+// envelope, in the UniFi palette (sky blue / blue / purple, decoded
+// from the RE'd ARGB constants). Time is a sawtooth "tick" sweeping
+// 0..PERIOD once per wall-clock second; a particle's four envelope
+// times may extend up to three cycles past the current one, so on each
+// wrap finished particles respawn and survivors shift down one period
+// -- exactly the replica's update_wrap_and_expire(). All integer math;
+// intensity scales the palette RGB toward black, which on our black
+// background is exactly what alpha blending would do, minus the alpha.
+// Every pixel moves and fades continuously, so burn-in protection --
+// the reason savers exist -- comes free. The reference canvas is
+// 240x240, the same as board 0 and the same min-dimension as board 1,
+// so the geometry constants carry over 1:1 with no scaling; only the
+// center moves (absolute panel center, aspect box ignored, like every
+// other saver).
+// ---------------------------------------------------------------------
+
+const int UNIFI_PERIOD = 2500;   // ticks per cycle; one cycle per second
+const int UNIFI_POOL = 250;      // matches the replica's density at 240px
+
+struct UnifiParticle {
+  int16_t x0, y0, x1, y1;   // drift endpoints
+  int16_t t0, t1, t2, t3;   // envelope ticks; t3 tops out at 4*PERIOD
+  int8_t size;              // dot radius, 1..4
+  int8_t colorIdx;          // index into UNIFI_PALETTE
+};
+static UnifiParticle unifiPool[UNIFI_POOL];
+
+// Palette from the RE'd firmware constants [-16744705, -16776961,
+// -10615924] (signed ARGB), decoded to RGB.
+static const uint8_t UNIFI_PALETTE[3][3] = {
+  { 0, 126, 255 },   // sky blue
+  { 0,   0, 255 },   // pure blue
+  { 94,  3, 140 },   // deep purple
+};
+
+// Tiny xorshift32 PRNG: deterministic given a seed (host-testable),
+// no dependence on the core's random(), and cheap enough to call a
+// thousand times in a respawn burst without caring.
+static uint32_t unifiRngState = 0x2545F491u;
+
+uint32_t unifiRngNext() {
+  uint32_t x = unifiRngState;
+  x ^= x << 13;
+  x ^= x >> 17;
+  x ^= x << 5;
+  unifiRngState = x;
+  return x;
+}
+
+int unifiRand(int lo, int hi) {  // inclusive both ends, like the replica
+  if (hi < lo) { int t = lo; lo = hi; hi = t; }
+  return lo + (int)(unifiRngNext() % (uint32_t)(hi - lo + 1));
+}
+
+// Pure envelope core (host-tested): fade intensity 0..255 at a tick.
+// Fade-in t0..t1, plateau t1..t2, fade-out t2..t3; the degenerate
+// zero-width fade windows collapse to the plateau, mirroring the
+// replica's "and t1 != t0" guards.
+int unifiEnvelope(int tick, int t0, int t1, int t2, int t3) {
+  if (tick < t0 || tick > t3) return 0;
+  if (tick <= t1) return t1 > t0 ? 255 * (tick - t0) / (t1 - t0) : 255;
+  if (tick >= t2) return t3 > t2 ? 255 * (t3 - tick) / (t3 - t2) : 255;
+  return 255;
+}
+
+// Pure position core (host-tested): integer lerp from a to b across the
+// particle's whole life t0..t3 (the replica interpolates over the full
+// span too -- the envelope, not the motion, is what has phases).
+int unifiLerp(int a, int b, int tick, int t0, int t3) {
+  if (tick <= t0 || t3 <= t0) return a;
+  if (tick >= t3) return b;
+  return a + (b - a) * (tick - t0) / (t3 - t0);
+}
+
+void unifiSpawn(UnifiParticle &p) {
+  // Spawn geometry lives in the VISIBLE window: centered there, with the
+  // ring radius scaled by the window's min dimension against the 240px
+  // reference the constants were ported at (the LCM replica's field).
+  // On boards 0/1 the window is the whole panel and scale is ~1.
+  int cx = visX + visW / 2, cy = visY + visH / 2;
+  int minDim = visW < visH ? visW : visH;
+  int radius = unifiRand(70 * minDim / 240, 90 * minDim / 240);
+  float theta = unifiRand(1, 360) * 0.017453293f;  // degrees -> radians
+  int x0 = cx + (int)(cosf(theta) * radius);
+  int y0 = cy + (int)(sinf(theta) * radius);
+  int x1 = unifiRand(x0 - 70, x0 + 70);
+  int y1 = unifiRand(y0 - 70, y0 + 70);
+  p.x0 = (int16_t)constrain(x0, visX, visX + visW - 1);
+  p.y0 = (int16_t)constrain(y0, visY, visY + visH - 1);
+  p.x1 = (int16_t)constrain(x1, visX, visX + visW - 1);
+  p.y1 = (int16_t)constrain(y1, visY, visY + visH - 1);
+  p.size = (int8_t)unifiRand(1, radius / 20);       // 1..4
+  int t0 = unifiRand(1, UNIFI_PERIOD);
+  int t1 = unifiRand(t0, t0 + UNIFI_PERIOD);        // choose_next_time()
+  int t2 = unifiRand(t1, t1 + UNIFI_PERIOD);
+  int t3 = unifiRand(t2, t2 + UNIFI_PERIOD);
+  p.t0 = (int16_t)t0; p.t1 = (int16_t)t1;
+  p.t2 = (int16_t)t2; p.t3 = (int16_t)t3;
+  p.colorIdx = (int8_t)unifiRand(0, 2);
+}
+
+static int unifiPrevTick = 0;
+static unsigned long unifiLastFrameMs = 0;
+static bool unifiInited = false;
+
+void drawSaverUnifi() {
+  unsigned long now = millis();
+  // (Re)seed on first activation and whenever the saver has been away
+  // long enough that the sawtooth phase is meaningless -- so every idle
+  // period opens with a fresh fade-in instead of resuming mid-flight.
+  if (!unifiInited || now - unifiLastFrameMs > 1500UL) {
+    unifiRngState ^= (uint32_t)now | 1u;   // |1: never zero the state
+    for (int i = 0; i < UNIFI_POOL; i++) unifiSpawn(unifiPool[i]);
+    unifiPrevTick = 0;
+    unifiInited = true;
+  }
+  unifiLastFrameMs = now;
+
+  int tick = (int)((now % 1000UL) * UNIFI_PERIOD / 1000UL);
+  if (tick < unifiPrevTick) {
+    // Cycle wrapped: retire particles that finished within the cycle
+    // just ended, shift the survivors' clocks down one period.
+    for (int i = 0; i < UNIFI_POOL; i++) {
+      UnifiParticle &p = unifiPool[i];
+      if (p.t3 <= UNIFI_PERIOD) {
+        unifiSpawn(p);
+      } else {
+        p.t0 -= UNIFI_PERIOD; p.t1 -= UNIFI_PERIOD;
+        p.t2 -= UNIFI_PERIOD; p.t3 -= UNIFI_PERIOD;
+      }
+    }
+  }
+  unifiPrevTick = tick;
+
+  canvas->fillScreen(COL_BG);
+  for (int i = 0; i < UNIFI_POOL; i++) {
+    UnifiParticle &p = unifiPool[i];
+    int v = unifiEnvelope(tick, p.t0, p.t1, p.t2, p.t3);
+    if (v <= 0) continue;
+    const uint8_t *c = UNIFI_PALETTE[(int)p.colorIdx];
+    uint16_t col = rgb565((uint8_t)(c[0] * v / 255),
+                          (uint8_t)(c[1] * v / 255),
+                          (uint8_t)(c[2] * v / 255));
+    int x = unifiLerp(p.x0, p.x1, tick, p.t0, p.t3);
+    int y = unifiLerp(p.y0, p.y1, tick, p.t0, p.t3);
+    canvas->fillCircle(x, y, p.size, col);
+  }
+  canvas->flush();
+}
+
+// TEMPORARY (1.36): "white" debug saver -- the VISIBLE window as a solid
+// pure-white field, everything outside it stays black. Exists purely as
+// a physical-alignment tool: behind a faceplate, the lit rectangle IS
+// the configured window, so any offset between it and the case cutout
+// is immediately visible (and the viewport nudge controls fix it live).
+// On full-panel boards the whole screen goes white. Deliberately dumb:
+// static fill, normal redraw cadence, honors the usual saver brightness
+// cap. Scheduled for removal once the sled alignment work is done --
+// see ROADMAP.
+void drawSaverWhite() {
+  canvas->fillScreen(0x0000);
+  canvas->fillRect(visX, visY, visW, visH, 0xFFFF);
   canvas->flush();
 }
 
@@ -2177,7 +2513,8 @@ void handleSetConfig(JsonDocument &doc) {
   if (doc["saver_style"].is<const char *>()) {
     const char *s = doc["saver_style"];
     if (strcmp(s, "clock") == 0 || strcmp(s, "blank") == 0 ||
-        strcmp(s, "temp") == 0 || strcmp(s, "hostip") == 0)
+        strcmp(s, "temp") == 0 || strcmp(s, "hostip") == 0 ||
+        strcmp(s, "unifi") == 0 || strcmp(s, "white") == 0)
       strcpy(config.saverStyle, s);
   }
   // Per-page layout selections: {"temp": "mist", ...}. Applied against
@@ -2229,6 +2566,17 @@ void handleSetConfig(JsonDocument &doc) {
       config.squareFit = (m == 1);  // keep the legacy field coherent
       displayGeomChanged = true;
     }
+  }
+  // Viewport anchoring (1.36). Same restart-to-apply path as rotation:
+  // the canvas doesn't change size, but every cached layout position
+  // does, and re-running initDisplay() keeps one code path honest.
+  if (doc["view_w"].is<int>()) {
+    int vw = constrain((int)doc["view_w"], 0, 1024);
+    if (vw != config.viewW) { config.viewW = vw; displayGeomChanged = true; }
+  }
+  if (doc["view_off_x"].is<int>()) {
+    int vo = constrain((int)doc["view_off_x"], -1, 1024);
+    if (vo != config.viewOffX) { config.viewOffX = vo; displayGeomChanged = true; }
   }
   // Settings may have changed what the backlight should be doing right
   // now (e.g. night mode just enabled mid-window, or saver turned off
@@ -2282,6 +2630,14 @@ void handleGetConfig() {
   doc["configured"] = config.configured;
   doc["board"] = config.boardId;
   doc["board_name"] = BOARD_PROFILES[config.boardId].name;
+  // Viewport anchoring (1.36): the dashboard shows the window controls
+  // only when the active board can use them (an emissive panel where
+  // hidden pixels are truly off -- i.e. the AMOLED driver).
+  doc["supports_viewport"] = (BOARD_PROFILES[config.boardId].driver == DRV_CO5300);
+  doc["view_w"] = config.viewW;
+  doc["view_off_x"] = config.viewOffX;
+  doc["panel_w"] = BOARD_PROFILES[config.boardId].width;
+  doc["panel_h"] = BOARD_PROFILES[config.boardId].height;
   JsonArray pages = doc["pages"].to<JsonArray>();
   for (int i = 0; i < config.numPages; i++) {
     pages.add(config.pages[i]);
@@ -2495,6 +2851,27 @@ void loop() {
   // happen when the value actually changed.
   if (now - lastBrightnessCheckMs > 1000UL) {
     lastBrightnessCheckMs = now;
+    // OLED burn-in wander (1.36): on an emissive panel showing a mostly
+    // static layout, drift the whole visible window +/- a few px inside
+    // the hidden margin every few minutes. Imperceptible at arm's
+    // length; it keeps layout edges from parking on the same subpixels
+    // for thousands of hours. Only on AMOLED boards with an anchored
+    // window (a margin to wander into), and clear the panel on each
+    // step so the vacated strip goes back to black (= off).
+    // The white debug saver is a physical-alignment tool: its lit
+    // rectangle must NOT drift while someone is measuring against the
+    // case cutout, so the wander holds still whenever it's on screen.
+    bool alignmentToolUp = saverActive && strcmp(config.saverStyle, "white") == 0;
+    if (BOARD_PROFILES[config.boardId].driver == DRV_CO5300 &&
+        !alignmentToolUp &&
+        visW < screenW && now - lastWanderMs > WANDER_INTERVAL_MS) {
+      lastWanderMs = now;
+      static const int kWanderSeq[] = {0, 1, 2, 3, 2, 1, 0, -1, -2, -3, -2, -1};
+      wanderIdx = (wanderIdx + 1) % (int)(sizeof(kWanderSeq) / sizeof(kWanderSeq[0]));
+      recomputeVisibleWindow(kWanderSeq[wanderIdx]);
+      canvas->fillScreen(0x0000);
+      lastDrawMs = 0;  // redraw (page or saver) on the next loop pass
+    }
     if (BOARD_PROFILES[config.boardId].hasTouch && config.saverEnabled &&
         !saverActive &&
         now - lastTouchMs > (unsigned long)config.saverMinutes * 60000UL) {
@@ -2510,16 +2887,23 @@ void loop() {
   }
 
   // Rolls need real frames: 200ms cadence reads as a slideshow, so
-  // while any roll is mid-flight the redraw runs at 33ms (1.22).
-  unsigned long frameInterval = (activeRolls + activeTweens) > 0 ? 33 : FRAME_INTERVAL_MS;
+  // while any roll is mid-flight the redraw runs at 33ms (1.22). The
+  // particle-flow saver is a continuous animation, so it gets the same
+  // 33ms treatment for as long as it's on screen.
+  bool saverAnimating = saverActive && strcmp(config.saverStyle, "unifi") == 0;
+  unsigned long frameInterval =
+      (activeRolls + activeTweens) > 0 || saverAnimating ? 33 : FRAME_INTERVAL_MS;
   if (now - lastDrawMs > frameInterval) {
     if (saverActive) {
       // blank style: backlight is off, skip drawing entirely; the
       // drawing styles redraw on the normal cadence (the clock drifts
-      // once a minute; the temperature tracks the live stats stream).
+      // once a minute; the temperature tracks the live stats stream;
+      // the particle flow animates every frame).
       if (strcmp(config.saverStyle, "clock") == 0) drawScreensaver();
       else if (strcmp(config.saverStyle, "temp") == 0) drawSaverTemp();
       else if (strcmp(config.saverStyle, "hostip") == 0) drawSaverHostIP();
+      else if (strcmp(config.saverStyle, "unifi") == 0) drawSaverUnifi();
+      else if (strcmp(config.saverStyle, "white") == 0) drawSaverWhite();
     } else {
       drawCurrentScreen();
     }

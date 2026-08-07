@@ -411,6 +411,65 @@ int main() {
     pendingRestart = false;
   }
 
+  // ---- 1.35: unifi saver style accepted, garbage still rejected ----
+  {
+    strcpy(config.saverStyle, "clock");
+    JsonDocument doc;
+    doc["cmd"] = "set_config";
+    doc["saver_style"] = "unifi";
+    handleSetConfig(doc);
+    CHECK(strcmp(config.saverStyle, "unifi") == 0);
+    JsonDocument doc2;
+    doc2["cmd"] = "set_config";
+    doc2["saver_style"] = "particles";
+    handleSetConfig(doc2);
+    CHECK(strcmp(config.saverStyle, "unifi") == 0);  // unchanged
+    pendingRestart = false;
+  }
+
+  // ---- 1.35: particle-flow envelope core ----
+  {
+    // fade-in 100..200, plateau 200..300, fade-out 300..500
+    CHECK(unifiEnvelope(50, 100, 200, 300, 500) == 0);     // before birth
+    CHECK(unifiEnvelope(100, 100, 200, 300, 500) == 0);    // birth = black
+    CHECK(unifiEnvelope(150, 100, 200, 300, 500) == 127);  // mid fade-in
+    CHECK(unifiEnvelope(200, 100, 200, 300, 500) == 255);  // fade-in done
+    CHECK(unifiEnvelope(250, 100, 200, 300, 500) == 255);  // plateau
+    CHECK(unifiEnvelope(400, 100, 200, 300, 500) == 127);  // mid fade-out
+    CHECK(unifiEnvelope(500, 100, 200, 300, 500) == 0);    // death = black
+    CHECK(unifiEnvelope(600, 100, 200, 300, 500) == 0);    // after death
+    // degenerate zero-width fades collapse to the plateau, no div-by-0
+    CHECK(unifiEnvelope(100, 100, 100, 100, 100) == 255);
+    CHECK(unifiEnvelope(150, 100, 100, 200, 200) == 255);
+  }
+
+  // ---- 1.35: particle-flow position lerp core ----
+  {
+    CHECK(unifiLerp(10, 110, 0, 100, 500) == 10);     // before t0: at start
+    CHECK(unifiLerp(10, 110, 100, 100, 500) == 10);   // t0 exactly
+    CHECK(unifiLerp(10, 110, 300, 100, 500) == 60);   // halfway
+    CHECK(unifiLerp(10, 110, 500, 100, 500) == 110);  // t3: at end
+    CHECK(unifiLerp(10, 110, 900, 100, 500) == 110);  // past t3: parked
+    CHECK(unifiLerp(110, 10, 300, 100, 500) == 60);   // moving negative
+    CHECK(unifiLerp(10, 110, 300, 100, 100) == 10);   // zero-span life
+  }
+
+  // ---- 1.35: particle spawn invariants (deterministic PRNG) ----
+  {
+    screenW = 240; screenH = 240;
+    unifiRngState = 12345u;
+    for (int i = 0; i < 200; i++) {
+      UnifiParticle p;
+      unifiSpawn(p);
+      CHECK(p.x0 >= 0 && p.x0 < screenW && p.y0 >= 0 && p.y0 < screenH);
+      CHECK(p.x1 >= 0 && p.x1 < screenW && p.y1 >= 0 && p.y1 < screenH);
+      CHECK(p.size >= 1 && p.size <= 4);
+      CHECK(p.colorIdx >= 0 && p.colorIdx <= 2);
+      CHECK(p.t0 >= 1 && p.t0 <= p.t1 && p.t1 <= p.t2 && p.t2 <= p.t3);
+      CHECK(p.t3 <= 4 * UNIFI_PERIOD);  // fits the int16 fields with room
+    }
+  }
+
   // ---- 1.31: SL scales lengths without the box offset ----
   {
     int sLX = LX, sLY = LY, sLW = LW, sLH = LH;
@@ -547,6 +606,29 @@ int main() {
   CHECK(g8->width > 60 && g8->height > 80 && g8->xAdvance >= g8->width);
   const GFXglyph *gA = &tiny_sans_bold_128_Glyphs['A' - 32];
   CHECK(gA->width == 0 && gA->height == 0);
+
+  // ---- computeViewport: anchored-window math (1.36, AMOLED-1.64) ----
+  int vx = -99, vw = -99;
+  // viewW 0 / >= panel width -> full panel
+  computeViewport(456, 0, -1, &vx, &vw);   CHECK(vx == 0 && vw == 456);
+  computeViewport(456, 456, -1, &vx, &vw); CHECK(vx == 0 && vw == 456);
+  computeViewport(456, 500, 10, &vx, &vw); CHECK(vx == 0 && vw == 456);
+  // -1 offset centers: (456-296)/2 = 80
+  computeViewport(456, 296, -1, &vx, &vw); CHECK(vx == 80 && vw == 296);
+  // explicit offset passes through; over-large offset clamps to the far edge
+  computeViewport(456, 296, 40, &vx, &vw);  CHECK(vx == 40 && vw == 296);
+  computeViewport(456, 296, 400, &vx, &vw); CHECK(vx == 160 && vw == 296);
+  computeViewport(456, 296, 0, &vx, &vw);   CHECK(vx == 0 && vw == 296);
+  // boards 0/1 semantics unchanged: viewW 0 on a 240-wide panel
+  computeViewport(240, 0, -1, &vx, &vw);   CHECK(vx == 0 && vw == 240);
+
+  // ---- applyWanderShift: burn-in drift stays inside the panel ----
+  CHECK(applyWanderShift(80, 296, 456, 0) == 80);
+  CHECK(applyWanderShift(80, 296, 456, 3) == 83);
+  CHECK(applyWanderShift(80, 296, 456, -3) == 77);
+  CHECK(applyWanderShift(0, 296, 456, -3) == 0);     // clamped at left edge
+  CHECK(applyWanderShift(160, 296, 456, 3) == 160);  // clamped at right edge
+  CHECK(applyWanderShift(0, 240, 240, 3) == 0);      // full-panel window: no drift
 
   printf("ALL FIRMWARE LOGIC TESTS PASS\n");
   return 0;

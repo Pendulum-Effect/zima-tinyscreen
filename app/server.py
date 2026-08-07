@@ -849,7 +849,12 @@ def build_set_config_payload(cfg):
                       ("saver_minutes", int), ("saver_style", str),
                       ("saver_brightness", int),
                       ("rotation", int), ("square_fit", bool),
-                      ("aspect_mode", int)]:
+                      ("aspect_mode", int),
+                      # Viewport anchoring (firmware 1.36, AMOLED-1.64):
+                      # only-if-present like everything else, so saves from
+                      # dashboards that predate the fields never reset an
+                      # anchored window.
+                      ("view_w", int), ("view_off_x", int)]:
         if key in cfg:
             payload[key] = cast(cfg[key])
     # board is only-if-present as of 0.9.7.4 -- it USED to default to 0,
@@ -1406,7 +1411,10 @@ def api_current_config():
 # main.cpp's top-of-file note for why this split exists (ARDUINO_USB_CDC_ON_BOOT
 # is a compile-time flag, so board 1's opposite USB mode needs a fully
 # separate binary, not just different runtime config).
-NATIVE_USB_BOARDS = {1}
+# Boards using the ESP32-S3's native USB peripheral (no UART bridge chip):
+# board 1 (Touch-LCD-1.69) and board 2 (Touch-AMOLED-1.64). They flash the
+# "native" firmware variant; board 0's CH343P bridge takes "bridge".
+NATIVE_USB_BOARDS = {1, 2}
 
 
 def firmware_dir_for_board(board_id):

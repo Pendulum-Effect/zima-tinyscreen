@@ -651,13 +651,51 @@ None are worth a dedicated round; fold them into other work or skip.
 
 ## Known constraints / gotchas (learned the hard way)
 
-- Arduino_GFX must stay pinned at exactly 1.4.9 (PlatformIO
-  incompatibility in 1.6.x -- see comment in `firmware/platformio.ini`).
-- Board 1 needs USB CDC On Boot: Enabled; board 0 the opposite. That's
-  why CI builds two binaries from one source.
+- Arduino_GFX is pinned at exactly 1.6.6 on the pioarduino platform
+  (Arduino core 3.x) as of 1.0.2 -- the old exactly-1.4.9 rule existed
+  because the official PlatformIO platform's core 2.x lacked
+  esp32-hal-periman.h; core 3.x resolves it, and the CO5300/QSPI
+  driver for board 2 needs >= 1.6.0. Keep BOTH pins exact (platform
+  release tag + lib version); see `firmware/platformio.ini`.
+- Boards 1 and 2 need USB CDC On Boot: Enabled; board 0 the opposite.
+  That's why CI builds two binaries from one source.
 - esptool is on v5.x command syntax (`write-flash`, dashed) -- don't
   downgrade below 5.
 - RAM is GiB, disks are decimal GB (deliberate, matches OS vs vendor
   labeling -- documented in README).
 - The `/proc/1/net/dev` bind mount is what makes network stats work
   without `network_mode: host`; don't "simplify" it away.
+
+## Scheduled removals
+
+- [ ] **Remove the "white" debug screensaver** (firmware whitelist +
+      drawSaverWhite + dispatch + wander freeze in main.cpp, the
+      dashboard radio button, and this line) once the faceplate
+      alignment work is done -- it shipped in 1.0.2 explicitly as a
+      temporary tool.
+
+## 1.0.2 hardware verification queue
+
+- [ ] HARDWARE VERIFY (1.36): AMOLED-1.64 first light -- CO5300 GRAM
+      offsets ship as 0 (Arduino_GFX added the driver for this exact
+      panel, so its defaults should hold). If the image lands shifted
+      with a garbage strip on one edge, set colOffset1 (try 20) in
+      board 2's BOARD_PROFILES entry.
+- [ ] HARDWARE VERIFY (1.36): 456x280 canvas allocation on real
+      hardware (255 KB framebuffer + rotation path; PSRAM is enabled in
+      both build envs, confirm no alloc failure and flush cadence holds
+      33ms with the particle saver running).
+- [ ] HARDWARE VERIFY (1.36): brightness register vs backlight -- 0%
+      and the "blank" saver should read fully dark on the AMOLED; night
+      mode dimming curve feels comparable to the LCD boards.
+- [ ] HARDWARE VERIFY (1.36): FT3168 swipe left/right in rotation 90
+      (mapSwipeDeltaX axis handling), tap-to-wake, and the wake-tap
+      swallow behaving like the CST816 boards.
+- [ ] HARDWARE VERIFY (1.36): viewport nudge round-trip -- dashboard
+      1px/10px nudges land where expected through the restart, wander
+      shift is imperceptible and never exposes a stale strip.
+- [ ] HARDWARE VERIFY (1.0.2): boards 0/1 regression pass on the new
+      platform + Arduino_GFX 1.6.6 (colors, fonts, rolls, savers,
+      backlight PWM) -- the library adopted W3C color keywords in
+      1.6.3; we use raw RGB565 constants everywhere, but eyes on glass
+      beats grep.

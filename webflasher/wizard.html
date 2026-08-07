@@ -123,6 +123,10 @@
     background: #2a3a3d; border: 3px solid #4a6a6a;
   }
   .screen-card.round-ish .glyph { border-radius: 16px; height: 84px; }
+  /* AMOLED-1.64: drawn landscape -- the way it mounts behind a blade
+     cutout -- with a deeper black to whisper "emissive panel". */
+  .screen-card.amoled .glyph { border-radius: 10px; height: 52px; width: 84px;
+    margin-top: 16px; background: #05070c; border: 1px solid var(--teal-dim); }
   .screen-card .name { font-weight: 700; font-size: 15px; }
   .screen-card .dims { color: var(--subtext); font-size: 12.5px; margin-top: 2px; }
   .screen-card .kind { color: var(--subtext); font-size: 12.5px; margin-top: 2px; }
@@ -236,10 +240,11 @@
         </div>
         <div class="help-banner">
           Not sure which one you have, or need to grab one? Here's the
-          <a href="https://www.waveshare.com/esp32-s3-lcd-1.3.htm?sku=30558" target="_blank" rel="noopener">ESP32-S3-LCD-1.3</a>
+          <a href="https://www.waveshare.com/esp32-s3-lcd-1.3.htm?sku=30558" target="_blank" rel="noopener">ESP32-S3-LCD-1.3</a>, the
+          <a href="https://www.waveshare.com/esp32-s3-touch-lcd-1.69.htm" target="_blank" rel="noopener">ESP32-S3-TOUCH-1.69</a>,
           and the
-          <a href="https://www.waveshare.com/esp32-s3-touch-lcd-1.69.htm" target="_blank" rel="noopener">ESP32-S3-TOUCH-1.69</a>
-          from Waveshare. Either one connects with a USB-C or USB-A cable.
+          <a href="https://www.waveshare.com/esp32-s3-touch-amoled-1.64.htm" target="_blank" rel="noopener">ESP32-S3-TOUCH-AMOLED-1.64</a>
+          from Waveshare. Each one connects with a USB-C or USB-A cable.
         </div>
       </div>
       <div class="footer">
@@ -443,7 +448,7 @@
   // Computer path: ESP Web Tools flash, then push default config over
   // the same WebSerial connection
   // ---------------------------------------------------------------------
-  const NATIVE_USB_BOARDS = [1];
+  const NATIVE_USB_BOARDS = [1, 2];  // boards on the S3's native USB peripheral
 
   function applyManifestForBoard(boardId) {
     const isNative = NATIVE_USB_BOARDS.includes(boardId);
@@ -486,7 +491,23 @@
   });
 
   function defaultConfigFor(boardId) {
-    return { board: boardId, pages: ['temp'], cycle_mode: 'static', cycle_seconds: 10, brightness: 100 };
+    const cfg = { board: boardId, pages: ['temp'], cycle_mode: 'static', cycle_seconds: 10, brightness: 100 };
+    if (boardId === 2) {
+      // AMOLED-1.64 defaults: mounted sideways behind a case cutout, so
+      // rotate 90 and anchor a centered 296px window (about 23mm at this
+      // panel's pixel pitch). And because a mostly-static status layout
+      // on an emissive panel is the textbook burn-in case, the particle
+      // flow screensaver starts ON at 10 minutes with brightness eased
+      // to 80% -- all adjustable later in the dashboard.
+      cfg.rotation = 90;
+      cfg.view_w = 296;
+      cfg.view_off_x = -1;   // centered
+      cfg.brightness = 80;
+      cfg.saver_enabled = true;
+      cfg.saver_minutes = 10;
+      cfg.saver_style = 'unifi';
+    }
+    return cfg;
   }
 
   async function pushDefaultConfigViaWebSerial(boardId, statusCb) {

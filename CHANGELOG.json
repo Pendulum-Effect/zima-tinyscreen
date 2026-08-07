@@ -2,6 +2,32 @@
   "_comment": "Human-readable changelog for the dashboard's About tab -- written for people, not commit archaeologists. The dashboard fetches this from GitHub at page load (baked copy as fallback), so add an entry here with each release and every install sees it. Newest first. Dates are YYYY-MM-DD.",
   "entries": [
     {
+      "version": "1.0.2",
+      "date": "2026-08-05",
+      "title": "The AMOLED blade window (firmware 1.36)",
+      "notes": [
+        "New board: ESP32-S3-Touch-AMOLED-1.64 (board 2) -- a 280x456 AMOLED with on-glass capacitive touch and the ESP32-S3 on the same PCB. The CO5300 display controller talks QSPI (four data lines, no D/C pin, no backlight GPIO); brightness is now a register write into the panel itself on this board, so the day/night/screensaver brightness policy carries over unchanged. Touch is a FocalTech FT3168 that happens to share the CST816's register layout, so swipe navigation and tap-to-wake work through the existing poll -- only the I2C address differs, now a per-board profile field.",
+        "Viewport anchoring, built for this panel mounted sideways behind a case cutout narrower than the glass: a configurable window (width + left offset, or centered) becomes the whole visible world -- pages, savers, and the splash all render inside it, and everything outside stays black, which on an AMOLED means the pixels are literally off. The new Display Window card in the Screen tab sets the width and nudges the position by 1px or 10px until it sits perfectly in the cutout. Width 0 keeps the full panel, so boards 0 and 1 behave exactly as before.",
+        "Burn-in wander for AMOLED boards: every five minutes the visible window drifts up to +/-3px inside the hidden margin, so layout edges never park on the same subpixels for thousands of hours. Imperceptible in person; the panel-preservation math is host-tested (computeViewport / applyWanderShift join the pure-function suite). The wizard also ships opinionated board-2 defaults -- rotation 90, a centered 296px window, brightness 80%, and the Particle flow screensaver ON at 10 minutes, because a mostly-static status layout on an emissive panel is the textbook burn-in case.",
+        "The CO5300 cannot hardware-rotate (its MADCTL only flips axes), so 90/270 mounts rotate in software: the canvas holds the logical dimensions and rotates during flush while the panel driver stays at rotation 0. LCD boards keep their hardware-rotation path untouched.",
+        "New Plugins tab in the dashboard's side navigation -- the future home for TinyScreen integrations (first on the bench: a game-server status screen fed by AMP's API). For now it's an intentionally calm under-construction page in the house style.",
+        "Build system: the PlatformIO platform moves to the pioarduino fork (Arduino core 3.x, pinned release) and Arduino_GFX bumps from the 1.4.9 workaround pin to 1.6.6 -- the CO5300/QSPI driver this board needs was added in 1.6.0 (release-noted for this exact panel), and core 3.x is what resolves the esp32-hal-periman.h incompatibility that forced the old pin. The firmware's dual-core LEDC shim already covered both cores, and the Arduino IDE route was on core 3.x all along, so the two build paths now converge. Still two build environments (bridge / native); board 2 flashes the native variant like board 1.",
+        "Reviewed the Particle flow port while in the neighborhood: the envelope/lerp/RNG cores and cycle-wrap retirement all check out against the replica; its spawn field is now expressed in visible-window coordinates with the ring radius scaled from the 240px reference, so it renders identically on the LCD boards and correctly inside an anchored AMOLED window.",
+        "TEMPORARY: a \"White (debug)\" screensaver style -- the visible window as a solid pure-white field (full panel on boards 0/1). It exists as a physical-alignment tool for seating a screen behind a faceplate cutout: the lit rectangle is exactly the configured window, so any offset against the opening is obvious, and the burn-in wander holds still while it's on screen so the target doesn't drift mid-measurement. Slated for removal once the sled alignment work wraps."
+      ]
+    },
+    {
+      "version": "1.0.1",
+      "date": "2026-07-19",
+      "title": "Idle like a Dream Machine (firmware 1.35)",
+      "notes": [
+        "New firmware 1.35 with a new screensaver style: Particle flow -- a port of the idle animation UniFi LCM devices play, following the reverse-engineered replica at github.com/authrequest/UniFi-LCM-Screensaver (MIT). 250 particles spawn on a ring around the panel center, drift outward, and breathe through a fade-in/plateau/fade-out envelope in the UniFi palette (sky blue, blue, deep purple). Every pixel moves and fades continuously, so it doubles as proper burn-in protection.",
+        "The particle saver animates at the same 33ms frame cadence the rolling numbers use, so it reads as motion rather than a slideshow; the other saver styles keep their calmer redraw rhythm.",
+        "Dashboard: the screensaver style picker gains the Particle flow option -- and a fix along the way: the picker never learned about the Hostname & IP style added back in firmware 1.33, so a device configured with it showed Drifting clock selected on load (and a save from that screen would have quietly flipped the device back). The load-time whitelist now knows all five styles.",
+        "Credit where due: the About tab's \"Standing on shoulders\" list now includes authrequest (whose MIT-licensed reverse-engineered replica the port follows) and Ubiquiti (who designed the original UniFi LCM idle animation -- TinyScreen is not affiliated with or endorsed by them), and the README says the same."
+      ]
+    },
+    {
       "version": "1.0.0",
       "date": "2026-07-14",
       "title": "One point oh (firmware 1.34)",

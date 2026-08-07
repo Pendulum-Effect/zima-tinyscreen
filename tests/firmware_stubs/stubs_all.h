@@ -71,6 +71,10 @@ class Arduino_DataBus {};
 class Arduino_ESP32SPI : public Arduino_DataBus {
  public: Arduino_ESP32SPI(int, int, int, int, int) {}
 };
+// QSPI bus (AMOLED boards): cs, sck, sio0..sio3
+class Arduino_ESP32QSPI : public Arduino_DataBus {
+ public: Arduino_ESP32QSPI(int, int, int, int, int, int) {}
+};
 class Arduino_GFX {
  public:
   virtual ~Arduino_GFX() {}
@@ -111,9 +115,20 @@ class Arduino_ST7789 : public Arduino_GFX {
  public:
   Arduino_ST7789(Arduino_DataBus *, int, int, bool, int, int, int, int, int, int) {}
 };
+// CO5300 QSPI AMOLED (Arduino_OLED subclass upstream: no IPS flag, and
+// brightness/contrast are controller registers rather than a backlight)
+class Arduino_CO5300 : public Arduino_GFX {
+ public:
+  Arduino_CO5300(Arduino_DataBus *, int, int, int, int, int, int, int, int) {}
+  void setBrightness(unsigned char) {}
+  void displayOn() {}
+  void displayOff() {}
+};
 class Arduino_Canvas : public Arduino_GFX {
  public:
-  Arduino_Canvas(int, int, Arduino_GFX *) {}
+  // Rotation parameter (upstream >=1.5.x): canvas-side software rotation
+  // for panels whose controller can't swap axes (CO5300 AMOLED).
+  Arduino_Canvas(int, int, Arduino_GFX *, int = 0, int = 0, unsigned char = 0) {}
 };
 
 // ===== ArduinoJson.h =====================================================

@@ -32,22 +32,31 @@ square, the words tiny + screen aligned strategically is nothing galaxy
 brain anyway). Most everything else is AI. I attributed credit where 
 possible and this project will remain open and free to use.
 
-## <img src="assets/readme/icons/Hardware.png" width="26" align="top"> Hardware: one firmware, two boards
+## <img src="assets/readme/icons/Hardware.png" width="26" align="top"> Hardware: one firmware, three boards
 
-The same firmware supports both boards; which one you have is chosen in
-the settings, not at compile time:
+The same firmware supports all three boards; which one you have is
+chosen in the settings, not at compile time:
 
 - **Board 0 -- Waveshare ESP32-S3-LCD-1.3**: square 240x240, ST7789V2,
   no touchscreen. Pages auto-cycle on a timer (or show a single page).
 - **Board 1 -- Waveshare ESP32-S3-Touch-LCD-1.69**: 240x280 (taller than
   wide), ST7789V2, CST816T touch. Swipe between pages, with optional
   auto-cycle on top.
+- **Board 2 -- Waveshare ESP32-S3-Touch-AMOLED-1.64**: 280x456 AMOLED,
+  CO5300 over QSPI, FT3168 touch, ESP32-S3 on the same PCB. Usually
+  mounted sideways behind a case cutout, with **viewport anchoring**:
+  a configurable window of the panel is treated as visible and the
+  rest stays black -- on an emissive panel, literally off. Brightness
+  is a controller register (there is no backlight pin), and a slow
+  burn-in wander drifts the window a few px inside the hidden margin.
 
-**One build setting differs**: board 1 uses the ESP32-S3's native USB
-(no UART bridge chip), so it needs **USB CDC On Boot: Enabled** in
+**One build setting differs**: boards 1 and 2 use the ESP32-S3's native
+USB (no UART bridge chip), so they need **USB CDC On Boot: Enabled** in
 Arduino IDE -- the opposite of board 0. This is compile-time, which is
 why CI builds two binaries (see `firmware/platformio.ini`); everything
-else is runtime config.
+else is runtime config. Arduino IDE users need **GFX Library for
+Arduino 1.6.6** and **esp32 core >= 3.1.0** (the same versions the
+PlatformIO build pins).
 
 ## <img src="assets/readme/icons/Webpages.png" width="26" align="top"> The two web pages
 
@@ -60,8 +69,11 @@ else is runtime config.
   updates, debugging, HTTPS certificate), Layouts (choose each page's
   look with live previews), Screen (brightness, rotation, aspect
   ratio -- including a 1.3" compact mode for 240x280 panels behind
-  smaller cutouts -- night mode, and a screensaver with four styles:
-  drifting clock, temperature, hostname & IP, or screen off), and
+  smaller cutouts -- night mode, and a screensaver with five styles:
+  drifting clock, temperature, hostname & IP, particle flow (a port of
+  the idle animation on Ubiquiti's UniFi LCM devices, via
+  [authrequest's MIT-licensed replica](https://github.com/authrequest/UniFi-LCM-Screensaver);
+  not affiliated with or endorsed by Ubiquiti), or screen off), and
   About.
 
 

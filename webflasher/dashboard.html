@@ -529,6 +529,74 @@
   /* The traveling pill. Position via transform (compositor-friendly);
      width/height transition too since the horizontal phone bar and the
      vertical desktop rail have differently-sized items. */
+  /* Plugins tab: an intentionally calm "under construction" hero -- the
+     plug badge breathes on the teal accent, the copy explains what will
+     live here, and three drifting dots supply just enough motion to say
+     "in progress" without shouting. */
+  .plugins-hero {
+    max-width: 520px;
+    margin: 48px auto 0;
+    padding: 44px 36px 40px;
+    text-align: center;
+    border: 1px dashed var(--border);
+    border-radius: 18px;
+    background:
+      radial-gradient(ellipse 65% 50% at 50% 0%, rgba(79, 209, 197, 0.07), transparent 70%),
+      var(--panel-raised);
+  }
+  .plugins-badge {
+    width: 74px; height: 74px;
+    margin: 0 auto 22px;
+    display: flex; align-items: center; justify-content: center;
+    border-radius: 22px;
+    color: var(--teal);
+    background: rgba(79, 209, 197, 0.09);
+    border: 1px solid rgba(79, 209, 197, 0.25);
+    animation: plugins-breathe 3.2s ease-in-out infinite;
+  }
+  .plugins-badge svg { width: 36px; height: 36px; }
+  @keyframes plugins-breathe {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(79, 209, 197, 0.0); transform: translateY(0); }
+    50%      { box-shadow: 0 0 26px 2px rgba(79, 209, 197, 0.13); transform: translateY(-3px); }
+  }
+  .plugins-title { font-size: 19px; font-weight: 650; color: var(--text); letter-spacing: 0.2px; }
+  .plugins-sub {
+    margin: 10px auto 0;
+    max-width: 400px;
+    font-size: 13.5px; line-height: 1.55;
+    color: var(--subtext);
+  }
+  .plugins-dots { margin-top: 26px; display: flex; gap: 7px; justify-content: center; }
+  .plugins-dots span {
+    width: 6px; height: 6px; border-radius: 50%;
+    background: var(--teal-dim);
+    animation: plugins-dot 1.6s ease-in-out infinite;
+  }
+  .plugins-dots span:nth-child(2) { animation-delay: 0.22s; }
+  .plugins-dots span:nth-child(3) { animation-delay: 0.44s; }
+  @keyframes plugins-dot {
+    0%, 100% { opacity: 0.35; transform: translateY(0); }
+    50%      { opacity: 1; transform: translateY(-4px); }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .plugins-badge, .plugins-dots span { animation: none; }
+  }
+
+  .viewport-row {
+    display: flex; align-items: center; gap: 12px;
+    margin-top: 14px; flex-wrap: wrap;
+  }
+  .viewport-row label { font-size: 13px; color: var(--subtext); min-width: 92px; }
+  .viewport-row input[type="number"] {
+    width: 88px; padding: 7px 9px;
+    background: var(--panel); color: var(--text);
+    border: 1px solid var(--border); border-radius: 8px;
+    font-size: 13.5px;
+  }
+  .viewport-unit { font-size: 12.5px; color: var(--subtext); }
+  .viewport-nudges { display: flex; gap: 6px; flex-wrap: wrap; }
+  .viewport-nudges .btn { padding: 6px 10px; font-size: 12.5px; }
+
   .nav-indicator {
     position: absolute; left: 0; top: 0; z-index: 0;
     width: 0; height: 0;
@@ -638,6 +706,10 @@
     <div class="nav-item" data-tab="screen">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
       <span class="nav-label">Screen</span>
+    </div>
+    <div class="nav-item" data-tab="plugins">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22v-5"/><path d="M9 8V2"/><path d="M15 8V2"/><path d="M18 8v5a4 4 0 0 1-4 4h-4a4 4 0 0 1-4-4V8Z"/></svg>
+      <span class="nav-label">Plugins</span>
     </div>
     <div class="nav-item" data-tab="about">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
@@ -822,7 +894,9 @@
               <button class="radio-btn" data-saver-style="clock">Drifting clock</button>
               <button class="radio-btn" data-saver-style="temp">Temperature</button>
               <button class="radio-btn" data-saver-style="hostip">Hostname &amp; IP</button>
+              <button class="radio-btn" data-saver-style="unifi">Particle flow</button>
               <button class="radio-btn" data-saver-style="blank">Screen off</button>
+              <button class="radio-btn" data-saver-style="white" title="Temporary alignment tool: fills the visible window with solid white so you can line the screen up behind a faceplate cutout.">White (debug)</button>
             </div>
             <div id="saver-brightness-row">
               <div class="card-desc" style="margin-top:10px;">Brightness while active</div>
@@ -891,6 +965,55 @@
           <div class="info-note"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg><span>The screen restarts for a moment when this changes.</span></div>
         </div>
 
+        <div class="card" id="viewport-card" style="display:none;">
+          <div class="card-title">Display Window</div>
+          <div class="card-desc">
+            This panel is bigger than a case cutout needs, so only a window of
+            it is treated as visible &mdash; everything renders inside the
+            window and the rest of the AMOLED stays truly off. Set the window's
+            width to match your cutout, then nudge it left or right until it
+            sits perfectly in the opening.
+          </div>
+          <div class="viewport-row">
+            <label for="viewport-width">Window width</label>
+            <input type="number" id="viewport-width" min="0" step="2">
+            <span class="viewport-unit">px <span id="viewport-panel-hint"></span></span>
+          </div>
+          <div class="viewport-row">
+            <label>Position</label>
+            <div class="viewport-nudges">
+              <button class="btn btn-ghost viewport-nudge" data-nudge="-10">&laquo; 10</button>
+              <button class="btn btn-ghost viewport-nudge" data-nudge="-1">&lsaquo; 1</button>
+              <button class="btn btn-ghost" id="viewport-center">Center</button>
+              <button class="btn btn-ghost viewport-nudge" data-nudge="1">1 &rsaquo;</button>
+              <button class="btn btn-ghost viewport-nudge" data-nudge="10">10 &raquo;</button>
+            </div>
+            <span class="viewport-unit" id="viewport-offset-label">centered</span>
+          </div>
+          <div class="info-note"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg><span>Width 0 uses the full panel. The screen restarts for a moment when this changes.</span></div>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- Plugins -->
+    <section class="tab-panel" data-panel="plugins">
+      <h2>Plugins</h2>
+      <div class="plugins-hero">
+        <div class="plugins-badge">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M12 22v-5"/><path d="M9 8V2"/><path d="M15 8V2"/>
+            <path d="M18 8v5a4 4 0 0 1-4 4h-4a4 4 0 0 1-4-4V8Z"/>
+          </svg>
+        </div>
+        <div class="plugins-title">Under construction</div>
+        <div class="plugins-sub">
+          Plugins will be the home for TinyScreen's integrations &mdash; extra
+          pages and screensavers fed by the services you already run. First on
+          the bench: a game-server status screen (players online, TPS, CPU
+          temp) powered by AMP's API.
+        </div>
+        <div class="plugins-dots" aria-hidden="true"><span></span><span></span><span></span></div>
       </div>
     </section>
 
@@ -983,6 +1106,7 @@
   const FRIENDLY_BOARD_NAMES = {
     0: 'Square Display (No Touch)',
     1: '1.69" Touch Display',
+    2: '1.64" AMOLED Touch Display',
   };
 
   // ---------------------------------------------------------------------
@@ -1375,6 +1499,10 @@
   let nightEnabled = false, nightStartMin = 1320, nightEndMin = 420, nightBrightness = 10;
   let saverEnabled = false, saverMinutes = 5, saverStyle = 'clock', saverBrightness = 30;
   let rotation = 0, aspectMode = 0;  // 0 full, 1 square, 2 compact 1.3" 
+  // Viewport anchoring (firmware 1.36, AMOLED boards): the visible window's
+  // width and left offset in post-rotation panel pixels; -1 offset = centered.
+  let viewW = 0, viewOffX = -1, viewportSupported = false;
+  let panelW = 240, panelH = 240;  // NATIVE panel dims, from get_config
 
   // Keep the custom track's filled portion in sync with the value, and
   // render 0 as "Off" (both sliders allow full-off now).
@@ -1656,6 +1784,44 @@
         b.classList.toggle('active', b === btn));
       markDirty();
     });
+  });
+  // Viewport controls: the logical (post-rotation) width is the axis the
+  // window slides along -- sideways mounts swap the panel dims.
+  function viewportLogicalW() {
+    return (rotation === 90 || rotation === 270) ? panelH : panelW;
+  }
+  function renderViewport() {
+    const card = document.getElementById('viewport-card');
+    card.style.display = viewportSupported ? 'block' : 'none';
+    if (!viewportSupported) return;
+    document.getElementById('viewport-width').value = viewW;
+    document.getElementById('viewport-panel-hint').textContent =
+      'of ' + viewportLogicalW();
+    document.getElementById('viewport-offset-label').textContent =
+      viewOffX < 0 ? 'centered' : (viewOffX + 'px from left');
+  }
+  document.getElementById('viewport-width').addEventListener('change', () => {
+    const raw = parseInt(document.getElementById('viewport-width').value, 10);
+    const maxW = viewportLogicalW();
+    viewW = Number.isFinite(raw) ? Math.max(0, Math.min(raw, maxW)) : 0;
+    renderViewport();
+    markDirty();
+  });
+  document.querySelectorAll('.viewport-nudge').forEach(btn => {
+    btn.addEventListener('click', () => {
+      if (viewW <= 0) return;  // full panel: nothing to slide
+      const maxOff = Math.max(0, viewportLogicalW() - viewW);
+      // Nudging away from "centered" starts from the centered position.
+      const base = viewOffX < 0 ? Math.floor(maxOff / 2) : viewOffX;
+      viewOffX = Math.max(0, Math.min(base + parseInt(btn.dataset.nudge, 10), maxOff));
+      renderViewport();
+      markDirty();
+    });
+  });
+  document.getElementById('viewport-center').addEventListener('click', () => {
+    viewOffX = -1;
+    renderViewport();
+    markDirty();
   });
   document.querySelectorAll('.radio-btn[data-saver-style]').forEach(btn => {
     btn.addEventListener('click', () => {
@@ -1982,6 +2148,16 @@
       document.getElementById('aspect-card').style.display =
         cfg.board === 0 ? 'none' : 'block';
 
+      // Viewport anchoring (firmware 1.36): controls only exist for boards
+      // that report support (the AMOLED driver). Older firmware simply
+      // doesn't send the fields, so the card stays hidden.
+      viewportSupported = !!cfg.supports_viewport;
+      viewW = Number.isInteger(cfg.view_w) ? cfg.view_w : 0;
+      viewOffX = Number.isInteger(cfg.view_off_x) ? cfg.view_off_x : -1;
+      if (Number.isInteger(cfg.panel_w)) panelW = cfg.panel_w;
+      if (Number.isInteger(cfg.panel_h)) panelH = cfg.panel_h;
+      renderViewport();
+
       // Night mode + screensaver (firmware 1.1.0). Fall back to sane
       // defaults when talking to older firmware that doesn't report the
       // fields; hasTouch falls back per known board profiles.
@@ -1991,7 +2167,7 @@
       nightBrightness = Number.isInteger(cfg.night_brightness) ? cfg.night_brightness : 10;
       saverEnabled = !!cfg.saver_enabled;
       saverMinutes = Number.isInteger(cfg.saver_minutes) ? cfg.saver_minutes : 5;
-      saverStyle = ['clock', 'blank', 'temp'].includes(cfg.saver_style) ? cfg.saver_style : 'clock';
+      saverStyle = ['clock', 'blank', 'temp', 'hostip', 'unifi'].includes(cfg.saver_style) ? cfg.saver_style : 'clock';
       saverBrightness = Number.isInteger(cfg.saver_brightness) ? cfg.saver_brightness : 30;
       const sbSlider = document.getElementById('saver-brightness-slider');
       sbSlider.value = saverBrightness;
@@ -3160,6 +3336,8 @@
           rotation: rotation,
           aspect_mode: aspectMode,
           square_fit: aspectMode === 1,  // graceful degradation for firmware <=1.21
+          view_w: viewW,
+          view_off_x: viewOffX,
           layouts: pageLayouts,
           saver_enabled: saverEnabled,
           saver_minutes: saverMinutes,
