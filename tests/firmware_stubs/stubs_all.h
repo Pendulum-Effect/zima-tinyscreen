@@ -75,6 +75,7 @@ class Arduino_ESP32SPI : public Arduino_DataBus {
 class Arduino_ESP32QSPI : public Arduino_DataBus {
  public: Arduino_ESP32QSPI(int, int, int, int, int, int) {}
 };
+#define GFX_SKIP_OUTPUT_BEGIN (-2)
 class Arduino_GFX {
  public:
   virtual ~Arduino_GFX() {}

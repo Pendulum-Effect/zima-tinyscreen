@@ -69,7 +69,7 @@ struct StubSerial {
 extern StubSerial Serial;
 
 // -- ESP -----------------------------------------------------------------
-struct StubESP { void restart() {} };
+struct StubESP { void restart() {} unsigned getFreeHeap() { return 300000; } unsigned getFreePsram() { return 8000000; } };
 extern StubESP ESP;
 
 // -- LEDC (both the core-3.x pin-based and legacy channel-based APIs,

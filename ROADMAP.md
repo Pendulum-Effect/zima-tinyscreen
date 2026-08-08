@@ -687,8 +687,12 @@ None are worth a dedicated round; fold them into other work or skip.
       framebuffer alloc died, and the boot crash-loop flapped native
       USB into reflash write-timeouts. Fixed: memory_type qio_opi in
       both envs + a guarded alloc that parks in a serial-error loop
-      instead of crash-looping. Still to confirm on glass: flush
-      cadence holds 33ms with the particle saver running from PSRAM.
+      instead of crash-looping. SECOND finding via breadcrumbs: the
+      guard then tripped with PSRAM present -- canvas->begin() was
+      double-initializing the QSPI output (rejected re-init) before
+      the alloc could run; fixed with GFX_SKIP_OUTPUT_BEGIN. Still to
+      confirm on glass: flush cadence holds 33ms with the particle
+      saver running from PSRAM.
 - [ ] HARDWARE VERIFY (1.36): brightness register vs backlight -- 0%
       and the "blank" saver should read fully dark on the AMOLED; night
       mode dimming curve feels comparable to the LCD boards.

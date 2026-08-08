@@ -658,7 +658,16 @@ void initDisplay() {
   bootMark("gfx begin (panel+bus init)");
   gfx->begin();
   bootMark("canvas begin (framebuffer alloc)");
-  if (!canvas->begin()) {
+  // GFX_SKIP_OUTPUT_BEGIN is load-bearing: canvas->begin() otherwise
+  // ALSO calls _output->begin() -- the library's documented contract is
+  // "initialize the display yourself OR let the canvas do it". We
+  // already ran gfx->begin() above, and on the QSPI bus a second
+  // spi_bus_initialize() on an already-claimed bus fails, which made
+  // canvas->begin() return false before ever attempting the
+  // framebuffer allocation (the 1.36 AMOLED bring-up mystery: "alloc
+  // failed" with PSRAM present -- the alloc never ran). The SPI LCDs
+  // merely tolerated the redundant re-init for 35 firmware versions.
+  if (!canvas->begin(GFX_SKIP_OUTPUT_BEGIN)) {
     displayInitFailed = true;
     return;  // setup() parks in a serial-error loop; do not touch canvas
   }
@@ -2826,12 +2835,15 @@ void setup() {
       // Framebuffer alloc failed. Stay alive (USB keeps enumerating,
       // logs are readable, reflash works) and say why, forever.
       for (;;) {
-        Serial.printf("[tinyscreen] FATAL: display framebuffer allocation failed "
-                      "(board %d, %dx%d, PSRAM %s). Check board_build.arduino."
-                      "memory_type=qio_opi in platformio.ini / PSRAM: OPI in "
-                      "Arduino IDE.\n",
+        Serial.printf("[tinyscreen] FATAL: display canvas init failed (board "
+                      "%d, %dx%d, PSRAM %s, free heap %u, free PSRAM %u). "
+                      "canvas->begin() returned false: either the framebuffer "
+                      "allocation failed (check PSRAM config: memory_type="
+                      "qio_opi / PSRAM: OPI) or the output re-init was "
+                      "rejected.\n",
                       config.boardId, screenW, screenH,
-                      psramFound() ? "present" : "MISSING");
+                      psramFound() ? "present" : "MISSING",
+                      (unsigned)ESP.getFreeHeap(), (unsigned)ESP.getFreePsram());
         delay(2000);
       }
     }
