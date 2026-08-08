@@ -666,6 +666,24 @@ None are worth a dedicated round; fold them into other work or skip.
 - The `/proc/1/net/dev` bind mount is what makes network stats work
   without `network_mode: host`; don't "simplify" it away.
 
+## Next release (1.0.4) earmarks
+
+- [ ] **General tab progressive loading**: when no device is connected
+      or an unrecognized board is plugged in, the whole General tab
+      blocks behind one long load (worst-case serial-probe timeouts).
+      Only the device panel at the top should gate on detection --
+      keep the skeleton animation there while probing, and render
+      everything below it (Check for Update, View Logs, and the other
+      non-device cards) immediately. Treat "unknown board id" as a
+      first-class state with its own panel message, not a timeout:
+      a device on newer firmware talking to an older cached dashboard
+      is now a real scenario.
+- [ ] HARDWARE VERIFY (1.37): dual native mode on glass -- pane
+      scaling and fonts at 224x280 panes, roll animations keeping
+      separate slots per pane, carousel advance showing [i, i+1] ->
+      [i+1, i+2], portrait stacked variant, and the mist page staying
+      inside its pane.
+
 ## Scheduled removals
 
 - [ ] **Remove the "white" debug screensaver** (firmware whitelist +
@@ -676,12 +694,11 @@ None are worth a dedicated round; fold them into other work or skip.
 
 ## 1.0.2 hardware verification queue
 
-- [ ] HARDWARE VERIFY (1.36): AMOLED touch I2C -- the FT3168 NACK'd at
-      0x38 on first contact; the boot i2c scan (with SDA/SCL swap
-      fallback) will name the ACKing addresses and orientation. Once
-      confirmed: correct the board 2 profile pins if swapped, then
-      REMOVE the auto-swap fallback from touch init (bring-up
-      scaffolding, not permanent behavior).
+- [x] HARDWARE VERIFY (1.36): AMOLED touch I2C -- RESOLVED: the diag
+      scan found 0x38 (FT3168) and 0x6b (QMI8658) in the PROFILED
+      orientation, so the pins were right all along; the SDA/SCL
+      auto-swap scaffolding is removed in 1.0.3. Still to verify on
+      glass: actual swipe navigation and tap-to-wake behavior.
 
 - [x] HARDWARE VERIFY (1.36): AMOLED-1.64 first light -- prediction
       landed: glass showed a ~20px uninitialized-GRAM strip, and

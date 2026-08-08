@@ -2,6 +2,18 @@
   "_comment": "Human-readable changelog for the dashboard's About tab -- written for people, not commit archaeologists. The dashboard fetches this from GitHub at page load (baked copy as fallback), so add an entry here with each release and every install sees it. Newest first. Dates are YYYY-MM-DD.",
   "entries": [
     {
+      "version": "1.0.3",
+      "date": "2026-08-08",
+      "title": "Two pages, one panel (firmware 1.37)",
+      "notes": [
+        "New aspect option for the AMOLED board: Native dual mode uses the panel's full 280x456 resolution and shows TWO carousel pages at once -- side by side when rotated 90/270, stacked when 0/180, split along the long axis with a black gap as the divider (on an emissive panel, a black gap IS a drawn divider). Carousel logic is unchanged: pane A shows the current page, pane B the next in order, and swipes or auto-cycle advance the pair by one page. Each pane gets its own layout box so every page scales itself to the pane, and each keeps its own roll/tween animation slots. With fewer than two pages configured it falls back to one full-screen page. Viewport anchoring is deliberately ignored in this mode (it exists to show the whole panel), which also self-disables the burn-in wander -- the screensaver remains the burn-in protection there.",
+        "The Screen tab's aspect options now adapt to the board: on the AMOLED, the native-resolution button becomes 'Native (280x456, dual)' and plain full mode is relabeled 'Window (cutout)' -- the anchored-viewport mode it actually is on that board. Other boards see exactly what they saw before.",
+        "The General tab now depicts the AMOLED as itself: a landscape device frame (board 2 was missing from the preview's board table and fell back to the square glyph).",
+        "Fixed a one-pixel overdraw in the CPU Temperature mist layouts: the glow's corner anchor sat one row past the layout box -- invisible when the box ends at the canvas edge (the panel clips it), but in dual-pane mode it would have smeared a row into the divider gap. Worth knowing when running the bare board: with the cutout window configured, the mist page's glow ends at the WINDOW edge, not the glass edge -- the black bands beside it are the hidden margins the faceplate will cover. Dual mode (or Window width 0) uses the full glass.",
+        "Touch closed out on hardware: the boot I2C scan confirmed the profiled pins on glass (FT3168 touch at 0x38 and QMI8658 IMU at 0x6b both ACK), so the temporary SDA/SCL auto-swap scaffolding from bring-up is removed. The scan itself stays, recorded into the boot log, and a silent bus still honestly disables gesture polling for the session."
+      ]
+    },
+    {
       "version": "1.0.2",
       "date": "2026-08-05",
       "title": "The AMOLED blade window (firmware 1.36)",

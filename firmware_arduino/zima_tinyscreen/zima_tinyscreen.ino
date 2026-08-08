@@ -42,7 +42,7 @@
 // "Software Version" field via the get_config command below. No
 // auto-update-checking mechanism exists yet (that's a separate, not-yet
 // -built feature) -- this just answers "what's currently on my device."
-#define FIRMWARE_VERSION "1.36"  // two-part scheme as of 1.19 (was x.y.z)
+#define FIRMWARE_VERSION "1.37"  // two-part scheme as of 1.19 (was x.y.z)
 
 // Note: screen dimensions are NOT fixed -- board 1 (1.69") is 240x280,
 // taller than board 0's 240x240, and board 2 (AMOLED-1.64) is 280x456,
@@ -493,17 +493,53 @@ void computeLayoutBox(int physW, int physH, int aspectMode,
   }
 }
 
+// Pure for host-side unit testing: split a logical screen into the two
+// dual-mode panes (aspect mode 3, AMOLED native resolution). Landscape
+// splits side-by-side, portrait stacks -- always along the long axis,
+// with a small black gap acting as the divider (on an emissive panel a
+// black gap IS a drawn divider).
+void computeDualPanes(int w, int h, int gap,
+                      int *ax, int *ay, int *aw, int *ah,
+                      int *bx, int *by, int *bw, int *bh) {
+  if (w >= h) {  // landscape: side by side
+    int paneW = (w - gap) / 2;
+    *ax = 0; *ay = 0; *aw = paneW; *ah = h;
+    *bx = w - paneW; *by = 0; *bw = paneW; *bh = h;
+  } else {       // portrait: stacked
+    int paneH = (h - gap) / 2;
+    *ax = 0; *ay = 0; *aw = w; *ah = paneH;
+    *bx = 0; *by = h - paneH; *bw = w; *bh = paneH;
+  }
+}
+#define DUAL_PANE_GAP 8
+
 // (Re)derive the visible window and layout box, with a burn-in wander
 // shift folded in. shift 0 at init; the OLED pixel-shift in loop()'s
 // housekeeping nudges it a few px either way on a slow cycle.
 void recomputeVisibleWindow(int shiftX) {
+  // Dual native mode (aspect 3): the whole panel is the canvas --
+  // viewport anchoring is deliberately ignored (this mode exists to
+  // show the AMOLED's full native resolution), which also means the
+  // wander self-disables (no hidden margin). The layout box is set to
+  // pane A; drawCurrentScreen positions pane B per frame. With fewer
+  // than two pages configured there's nothing to pair, so it falls
+  // back to one full-screen box.
+  if (config.aspectMode == 3 && config.numPages >= 2) {
+    visX = 0; visY = 0; visW = screenW; visH = screenH;
+    visShiftX = 0;
+    int bx, by, bw, bh;
+    computeDualPanes(screenW, screenH, DUAL_PANE_GAP,
+                     &LX, &LY, &LW, &LH, &bx, &by, &bw, &bh);
+    return;
+  }
   int baseVx;
   computeViewport(screenW, config.viewW, config.viewOffX, &baseVx, &visW);
   visX = applyWanderShift(baseVx, visW, screenW, shiftX);
   visY = 0;
   visH = screenH;
   visShiftX = shiftX;
-  computeLayoutBox(visW, visH, config.aspectMode, &LX, &LY, &LW, &LH);
+  int mode = (config.aspectMode == 3) ? 0 : config.aspectMode;
+  computeLayoutBox(visW, visH, mode, &LX, &LY, &LW, &LH);
   LX += visX;
   LY += visY;
 }
@@ -759,29 +795,16 @@ void initDisplay() {
       digitalWrite(p.tp_rst, HIGH);
       delay(50);
     }
-    // Bring-up diagnostics (1.36): scan the touch I2C bus and report
-    // what actually ACKs. The AMOLED-1.64's FT3168 NACK'd every poll on
-    // first hardware contact -- persistent NACK means wrong pins or
-    // wrong address, and a scan names the truth instead of guessing.
-    // If the scan finds nothing, retry once with SDA/SCL swapped (the
-    // classic schematic-reading error) and keep whichever orientation
-    // finds devices, loudly. Once real glass confirms the pins, the
-    // profile gets corrected and this fallback can go -- see ROADMAP.
-    int found = i2cScanAndReport("sda/scl as profiled");
-    if (found == 0) {
-      Wire.end();
-      Wire.begin(p.tp_scl, p.tp_sda);
-      found = i2cScanAndReport("sda/scl SWAPPED");
-      if (found == 0) {
-        // Neither orientation answered: put the profiled pins back so
-        // the failure state is at least the documented one.
-        Wire.end();
-        Wire.begin(p.tp_sda, p.tp_scl);
-        touchOnline = false;
-        Serial.println("[boot] touch i2c: no devices in either pin "
-                       "orientation -- touch disabled this session");
-        Serial.flush();
-      }
+    // Boot I2C scan (kept from 1.36 bring-up): reports what ACKs on the
+    // touch bus into the boot log. The AMOLED-1.64's profiled pins were
+    // CONFIRMED on glass (scan found the FT3168 at 0x38 and the QMI8658
+    // IMU at 0x6b), so the temporary SDA/SCL auto-swap scaffolding is
+    // gone. A silent bus still gates polling honestly.
+    if (i2cScanAndReport("touch bus") == 0) {
+      touchOnline = false;
+      Serial.println("[boot] touch i2c: no devices found -- touch "
+                     "disabled this session");
+      Serial.flush();
     }
   }
 }
@@ -2098,7 +2121,10 @@ long mistGlowFine(long d, long glowR) {
 void drawTempMist(bool animated) {
   canvas->fillScreen(COL_BG);
   uint16_t tcol = tempColorFor(stats.cpu_temp_c);
-  int cornerX = LX, cornerY = LY + LH;        // mist lives bottom-LEFT
+  int cornerX = LX, cornerY = LY + LH - 1;    // mist lives bottom-LEFT
+  // (LY+LH is one row PAST the box: harmless when the box ends at the
+  // canvas edge -- clipped -- but in dual-pane mode it would smear one
+  // row into the neighboring pane's gap.)
   int diag = (LW + LH) / 2;
 
   // Soft glow rising out of the corner, drawn per-pixel. Concentric
@@ -2242,7 +2268,28 @@ void drawCurrentScreen() {
     return;
   }
   canvas->fillScreen(COL_BG);
-  drawPage(config.pages[currentPageIdx]);
+  if (config.aspectMode == 3 && config.numPages >= 2) {
+    // Dual native mode: two carousel pages at once. Pane A shows the
+    // current page, pane B the next in carousel order, so swipes and
+    // auto-cycle advance the WINDOW by one page exactly as before --
+    // the pair [i, i+1] becomes [i+1, i+2]. Rolls and tweens are keyed
+    // by currentPageIdx, so it is temporarily set to pane B's page
+    // while that pane renders, giving each page its own animation
+    // slots.
+    int ax, ay, aw, ah, bx, by, bw, bh;
+    computeDualPanes(screenW, screenH, DUAL_PANE_GAP,
+                     &ax, &ay, &aw, &ah, &bx, &by, &bw, &bh);
+    LX = ax; LY = ay; LW = aw; LH = ah;
+    drawPage(config.pages[currentPageIdx]);
+    int savedIdx = currentPageIdx;
+    currentPageIdx = (currentPageIdx + 1) % config.numPages;
+    LX = bx; LY = by; LW = bw; LH = bh;
+    drawPage(config.pages[currentPageIdx]);
+    currentPageIdx = savedIdx;
+    LX = ax; LY = ay; LW = aw; LH = ah;  // restore pane A for anyone else
+  } else {
+    drawPage(config.pages[currentPageIdx]);
+  }
   drawStaleBanner();
   canvas->flush();
 }
@@ -2688,7 +2735,7 @@ void handleSetConfig(JsonDocument &doc) {
   }
   if (doc["aspect_mode"].is<int>()) {
     int m = doc["aspect_mode"];
-    if (m >= 0 && m <= 2 && m != config.aspectMode) {
+    if (m >= 0 && m <= 3 && m != config.aspectMode) {
       config.aspectMode = m;
       config.squareFit = (m == 1);  // keep the legacy field coherent
       displayGeomChanged = true;

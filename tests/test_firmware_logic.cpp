@@ -630,6 +630,21 @@ int main() {
   CHECK(applyWanderShift(160, 296, 456, 3) == 160);  // clamped at right edge
   CHECK(applyWanderShift(0, 240, 240, 3) == 0);      // full-panel window: no drift
 
+  // ---- computeDualPanes: native dual mode (1.37, AMOLED) ----
+  int ax, ay, aw, ah, bx2, by2, bw2, bh2;
+  // Landscape 456x280, gap 8: side-by-side 224-wide panes
+  computeDualPanes(456, 280, 8, &ax, &ay, &aw, &ah, &bx2, &by2, &bw2, &bh2);
+  CHECK(ax == 0 && ay == 0 && aw == 224 && ah == 280);
+  CHECK(bx2 == 232 && by2 == 0 && bw2 == 224 && bh2 == 280);
+  CHECK(bx2 - (ax + aw) == 8);  // the gap survives integer division
+  // Portrait 280x456: stacked 224-tall panes
+  computeDualPanes(280, 456, 8, &ax, &ay, &aw, &ah, &bx2, &by2, &bw2, &bh2);
+  CHECK(ax == 0 && ay == 0 && aw == 280 && ah == 224);
+  CHECK(bx2 == 0 && by2 == 232 && bw2 == 280 && bh2 == 224);
+  // Square input takes the landscape branch (w >= h)
+  computeDualPanes(240, 240, 8, &ax, &ay, &aw, &ah, &bx2, &by2, &bw2, &bh2);
+  CHECK(aw == 116 && ah == 240 && bx2 == 124);
+
   printf("ALL FIRMWARE LOGIC TESTS PASS\n");
   return 0;
 }
