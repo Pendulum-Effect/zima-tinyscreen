@@ -112,16 +112,18 @@ const BoardProfile BOARD_PROFILES[] = {
   // only the I2C address differs (0x38 vs 0x15), so touch is "just" a
   // profile field, not a second driver.
   //
-  // HARDWARE VERIFY: GRAM offsets ship as 0 (the Arduino_GFX CO5300 driver
-  // was added for this exact panel, so its defaults should be correct). If
-  // real glass shows the image shifted with a garbage strip along one edge,
-  // colOffset1 = 20 is the first value to try -- same class of fix as
-  // board 1's rowOffset saga above.
+  // GRAM column offset 20, CONFIRMED on glass (1.36 bring-up): with
+  // offsets at 0 the panel showed a ~20px strip of uninitialized GRAM
+  // (green garbage) along one native column edge -- this glass maps 20
+  // columns into the controller's wider RAM, same class of fix as
+  // board 1's rowOffset saga above. colOffset1 covers the rotation-0
+  // write window (the only one used: rotation is software-side here);
+  // colOffset2 mirrors it for completeness.
   { "ESP32-S3-Touch-AMOLED-1.64 (280x456, touch)", true, 280, 456,
     /*cs*/9, /*dc*/-1, /*sck*/10, /*mosi (SIO0)*/11, /*rst*/21, /*bl*/-1,
     /*d1..d3*/12, 13, 14,
     /*sda*/47, /*scl*/48, /*tprst*/-1, /*tpaddr*/0x38 /* FT3168 */, DRV_CO5300,
-    /*offsets*/ 0, 0, 0, 0 },
+    /*offsets*/ 20, 0, 20, 0 },
 };
 const int NUM_BOARD_PROFILES = sizeof(BOARD_PROFILES) / sizeof(BOARD_PROFILES[0]);
 
@@ -406,6 +408,11 @@ Arduino_GFX *gfx = nullptr;
 // profile has no lcd_bl GPIO.
 Arduino_CO5300 *amoledGfx = nullptr;
 Arduino_Canvas *canvas = nullptr;
+// False when the boot-time I2C scan found no devices in either pin
+// orientation: gesture polling is skipped for the session so a dead or
+// miswired touch bus doesn't spam NACK errors every poll (and so the
+// "touch disabled" boot message is actually true).
+bool touchOnline = true;
 // Set when the canvas framebuffer allocation fails at init (board 2's
 // 456x280 canvas is ~255 KB and needs PSRAM). setup() checks this and
 // parks in a loud serial-error loop instead of letting draw calls
@@ -593,6 +600,18 @@ void pwmWriteBacklight(int pin, int duty) {
 
 void applyBrightness();  // defined below; initDisplay needs it for AMOLED boards
 
+#define BOOTLOG_LINES 24
+#define BOOTLOG_LINE_LEN 72
+char bootLog[BOOTLOG_LINES][BOOTLOG_LINE_LEN];
+int bootLogCount = 0;
+void bootRecord(const char *line) {
+  if (bootLogCount < BOOTLOG_LINES) {
+    strncpy(bootLog[bootLogCount], line, BOOTLOG_LINE_LEN - 1);
+    bootLog[bootLogCount][BOOTLOG_LINE_LEN - 1] = '\0';
+    bootLogCount++;
+  }
+}
+
 // Scan the (already-begun) I2C bus and print every ACKing address.
 // Returns how many devices answered. Bring-up truth serum: a healthy
 // AMOLED-1.64 should show the FT3168 touch controller plus the QMI8658
@@ -609,6 +628,19 @@ int i2cScanAndReport(const char *label) {
   }
   Serial.printf(" -- %d device(s)\n", found);
   Serial.flush();
+  // Mirror a summary into the boot log so the diag replay carries the
+  // scan verdict even when nobody was attached during boot.
+  char summary[BOOTLOG_LINE_LEN];
+  snprintf(summary, sizeof(summary), "i2c scan (%s): %d device(s)", label, found);
+  bootRecord(summary);
+  for (uint8_t a = 0x08, n = 0; a <= 0x77 && n < 8; a++) {
+    Wire.beginTransmission(a);
+    if (Wire.endTransmission() == 0) {
+      snprintf(summary, sizeof(summary), "  i2c device at 0x%02x", a);
+      bootRecord(summary);
+      n++;
+    }
+  }
   return found;
 }
 
@@ -618,9 +650,17 @@ int i2cScanAndReport(const char *label) {
 // line on the serial port, which turns "black screen, silent serial"
 // from a mystery into a filename:line. Cheap enough to keep permanently
 // (a dozen short lines at boot, invisible once the app connects).
+//
+// Every mark is ALSO recorded in a small ring buffer, because live
+// capture of the boot is genuinely hard on this hardware: pressing
+// RESET drops the USB device off the bus, the kernel tears down
+// /dev/ttyACM0, and any attached reader exits -- so the first seconds
+// of output are gone before a reader can re-attach. The "diag" serial
+// command replays the stored log any time after boot instead.
 void bootMark(const char *stage) {
   Serial.printf("[boot] %s\n", stage);
   Serial.flush();
+  bootRecord(stage);
 }
 
 void initDisplay() {
@@ -737,6 +777,7 @@ void initDisplay() {
         // the failure state is at least the documented one.
         Wire.end();
         Wire.begin(p.tp_sda, p.tp_scl);
+        touchOnline = false;
         Serial.println("[boot] touch i2c: no devices in either pin "
                        "orientation -- touch disabled this session");
         Serial.flush();
@@ -2789,6 +2830,35 @@ void handleLine(const String &line) {
     handleClearConfig();
     return;
   }
+  // Diagnostics on demand (1.36): replay the stored boot log and report
+  // live state, then re-run the touch I2C scan. Exists because live
+  // capture of the boot transcript is nearly impossible on native-USB
+  // boards (reset tears down the host's port) -- with this, any time
+  // after boot: attach a reader, send {"cmd":"diag"}, read the truth.
+  // Plain [diag] lines, not JSON: this is for humans; the collector
+  // ignores non-JSON lines the same way it ignores boot output.
+  if (doc["cmd"].is<const char *>() && strcmp(doc["cmd"], "diag") == 0) {
+    Serial.println("[diag] --- boot log replay ---");
+    for (int i = 0; i < bootLogCount; i++) {
+      Serial.printf("[diag] %s\n", bootLog[i]);
+    }
+    Serial.printf("[diag] --- live state ---\n");
+    Serial.printf("[diag] fw %s | board %d | configured %d | psram %s\n",
+                  FIRMWARE_VERSION, config.boardId, config.configured ? 1 : 0,
+                  psramFound() ? "ok" : "MISSING");
+    Serial.printf("[diag] free heap %u | free psram %u\n",
+                  (unsigned)ESP.getFreeHeap(), (unsigned)ESP.getFreePsram());
+    Serial.printf("[diag] screen %dx%d | vis %d,%d %dx%d | rot %d | touchOnline %d\n",
+                  screenW, screenH, visX, visY, visW, visH,
+                  config.rotation, touchOnline ? 1 : 0);
+    Serial.flush();
+    if (config.configured && BOARD_PROFILES[config.boardId].hasTouch) {
+      i2cScanAndReport("live diag");
+    }
+    Serial.println("[diag] --- end ---");
+    Serial.flush();
+    return;
+  }
 
   // Otherwise treat as a stats update
   stats.cpu_name       = doc["cpu_name"] | stats.cpu_name;
@@ -2874,6 +2944,12 @@ void setup() {
                 config.configured ? BOARD_PROFILES[config.boardId].name : "unconfigured",
                 psramFound() ? "ok" : "MISSING");
   Serial.flush();
+  {
+    char banner[BOOTLOG_LINE_LEN];
+    snprintf(banner, sizeof(banner), "fw %s | board %d | psram %s",
+             FIRMWARE_VERSION, config.boardId, psramFound() ? "ok" : "MISSING");
+    bootRecord(banner);
+  }
   if (config.configured) {
     // Only initialize display/backlight pins once we actually know which
     // physical board this is -- an unconfigured device stays fully
@@ -2934,7 +3010,7 @@ void loop() {
     // swipe (on finger release), so no separate edge-detection needed
     // here -- see its own comment for why we compute this ourselves
     // instead of trusting the touch chip's built-in gesture recognition.
-    int g = pollTouchSwipe();
+    int g = touchOnline ? pollTouchSwipe() : GESTURE_NONE;
     // Waking the screensaver: pollTouchSwipe() just refreshed lastTouchMs
     // if a finger is down, so an active saver ends here -- and the touch
     // that woke it must NOT also act as a page swipe (nobody expects the

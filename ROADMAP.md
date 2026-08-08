@@ -683,11 +683,12 @@ None are worth a dedicated round; fold them into other work or skip.
       REMOVE the auto-swap fallback from touch init (bring-up
       scaffolding, not permanent behavior).
 
-- [ ] HARDWARE VERIFY (1.36): AMOLED-1.64 first light -- CO5300 GRAM
-      offsets ship as 0 (Arduino_GFX added the driver for this exact
-      panel, so its defaults should hold). If the image lands shifted
-      with a garbage strip on one edge, set colOffset1 (try 20) in
-      board 2's BOARD_PROFILES entry.
+- [x] HARDWARE VERIFY (1.36): AMOLED-1.64 first light -- prediction
+      landed: glass showed a ~20px uninitialized-GRAM strip, and
+      colOffset1=20 (mirrored to colOffset2) now ships in board 2's
+      profile. Confirm on next flash that the strip is gone and the
+      image sits flush; if the strip DOUBLES instead, the offset sign
+      is wrong for this glass and the mapping needs the opposite end.
 - [x] HARDWARE VERIFY (1.36): 456x280 canvas allocation -- FAILED on
       first contact exactly as feared, and productively: octal PSRAM
       (N16R8) was never enabled by the devkitc-1 defaults, the ~255 KB
