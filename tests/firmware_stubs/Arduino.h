@@ -62,6 +62,7 @@ struct StubSerial {
   template <typename T> void print(T) {}
   template <typename T> void println(T) {}
   void println() {}
+  void flush() {}
   size_t write(uint8_t) { return 1; }
   size_t write(const uint8_t *, size_t n) { return n; }
 };

@@ -593,6 +593,17 @@ void pwmWriteBacklight(int pin, int duty) {
 
 void applyBrightness();  // defined below; initDisplay needs it for AMOLED boards
 
+// Boot breadcrumbs (1.36 bring-up diagnostics): terse stage markers
+// printed -- and flushed -- around every step of display init. A wedge
+// inside a bus/panel begin() leaves the last stage name as the final
+// line on the serial port, which turns "black screen, silent serial"
+// from a mystery into a filename:line. Cheap enough to keep permanently
+// (a dozen short lines at boot, invisible once the app connects).
+void bootMark(const char *stage) {
+  Serial.printf("[boot] %s\n", stage);
+  Serial.flush();
+}
+
 void initDisplay() {
   const BoardProfile &p = BOARD_PROFILES[config.boardId];
   int rot = ((config.rotation % 360) + 360) % 360 / 90;
@@ -612,6 +623,7 @@ void initDisplay() {
     //    while the panel driver stays at rotation 0 with its NATIVE
     //    dims. LCD boards keep the old path (hardware MADCTL rotation,
     //    canvas rotation 0) -- their flush stays a straight memcpy.
+    bootMark("qspi bus alloc");
     bus = new Arduino_ESP32QSPI(p.lcd_cs, p.lcd_sck, p.lcd_mosi /* SIO0 */,
                                 p.lcd_d1, p.lcd_d2, p.lcd_d3);
     amoledGfx = new Arduino_CO5300(bus, p.lcd_rst, 0 /* rotation: see above */,
@@ -643,13 +655,17 @@ void initDisplay() {
     pwmWriteBacklight(p.lcd_bl, map(config.brightness, 0, 100, 0, 255));
   }
 
+  bootMark("gfx begin (panel+bus init)");
   gfx->begin();
+  bootMark("canvas begin (framebuffer alloc)");
   if (!canvas->begin()) {
     displayInitFailed = true;
     return;  // setup() parks in a serial-error loop; do not touch canvas
   }
+  bootMark("first flush");
   canvas->fillScreen(0x0000);
   canvas->flush();
+  bootMark("first flush done");
   if (p.lcd_bl < 0) {
     // No backlight GPIO: brightness lives in the display controller.
     // Set it AFTER the first all-black flush so the panel never flashes
@@ -658,6 +674,7 @@ void initDisplay() {
   }
 
   if (p.hasTouch) {
+    bootMark("touch i2c init");
     Wire.begin(p.tp_sda, p.tp_scl);
     if (p.tp_rst >= 0) {
       pinMode(p.tp_rst, OUTPUT);
@@ -2793,12 +2810,18 @@ void setup() {
   Serial.begin(115200);
   delay(500); // give native USB CDC a moment to enumerate before printing
   loadConfig();
+  Serial.printf("[boot] tinyscreen fw %s | board %d (%s) | psram %s\n",
+                FIRMWARE_VERSION, config.boardId,
+                config.configured ? BOARD_PROFILES[config.boardId].name : "unconfigured",
+                psramFound() ? "ok" : "MISSING");
+  Serial.flush();
   if (config.configured) {
     // Only initialize display/backlight pins once we actually know which
     // physical board this is -- an unconfigured device stays fully
     // hands-off on GPIO (see handleSetConfig() for why: board 0's default
     // pins can collide with another board's USB data lines).
     initDisplay();
+    bootMark("display init complete");
     if (displayInitFailed) {
       // Framebuffer alloc failed. Stay alive (USB keeps enumerating,
       // logs are readable, reflash works) and say why, forever.
