@@ -9,6 +9,7 @@
 
 // ===== Wire.h ============================================================
 struct StubWire {
+  void end() {}
   void begin(int = -1, int = -1) {}
   void beginTransmission(int) {}
   size_t write(uint8_t) { return 1; }

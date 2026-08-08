@@ -676,6 +676,13 @@ None are worth a dedicated round; fold them into other work or skip.
 
 ## 1.0.2 hardware verification queue
 
+- [ ] HARDWARE VERIFY (1.36): AMOLED touch I2C -- the FT3168 NACK'd at
+      0x38 on first contact; the boot i2c scan (with SDA/SCL swap
+      fallback) will name the ACKing addresses and orientation. Once
+      confirmed: correct the board 2 profile pins if swapped, then
+      REMOVE the auto-swap fallback from touch init (bring-up
+      scaffolding, not permanent behavior).
+
 - [ ] HARDWARE VERIFY (1.36): AMOLED-1.64 first light -- CO5300 GRAM
       offsets ship as 0 (Arduino_GFX added the driver for this exact
       panel, so its defaults should hold). If the image lands shifted

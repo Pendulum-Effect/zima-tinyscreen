@@ -593,6 +593,25 @@ void pwmWriteBacklight(int pin, int duty) {
 
 void applyBrightness();  // defined below; initDisplay needs it for AMOLED boards
 
+// Scan the (already-begun) I2C bus and print every ACKing address.
+// Returns how many devices answered. Bring-up truth serum: a healthy
+// AMOLED-1.64 should show the FT3168 touch controller plus the QMI8658
+// IMU sharing the bus.
+int i2cScanAndReport(const char *label) {
+  int found = 0;
+  Serial.printf("[boot] i2c scan (%s):", label);
+  for (uint8_t a = 0x08; a <= 0x77; a++) {
+    Wire.beginTransmission(a);
+    if (Wire.endTransmission() == 0) {
+      Serial.printf(" 0x%02x", a);
+      found++;
+    }
+  }
+  Serial.printf(" -- %d device(s)\n", found);
+  Serial.flush();
+  return found;
+}
+
 // Boot breadcrumbs (1.36 bring-up diagnostics): terse stage markers
 // printed -- and flushed -- around every step of display init. A wedge
 // inside a bus/panel begin() leaves the last stage name as the final
@@ -631,7 +650,15 @@ void initDisplay() {
                                    p.colOffset1, p.rowOffset1,
                                    p.colOffset2, p.rowOffset2);
     gfx = amoledGfx;
-    canvas = new Arduino_Canvas(screenW, screenH, gfx, 0, 0, rot);
+    // Canvas takes the panel's NATIVE dims (280x456) plus the rotation;
+    // the rotation transforms DRAWING coordinates into the portrait
+    // framebuffer, and flush pushes a buffer that matches the panel
+    // 1:1. Passing the logical post-rotation dims here instead (the
+    // 1.36 bring-up bug) makes flush push a 456-wide buffer at a
+    // 280-wide panel: every row wraps, and the splash renders as a
+    // giant diagonal smear. width()/height() on this canvas report the
+    // logical (post-rotation) dims, matching screenW/screenH.
+    canvas = new Arduino_Canvas(p.width, p.height, gfx, 0, 0, rot);
   } else {
     // Arduino_GFX takes rotation as quarter-turns (0-3) and handles the
     // panel offset bookkeeping per rotation itself; we pass the PANEL
@@ -691,6 +718,29 @@ void initDisplay() {
       delay(20);
       digitalWrite(p.tp_rst, HIGH);
       delay(50);
+    }
+    // Bring-up diagnostics (1.36): scan the touch I2C bus and report
+    // what actually ACKs. The AMOLED-1.64's FT3168 NACK'd every poll on
+    // first hardware contact -- persistent NACK means wrong pins or
+    // wrong address, and a scan names the truth instead of guessing.
+    // If the scan finds nothing, retry once with SDA/SCL swapped (the
+    // classic schematic-reading error) and keep whichever orientation
+    // finds devices, loudly. Once real glass confirms the pins, the
+    // profile gets corrected and this fallback can go -- see ROADMAP.
+    int found = i2cScanAndReport("sda/scl as profiled");
+    if (found == 0) {
+      Wire.end();
+      Wire.begin(p.tp_scl, p.tp_sda);
+      found = i2cScanAndReport("sda/scl SWAPPED");
+      if (found == 0) {
+        // Neither orientation answered: put the profiled pins back so
+        // the failure state is at least the documented one.
+        Wire.end();
+        Wire.begin(p.tp_sda, p.tp_scl);
+        Serial.println("[boot] touch i2c: no devices in either pin "
+                       "orientation -- touch disabled this session");
+        Serial.flush();
+      }
     }
   }
 }
