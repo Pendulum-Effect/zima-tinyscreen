@@ -593,6 +593,22 @@
     .plugins-badge, .plugins-dots span { animation: none; }
   }
 
+  /* Info-pops attached to card titles and sub-labels (1.0.6 pass):
+     inline with the text, tip opens leftward so it never clips the
+     card edge. */
+  .card-title .info-pop, .card-desc .info-pop {
+    display: inline-flex; vertical-align: middle;
+    position: relative; margin-left: 4px;
+  }
+  .card-title .info-pop .tip, .card-desc .info-pop .tip { right: auto; left: -8px; font-weight: 400; }
+  /* Warning line for the White (debug) screensaver: same voice as the
+     General tab's no-device warning. */
+  .saver-warning {
+    display: none; margin-top: 10px;
+    font-size: 12px; line-height: 1.5; color: var(--warn);
+  }
+  .saver-warning.show { display: block; }
+
   .viewport-grid {
     display: flex; gap: 36px; flex-wrap: wrap; margin-top: 14px;
   }
@@ -610,7 +626,8 @@
     margin-top: 14px; flex-wrap: wrap;
   }
   .viewport-row label { font-size: 13px; color: var(--subtext); min-width: 92px; }
-  .viewport-row input[type="number"] {
+  .viewport-row input[type="number"],
+  .viewport-input-row input[type="number"] {
     width: 88px; padding: 7px 9px;
     background: var(--panel); color: var(--text);
     border: 1px solid var(--border); border-radius: 8px;
@@ -794,7 +811,7 @@
         <div class="card">
           <div class="card-header">
             <div>
-              <div class="card-title">HTTPS Certificate</div>
+              <div class="card-title">HTTPS Certificate <button type="button" class="info-pop static-pop" aria-label="About HTTPS"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg><span class="tip">If you only ever use the dashboard over plain HTTP (port 8989), none of this affects you &mdash; HTTPS (8990) exists mainly so the WebSerial flasher can run.</span></button></div>
               <div class="card-desc" id="cert-summary">Checking…</div>
             </div>
             <button class="btn btn-uniform" id="cert-manage-btn">Manage</button>
@@ -894,13 +911,13 @@
       <div id="screen-content" style="display:none;">
 
         <div class="card">
-          <div class="card-title">Brightness</div>
+          <div class="card-title">Brightness <button type="button" class="info-pop static-pop" aria-label="About brightness"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg><span class="tip">0% turns the screen off completely.</span></button></div>
           <div class="card-desc">How bright the screen is during the day.</div>
           <div class="brightness-row">
             <input type="range" id="brightness-slider" min="0" max="100" value="100" class="brightness-slider">
             <span class="brightness-value" id="brightness-value">100%</span>
           </div>
-          <div class="info-note"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg><span>0% turns the screen off completely.</span></div>
+          
         </div>
 
         <div class="card">
@@ -922,14 +939,14 @@
               <button class="radio-btn" data-saver-style="white" title="Temporary alignment tool: fills the visible window with solid white so you can line the screen up behind a faceplate cutout.">White (debug)</button>
             </div>
             <div id="saver-brightness-row">
-              <div class="card-desc" style="margin-top:10px;">Brightness while active</div>
+              <div class="card-desc" style="margin-top:10px;">Brightness while active <button type="button" class="info-pop static-pop" aria-label="About screensaver brightness"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg><span class="tip">Only ever dims: if Night Mode is set darker, the darker value wins.</span></button></div>
               <div class="brightness-row" style="margin-top:6px;">
                 <input type="range" id="saver-brightness-slider" min="0" max="100" value="30" class="brightness-slider">
                 <span class="brightness-value" id="saver-brightness-value">30%</span>
               </div>
-              <div class="info-note"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg><span>Only ever dims: if Night Mode is set darker, the darker value wins.</span></div>
+              
             </div>
-            <div class="card-desc" style="margin-top:10px;">Start after</div>
+            <div class="card-desc" style="margin-top:10px;">Start after <button type="button" class="info-pop static-pop" aria-label="About screensaver wake"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg><span class="tip">Any touch wakes the screen back up.</span></button></div>
             <div class="radio-row" style="margin-top:6px;">
               <button class="interval-btn" data-saver-min="1">1 min</button>
               <button class="interval-btn" data-saver-min="5">5 min</button>
@@ -937,8 +954,11 @@
               <button class="interval-btn" data-saver-min="15">15 min</button>
               <button class="interval-btn" data-saver-min="30">30 min</button>
             </div>
-            <div class="card-desc" style="margin-top:8px; font-size:0.85em;">
-              Any touch wakes the screen back up.
+            <div class="saver-warning" id="saver-white-warning">
+              White (debug) fills the window at full white &mdash; a burn-in
+              risk on an AMOLED if left running. Use it briefly, for
+              debugging or visualizing the anchored window, not as an
+              everyday screensaver.
             </div>
           </div>
         </div>
@@ -946,7 +966,7 @@
         <div class="card">
           <div class="card-header">
             <div>
-              <div class="card-title">Night Mode</div>
+              <div class="card-title">Night Mode <button type="button" class="info-pop static-pop" aria-label="About night mode"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg><span class="tip">0% turns the screen off completely. Times are in your local timezone.</span></button></div>
               <div class="card-desc">Dim the screen (or turn it off) on a schedule.</div>
             </div>
             <div class="toggle" id="night-enabled"><div class="knob"></div></div>
@@ -961,12 +981,12 @@
               <input type="range" id="night-brightness-slider" min="0" max="100" value="10" class="brightness-slider">
               <span class="brightness-value" id="night-brightness-value">10%</span>
             </div>
-            <div class="info-note"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg><span>0% turns the screen off completely. Times are in your local timezone.</span></div>
+            
           </div>
         </div>
 
         <div class="card">
-          <div class="card-title">Rotation</div>
+          <div class="card-title">Rotation <button type="button" class="info-pop static-pop" aria-label="About rotation"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg><span class="tip">The screen restarts for a moment when this changes.</span></button></div>
           <div class="card-desc">Mounting the screen sideways or upside down? Pick whichever way is right-side up for you.</div>
           <div class="radio-row" style="margin-top:12px;">
             <button class="radio-btn" data-rot="0">Standard</button>
@@ -974,11 +994,10 @@
             <button class="radio-btn" data-rot="180">Upside down</button>
             <button class="radio-btn" data-rot="270">270&deg;</button>
           </div>
-          <div class="info-note"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg><span>The screen restarts for a moment when this changes.</span></div>
         </div>
 
         <div class="card" id="aspect-card">
-          <div class="card-title">Aspect Ratio</div>
+          <div class="card-title">Aspect Ratio <button type="button" class="info-pop static-pop" aria-label="About aspect ratio"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg><span class="tip">The screen restarts for a moment when this changes.</span></button></div>
           <div class="card-desc">Use the full screen, fit everything into a centered square, or shrink to the exact viewable size of a 1.3&quot; display &mdash; handy when the screen sits behind a case with a 1.3&quot; cutout, so nothing is physically hidden.</div>
           <div class="radio-row" style="margin-top:12px;">
             <button class="radio-btn" data-aspect="native" id="aspect-native-btn">Native (240&times;280)</button>
@@ -986,7 +1005,6 @@
             <button class="radio-btn" data-aspect="square">Square (1:1)</button>
             <button class="radio-btn" data-aspect="compact13">1.3&quot; compact</button>
           </div>
-          <div class="info-note"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg><span>The screen restarts for a moment when this changes.</span></div>
         </div>
 
         <div class="card" id="viewport-card" style="display:none;">
@@ -1020,16 +1038,16 @@
               </div>
             </div>
           </div>
-          <div class="viewport-row">
-            <label>Position</label>
+          <div class="viewport-field" style="margin-top:14px;">
+            <div class="viewport-label-row"><label>Position</label></div>
             <div class="viewport-nudges">
               <button class="btn btn-ghost viewport-nudge" data-nudge="-10">&laquo; 10</button>
               <button class="btn btn-ghost viewport-nudge" data-nudge="-1">&lsaquo; 1</button>
               <button class="btn btn-ghost" id="viewport-center">Center</button>
               <button class="btn btn-ghost viewport-nudge" data-nudge="1">1 &rsaquo;</button>
               <button class="btn btn-ghost viewport-nudge" data-nudge="10">10 &raquo;</button>
+              <span class="viewport-unit" id="viewport-offset-label">centered</span>
             </div>
-            <span class="viewport-unit" id="viewport-offset-label">centered</span>
           </div>
         </div>
 
@@ -1881,9 +1899,14 @@
     renderViewport();
     markDirty();
   });
+  function updateSaverWarning() {
+    const w = document.getElementById('saver-white-warning');
+    if (w) w.classList.toggle('show', saverStyle === 'white');
+  }
   document.querySelectorAll('.radio-btn[data-saver-style]').forEach(btn => {
     btn.addEventListener('click', () => {
       saverStyle = btn.dataset.saverStyle;
+      updateSaverWarning();
       // "Screen off" cuts the backlight entirely -- a brightness slider
       // under it would be a lie, so it hides.
       document.getElementById('saver-brightness-row').style.display =
@@ -2240,7 +2263,8 @@
       nightBrightness = Number.isInteger(cfg.night_brightness) ? cfg.night_brightness : 10;
       saverEnabled = !!cfg.saver_enabled;
       saverMinutes = Number.isInteger(cfg.saver_minutes) ? cfg.saver_minutes : 5;
-      saverStyle = ['clock', 'blank', 'temp', 'hostip', 'unifi'].includes(cfg.saver_style) ? cfg.saver_style : 'clock';
+      saverStyle = ['clock', 'blank', 'temp', 'hostip', 'unifi', 'white'].includes(cfg.saver_style) ? cfg.saver_style : 'clock';
+      updateSaverWarning();
       saverBrightness = Number.isInteger(cfg.saver_brightness) ? cfg.saver_brightness : 30;
       const sbSlider = document.getElementById('saver-brightness-slider');
       sbSlider.value = saverBrightness;
@@ -2890,16 +2914,6 @@
     rev.appendChild(revBtn);
     body.appendChild(rev);
 
-    const note = el('div', 'card info-card');
-    note.innerHTML =
-      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" ' +
-      'stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/>' +
-      '<line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>' +
-      '<div class="card-desc">If you only ever use the dashboard over plain HTTP ' +
-      '(port 8989), none of this affects you \u2014 HTTPS (8990) exists mainly so the ' +
-      'WebSerial flasher can run.</div>';
-    note.style.marginTop = '14px';
-    body.appendChild(note);
 
     document.getElementById('general-main').classList.add('view-swap-out');
     document.getElementById('general-sub').classList.add('open');

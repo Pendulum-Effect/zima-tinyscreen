@@ -2,6 +2,17 @@
   "_comment": "Human-readable changelog for the dashboard's About tab -- written for people, not commit archaeologists. The dashboard fetches this from GitHub at page load (baked copy as fallback), so add an entry here with each release and every install sees it. Newest first. Dates are YYYY-MM-DD.",
   "entries": [
     {
+      "version": "1.0.6",
+      "date": "2026-08-09",
+      "title": "The tooltip standardization pass",
+      "notes": [
+        "Every always-visible informational note in the dashboard converts to the (i) hover tooltip, attached to its most relevant header or sub-label: Brightness (0% = off), Night Mode (0% = off, local timezone), the screensaver's Brightness-while-active (only ever dims) and Start-after (any touch wakes the screen), Rotation and Aspect Ratio (restart-on-change), and the HTTPS Certificate card, whose full-width note about plain-HTTP users moves next to the title -- which also retires the off-center icon it was drawn with. Guidance on demand, zero upfront clutter, one consistent widget everywhere.",
+        "The White (debug) screensaver stays -- it earned its keep as the corner-radius calibration tool -- but selecting it now shows a warning in the same amber voice as the General tab's no-device notice: a full-white window is a burn-in risk on an AMOLED if left running, so use it briefly, for debugging or visualizing the anchored window.",
+        "Display Window polish: the width and radius number inputs get their dark app styling back (the side-by-side refactor orphaned the CSS selector and they fell through to native white controls), and the Position nudge buttons now sit underneath their label with the offset readout inline.",
+        "App-only release: firmware stays at 1.38."
+      ]
+    },
+    {
       "version": "1.0.5",
       "date": "2026-08-09",
       "title": "Tooltips over clutter",
