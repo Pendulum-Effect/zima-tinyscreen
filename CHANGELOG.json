@@ -2,6 +2,17 @@
   "_comment": "Human-readable changelog for the dashboard's About tab -- written for people, not commit archaeologists. The dashboard fetches this from GitHub at page load (baked copy as fallback), so add an entry here with each release and every install sees it. Newest first. Dates are YYYY-MM-DD.",
   "entries": [
     {
+      "version": "1.0.5",
+      "date": "2026-08-09",
+      "title": "Tooltips over clutter",
+      "notes": [
+        "The Display Window card slims down: Window width and Corner radius now sit side by side, and their explanatory text moves out of always-visible notes into the little (i) hover tooltips already used by the layout previews -- hover to read, click to pin on touch screens. This is the first step of standardizing that pattern across the app: guidance on demand instead of upfront visual clutter. Width keeps its 'of 456' inline hint; the width-0 and restart notes live in its tooltip, and the ~13 px per mm conversion lives in the corner radius one.",
+        "Info-note icons (the small circled-i lines under cards like HTTPS Certificate) now center vertically against their text instead of hanging high.",
+        "The About tab's UniFi acknowledgement now wears ui.com's own favicon instead of the GitHub org avatar -- hotlinked from their site with a graceful vanish if it fails to load, rather than redistributing a trademark in the repo. Explicit icon_url on an acknowledgement entry now takes precedence over its github avatar in the strip.",
+        "App-only release: firmware stays at 1.38."
+      ]
+    },
+    {
       "version": "1.0.4",
       "date": "2026-08-09",
       "title": "Rounding out the window (firmware 1.38)",

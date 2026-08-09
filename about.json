@@ -102,7 +102,8 @@
         "by": "Ubiquiti Inc.",
         "url": "https://ui.com",
         "note": "Designed the original particle idle animation on UniFi LCM devices that the Particle flow screensaver recreates. TinyScreen is not affiliated with or endorsed by Ubiquiti.",
-        "github": "ui"
+        "github": "ui",
+        "icon_url": "https://ui.com/favicon.ico"
       }
     ]
   },

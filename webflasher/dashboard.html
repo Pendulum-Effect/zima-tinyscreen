@@ -282,10 +282,10 @@
 
   /* Small informational footnote with an inline "i" icon */
   .info-note {
-    display: flex; align-items: flex-start; gap: 7px;
+    display: flex; align-items: center; gap: 7px;
     margin-top: 14px; font-size: 12px; color: var(--subtext); line-height: 1.5;
   }
-  .info-note svg { width: 13px; height: 13px; flex-shrink: 0; margin-top: 2px; }
+  .info-note svg { width: 13px; height: 13px; flex-shrink: 0; }
 
   /* Contextual save banner: drops from the top of the window whenever
      there are unsaved changes, and stays put across tab switches. */
@@ -593,6 +593,18 @@
     .plugins-badge, .plugins-dots span { animation: none; }
   }
 
+  .viewport-grid {
+    display: flex; gap: 36px; flex-wrap: wrap; margin-top: 14px;
+  }
+  .viewport-field { min-width: 180px; }
+  .viewport-label-row {
+    display: flex; align-items: center; gap: 6px; position: relative;
+    margin-bottom: 7px;
+  }
+  .viewport-label-row label { font-size: 13px; color: var(--subtext); }
+  .viewport-label-row .info-pop { position: relative; }
+  .viewport-label-row .info-pop .tip { right: auto; left: -8px; }
+  .viewport-input-row { display: flex; align-items: center; gap: 10px; }
   .viewport-row {
     display: flex; align-items: center; gap: 12px;
     margin-top: 14px; flex-wrap: wrap;
@@ -986,15 +998,27 @@
             width to match your cutout, then nudge it left or right until it
             sits perfectly in the opening.
           </div>
-          <div class="viewport-row">
-            <label for="viewport-width">Window width</label>
-            <input type="number" id="viewport-width" min="0" step="2">
-            <span class="viewport-unit">px <span id="viewport-panel-hint"></span></span>
-          </div>
-          <div class="viewport-row">
-            <label for="viewport-corner">Corner radius</label>
-            <input type="number" id="viewport-corner" min="0" max="80" step="1">
-            <span class="viewport-unit">px &middot; &asymp;13 px per mm of physical radius</span>
+          <div class="viewport-grid">
+            <div class="viewport-field">
+              <div class="viewport-label-row">
+                <label for="viewport-width">Window width</label>
+                <button type="button" class="info-pop static-pop" aria-label="About window width"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg><span class="tip">Width 0 uses the full panel. The screen restarts for a moment when the window changes.</span></button>
+              </div>
+              <div class="viewport-input-row">
+                <input type="number" id="viewport-width" min="0" step="2">
+                <span class="viewport-unit">px <span id="viewport-panel-hint"></span></span>
+              </div>
+            </div>
+            <div class="viewport-field">
+              <div class="viewport-label-row">
+                <label for="viewport-corner">Corner radius</label>
+                <button type="button" class="info-pop static-pop" aria-label="About corner radius"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg><span class="tip">Rounds the window's corners to match the panel's glass. About 13&nbsp;px per mm of physical radius; 0 keeps square corners.</span></button>
+              </div>
+              <div class="viewport-input-row">
+                <input type="number" id="viewport-corner" min="0" max="80" step="1">
+                <span class="viewport-unit">px</span>
+              </div>
+            </div>
           </div>
           <div class="viewport-row">
             <label>Position</label>
@@ -1007,7 +1031,6 @@
             </div>
             <span class="viewport-unit" id="viewport-offset-label">centered</span>
           </div>
-          <div class="info-note"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg><span>Width 0 uses the full panel. The screen restarts for a moment when this changes.</span></div>
         </div>
 
       </div>
@@ -1825,6 +1848,17 @@
     renderViewport();
     markDirty();
   });
+  // Static info-pops (viewport card, and any future ones): same
+  // click-toggle behavior as the generated preview pops -- hover works
+  // via CSS, click pins it open on touch devices.
+  document.querySelectorAll('.info-pop.static-pop').forEach(pop => {
+    pop.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const wasOpen = pop.classList.contains('open');
+      document.querySelectorAll('.info-pop.open').forEach(x => x.classList.remove('open'));
+      if (!wasOpen) pop.classList.add('open');
+    });
+  });
   document.getElementById('viewport-corner').addEventListener('change', () => {
     const raw = parseInt(document.getElementById('viewport-corner').value, 10);
     viewCornerR = Number.isFinite(raw) ? Math.max(0, Math.min(raw, 80)) : 0;
@@ -2488,7 +2522,17 @@
         if (i > 0) strip.appendChild(el('span', 'ack-sep', '\u00b7'));
         const a = document.createElement('a');
         a.href = item.url; a.target = '_blank'; a.rel = 'noopener';
-        if (item.github) a.appendChild(avatar(item.github, 40));
+        if (item.icon_url) {
+          // Brand marks for non-GitHub credits (e.g. UniFi): hotlink the
+          // site's own favicon rather than redistributing a trademark
+          // in the repo; vanish gracefully if it doesn't load.
+          const ic = document.createElement('img');
+          ic.src = item.icon_url;
+          ic.alt = '';
+          ic.className = 'about-avatar';
+          ic.addEventListener('error', () => ic.remove());
+          a.appendChild(ic);
+        } else if (item.github) a.appendChild(avatar(item.github, 40));
         a.appendChild(document.createTextNode(item.name));
         strip.appendChild(a);
       });
