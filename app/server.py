@@ -854,7 +854,8 @@ def build_set_config_payload(cfg):
                       # only-if-present like everything else, so saves from
                       # dashboards that predate the fields never reset an
                       # anchored window.
-                      ("view_w", int), ("view_off_x", int)]:
+                      ("view_w", int), ("view_off_x", int),
+                      ("view_corner_r", int)]:
         if key in cfg:
             payload[key] = cast(cfg[key])
     # board is only-if-present as of 0.9.7.4 -- it USED to default to 0,

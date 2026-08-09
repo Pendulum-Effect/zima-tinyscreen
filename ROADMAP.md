@@ -666,7 +666,7 @@ None are worth a dedicated round; fold them into other work or skip.
 - The `/proc/1/net/dev` bind mount is what makes network stats work
   without `network_mode: host`; don't "simplify" it away.
 
-## Next release (1.0.4) earmarks
+## Upcoming earmarks
 
 - [ ] **General tab progressive loading**: when no device is connected
       or an unrecognized board is plugged in, the whole General tab

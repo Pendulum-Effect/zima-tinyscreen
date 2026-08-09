@@ -2,6 +2,15 @@
   "_comment": "Human-readable changelog for the dashboard's About tab -- written for people, not commit archaeologists. The dashboard fetches this from GitHub at page load (baked copy as fallback), so add an entry here with each release and every install sees it. Newest first. Dates are YYYY-MM-DD.",
   "entries": [
     {
+      "version": "1.0.4",
+      "date": "2026-08-09",
+      "title": "Rounding out the window (firmware 1.38)",
+      "notes": [
+        "Corner radius for the anchored window: the viewport's left and right edges are artificial -- mid-glass vertical cuts -- and met the top and bottom as four sharp 90-degree corners, visibly squarer than the panel's own rounded glass and the printed cutout around it. A configurable corner radius now masks the window's four corners back to off-black on every presented frame, so the lit region reads as a complete little screen with matching corners. Set it in the Display Window card (in px; about 13 px per mm of physical radius at this panel's 78-micron pixel pitch); the wizard defaults new AMOLED setups to 26 px (~2 mm). Every frame now leaves through one presentFrame() path -- masks applied after pages, savers, and banners so nothing draws over them -- and the White (debug) screensaver shows the rounded window too, which makes it the calibration tool: eyeball the lit corners against the glass, nudge the radius, save, repeat.",
+        "Fixed the General tab's AMOLED preview rendering with its top and bottom chopped off: the near-square page mock was scaling to the landscape frame's width and overflowing its height. It now fits by height and centers, leaving black bars either side -- which is not a workaround but a faithful depiction: that is literally what the panel does, a near-square visible window mid-glass with off pixels around it."
+      ]
+    },
+    {
       "version": "1.0.3",
       "date": "2026-08-08",
       "title": "Two pages, one panel (firmware 1.37)",

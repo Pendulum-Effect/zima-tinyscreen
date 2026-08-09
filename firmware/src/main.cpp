@@ -42,7 +42,7 @@
 // "Software Version" field via the get_config command below. No
 // auto-update-checking mechanism exists yet (that's a separate, not-yet
 // -built feature) -- this just answers "what's currently on my device."
-#define FIRMWARE_VERSION "1.37"  // two-part scheme as of 1.19 (was x.y.z)
+#define FIRMWARE_VERSION "1.38"  // two-part scheme as of 1.19 (was x.y.z)
 
 // Note: screen dimensions are NOT fixed -- board 1 (1.69") is 240x280,
 // taller than board 0's 240x240, and board 2 (AMOLED-1.64) is 280x456,
@@ -188,6 +188,11 @@ struct Config {
   // board's default, so nothing changes for boards 0/1).
   int viewW = 0;
   int viewOffX = -1;
+  // Corner radius (px) for the anchored window's artificial edges
+  // (1.38): masks the window's four corners so the lit region matches
+  // the panel's own rounded glass. 0 = square corners (off). At this
+  // panel's 78um pixel pitch, ~13px per mm of physical radius.
+  int viewCornerR = 0;
 
   // Per-page layout style, parallel to pages[] slot-for-slot. "default"
   // is the classic TinyScreen ring look; pages may offer alternates
@@ -232,6 +237,7 @@ void loadConfig() {
   config.aspectMode = prefs.getInt("aspectMode", config.squareFit ? 1 : 0);
   config.viewW = prefs.getInt("viewW", 0);
   config.viewOffX = prefs.getInt("viewOffX", -1);
+  config.viewCornerR = prefs.getInt("viewCornR", 0);
   String pagesCsv = prefs.getString("pages", "temp");
   String layoutsCsv = prefs.getString("layouts", "");
   prefs.end();
@@ -304,6 +310,7 @@ void saveConfig() {
   prefs.putInt("aspectMode", config.aspectMode);
   prefs.putInt("viewW", config.viewW);
   prefs.putInt("viewOffX", config.viewOffX);
+  prefs.putInt("viewCornR", config.viewCornerR);
   String layoutsCsv = "";
   for (int i = 0; i < config.numPages; i++) {
     if (i > 0) layoutsCsv += ",";
@@ -634,6 +641,36 @@ void pwmWriteBacklight(int pin, int duty) {
 #endif
 }
 
+// Corner masking for the anchored window (1.38): the viewport's edges
+// are artificial -- mid-glass vertical cuts -- and land as four sharp
+// 90-degree corners. With a radius configured, every presented frame
+// gets its window corners masked back to black (off pixels), so the
+// lit region's corners match the panel's own rounded glass and the
+// faceplate cutout's print radius. Row-span fills: 4*r tiny fillRects,
+// negligible next to a full-canvas flush.
+void maskWindowCorners() {
+  int r = config.viewCornerR;
+  if (r <= 0 || visW >= screenW) return;  // full panel: real glass corners
+  if (r > visW / 2) r = visW / 2;
+  if (r > visH / 2) r = visH / 2;
+  for (int i = 0; i < r; i++) {
+    int dy = r - i;
+    int cut = r - (int)sqrtf((float)(r * r - dy * dy));
+    if (cut <= 0) continue;
+    canvas->fillRect(visX, visY + i, cut, 1, 0x0000);
+    canvas->fillRect(visX + visW - cut, visY + i, cut, 1, 0x0000);
+    canvas->fillRect(visX, visY + visH - 1 - i, cut, 1, 0x0000);
+    canvas->fillRect(visX + visW - cut, visY + visH - 1 - i, cut, 1, 0x0000);
+  }
+}
+
+// Every frame leaves through here: corner masks, then the flush. The
+// masks run last so no page, saver, or banner can draw over them.
+void presentFrame() {
+  maskWindowCorners();
+  canvas->flush();
+}
+
 void applyBrightness();  // defined below; initDisplay needs it for AMOLED boards
 
 #define BOOTLOG_LINES 24
@@ -776,7 +813,7 @@ void initDisplay() {
   }
   bootMark("first flush");
   canvas->fillScreen(0x0000);
-  canvas->flush();
+  presentFrame();
   bootMark("first flush done");
   if (p.lcd_bl < 0) {
     // No backlight GPIO: brightness lives in the display controller.
@@ -2259,7 +2296,7 @@ void drawSplash() {
   canvas->setTextColor(COL_SUBTEXT);
   drawTextCentered("loading...", visX + visW / 2, ly + TINY_LOGO_H + SL(28));
   canvas->setFont();
-  canvas->flush();
+  presentFrame();
 }
 
 void drawCurrentScreen() {
@@ -2291,7 +2328,7 @@ void drawCurrentScreen() {
     drawPage(config.pages[currentPageIdx]);
   }
   drawStaleBanner();
-  canvas->flush();
+  presentFrame();
 }
 
 // ---------------------------------------------------------------------
@@ -2393,7 +2430,7 @@ void drawScreensaver() {
   }
   // No time known yet -> stays a dark screen, which is a perfectly fine
   // screensaver too.
-  canvas->flush();
+  presentFrame();
 }
 
 // "Hostname & IP" screensaver (1.33): who am I and where do I live --
@@ -2419,7 +2456,7 @@ void drawSaverHostIP() {
   canvas->setTextColor(COL_SUBTEXT);
   drawTextCentered(ip, visX + visW / 2, visY + visH / 2 + SL(18));
   canvas->setFont();
-  canvas->flush();
+  presentFrame();
 }
 
 void drawSaverTemp() {
@@ -2449,7 +2486,7 @@ void drawSaverTemp() {
   canvas->setCursor(edge + SL(4), visY + visH / 2 - (int)h / 2 - y1);
   canvas->print("\xB0");
   canvas->setFont();
-  canvas->flush();
+  presentFrame();
 }
 
 // ---------------------------------------------------------------------
@@ -2605,7 +2642,7 @@ void drawSaverUnifi() {
     int y = unifiLerp(p.y0, p.y1, tick, p.t0, p.t3);
     canvas->fillCircle(x, y, p.size, col);
   }
-  canvas->flush();
+  presentFrame();
 }
 
 // TEMPORARY (1.36): "white" debug saver -- the VISIBLE window as a solid
@@ -2620,7 +2657,7 @@ void drawSaverUnifi() {
 void drawSaverWhite() {
   canvas->fillScreen(0x0000);
   canvas->fillRect(visX, visY, visW, visH, 0xFFFF);
-  canvas->flush();
+  presentFrame();
 }
 
 // ---------------------------------------------------------------------
@@ -2752,6 +2789,10 @@ void handleSetConfig(JsonDocument &doc) {
     int vo = constrain((int)doc["view_off_x"], -1, 1024);
     if (vo != config.viewOffX) { config.viewOffX = vo; displayGeomChanged = true; }
   }
+  if (doc["view_corner_r"].is<int>()) {
+    int vr = constrain((int)doc["view_corner_r"], 0, 80);
+    if (vr != config.viewCornerR) { config.viewCornerR = vr; displayGeomChanged = true; }
+  }
   // Settings may have changed what the backlight should be doing right
   // now (e.g. night mode just enabled mid-window, or saver turned off
   // while active) -- recompute immediately rather than waiting for the
@@ -2810,6 +2851,7 @@ void handleGetConfig() {
   doc["supports_viewport"] = (BOARD_PROFILES[config.boardId].driver == DRV_CO5300);
   doc["view_w"] = config.viewW;
   doc["view_off_x"] = config.viewOffX;
+  doc["view_corner_r"] = config.viewCornerR;
   doc["panel_w"] = BOARD_PROFILES[config.boardId].width;
   doc["panel_h"] = BOARD_PROFILES[config.boardId].height;
   JsonArray pages = doc["pages"].to<JsonArray>();
