@@ -601,6 +601,15 @@
     position: relative; margin-left: 4px;
   }
   .card-title .info-pop .tip, .card-desc .info-pop .tip { right: auto; left: -8px; font-weight: 400; }
+  /* Tips must always paint on the TOP layer. Sibling cards are all
+     positioned boxes painted in DOM order, so a tip overhanging into
+     the next card could be drawn under it. Two belts: the active pop
+     itself gets a high z-index, and (via :has) the CARD containing an
+     open/hovered pop is elevated above its siblings for the duration
+     -- which also survives any future ancestor that forms a stacking
+     context and would otherwise trap the tip's z-index. */
+  .info-pop:hover, .info-pop.open { z-index: 61; }
+  .card:has(.info-pop:hover), .card:has(.info-pop.open) { position: relative; z-index: 50; }
   /* Warning line for the White (debug) screensaver: same voice as the
      General tab's no-device warning. */
   .saver-warning {
@@ -634,7 +643,7 @@
     font-size: 13.5px;
   }
   .viewport-unit { font-size: 12.5px; color: var(--subtext); }
-  .viewport-nudges { display: flex; gap: 6px; flex-wrap: wrap; }
+  .viewport-nudges { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
   .viewport-nudges .btn { padding: 6px 10px; font-size: 12.5px; }
 
   .nav-indicator {
@@ -811,7 +820,7 @@
         <div class="card">
           <div class="card-header">
             <div>
-              <div class="card-title">HTTPS Certificate <button type="button" class="info-pop static-pop" aria-label="About HTTPS"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg><span class="tip">If you only ever use the dashboard over plain HTTP (port 8989), none of this affects you &mdash; HTTPS (8990) exists mainly so the WebSerial flasher can run.</span></button></div>
+              <div class="card-title">HTTPS Certificate</div>
               <div class="card-desc" id="cert-summary">Checking…</div>
             </div>
             <button class="btn btn-uniform" id="cert-manage-btn">Manage</button>
@@ -966,7 +975,7 @@
         <div class="card">
           <div class="card-header">
             <div>
-              <div class="card-title">Night Mode <button type="button" class="info-pop static-pop" aria-label="About night mode"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg><span class="tip">0% turns the screen off completely. Times are in your local timezone.</span></button></div>
+              <div class="card-title">Night Mode</div>
               <div class="card-desc">Dim the screen (or turn it off) on a schedule.</div>
             </div>
             <div class="toggle" id="night-enabled"><div class="knob"></div></div>
@@ -976,7 +985,7 @@
               <label class="card-desc">From <input type="time" id="night-start" value="22:00" class="time-input"></label>
               <label class="card-desc">to <input type="time" id="night-end" value="07:00" class="time-input"></label>
             </div>
-            <div class="card-desc" style="margin-top:12px;">Night brightness</div>
+            <div class="card-desc" style="margin-top:12px;">Night brightness <button type="button" class="info-pop static-pop" aria-label="About night mode"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg><span class="tip">0% turns the screen off completely. Times are in your local timezone.</span></button></div>
             <div class="brightness-row" style="margin-top:6px;">
               <input type="range" id="night-brightness-slider" min="0" max="100" value="10" class="brightness-slider">
               <span class="brightness-value" id="night-brightness-value">10%</span>
@@ -1010,7 +1019,7 @@
         <div class="card" id="viewport-card" style="display:none;">
           <div class="card-title">Display Window</div>
           <div class="card-desc">
-            This panel is bigger than a case cutout needs, so only a window of
+            This panel is bigger than most case cutouts need, so only a window of
             it is treated as visible &mdash; everything renders inside the
             window and the rest of the AMOLED stays truly off. Set the window's
             width to match your cutout, then nudge it left or right until it
@@ -1020,7 +1029,7 @@
             <div class="viewport-field">
               <div class="viewport-label-row">
                 <label for="viewport-width">Window width</label>
-                <button type="button" class="info-pop static-pop" aria-label="About window width"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg><span class="tip">Width 0 uses the full panel. The screen restarts for a moment when the window changes.</span></button>
+                <button type="button" class="info-pop static-pop" aria-label="About window width"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg><span class="tip" id="viewport-width-tip">Width 0 uses the full panel. The screen restarts for a moment when the window changes.</span></button>
               </div>
               <div class="viewport-input-row">
                 <input type="number" id="viewport-width" min="0" step="2">
@@ -1858,6 +1867,12 @@
     document.getElementById('viewport-offset-label').textContent =
       viewOffX < 0 ? 'centered' : (viewOffX + 'px from left');
     document.getElementById('viewport-corner').value = viewCornerR;
+    // Assistive 1:1 hint: the window's height is the logical short
+    // axis, so that same number as the width gives a square viewport.
+    const oneToOne = (rotation === 90 || rotation === 270) ? panelW : panelH;
+    document.getElementById('viewport-width-tip').textContent =
+      'Width 0 uses the full panel. The screen restarts for a moment when ' +
+      'the window changes. For a 1:1 square window, set width to ' + oneToOne + ' px.';
   }
   document.getElementById('viewport-width').addEventListener('change', () => {
     const raw = parseInt(document.getElementById('viewport-width').value, 10);
@@ -1869,14 +1884,33 @@
   // Static info-pops (viewport card, and any future ones): same
   // click-toggle behavior as the generated preview pops -- hover works
   // via CSS, click pins it open on touch devices.
-  document.querySelectorAll('.info-pop.static-pop').forEach(pop => {
+  function bindInfoPop(pop) {
     pop.addEventListener('click', (e) => {
       e.stopPropagation();
       const wasOpen = pop.classList.contains('open');
       document.querySelectorAll('.info-pop.open').forEach(x => x.classList.remove('open'));
       if (!wasOpen) pop.classList.add('open');
     });
-  });
+  }
+  // Build an info-pop in JS for dynamically-created cards (cert
+  // sub-page etc.) -- same markup, same behavior as the static ones.
+  function makeInfoPop(label, tipText) {
+    const pop = document.createElement('button');
+    pop.type = 'button';
+    pop.className = 'info-pop static-pop';
+    pop.setAttribute('aria-label', label);
+    pop.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" ' +
+      'stroke-width="2" stroke-linecap="round" aria-hidden="true">' +
+      '<circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/>' +
+      '<line x1="12" y1="8" x2="12.01" y2="8"/></svg>';
+    const tip = document.createElement('span');
+    tip.className = 'tip';
+    tip.textContent = tipText;
+    pop.appendChild(tip);
+    bindInfoPop(pop);
+    return pop;
+  }
+  document.querySelectorAll('.info-pop.static-pop').forEach(bindInfoPop);
   document.getElementById('viewport-corner').addEventListener('change', () => {
     const raw = parseInt(document.getElementById('viewport-corner').value, 10);
     viewCornerR = Number.isFinite(raw) ? Math.max(0, Math.min(raw, 80)) : 0;
@@ -2239,12 +2273,22 @@
       // mode 0 as the anchored cutout window it actually is there.
       const dualBtn = document.getElementById('aspect-dual-btn');
       const nativeBtn = document.getElementById('aspect-native-btn');
+      // The AMOLED keeps only the modes that make sense there: Window
+      // (cutout) and Native dual. Square scaling is achievable by hand
+      // (window width = the panel's short axis) and 1.3" compact was
+      // tuned for the LCD geometry, so both hide on board 2.
+      const squareBtn = document.querySelector('.radio-btn[data-aspect="square"]');
+      const compactBtn = document.querySelector('.radio-btn[data-aspect="compact13"]');
       if (cfg.board === 2) {
         dualBtn.style.display = '';
         nativeBtn.innerHTML = 'Window (cutout)';
+        if (squareBtn) squareBtn.style.display = 'none';
+        if (compactBtn) compactBtn.style.display = 'none';
       } else {
         dualBtn.style.display = 'none';
         nativeBtn.innerHTML = 'Native (240&times;280)';
+        if (squareBtn) squareBtn.style.display = '';
+        if (compactBtn) compactBtn.style.display = '';
       }
       viewportSupported = !!cfg.supports_viewport;
       viewW = Number.isInteger(cfg.view_w) ? cfg.view_w : 0;
@@ -2766,7 +2810,12 @@
     const body = document.getElementById('general-sub-body');
     body.textContent = '';
     const info = el('div', 'card');
-    info.appendChild(el('div', 'card-title', 'Current certificate'));
+    const certTitle = el('div', 'card-title', 'Current certificate ');
+    certTitle.appendChild(makeInfoPop('About HTTPS',
+      'If you only ever use the dashboard over plain HTTP (port 8989), none of ' +
+      'this affects you \u2014 HTTPS (8990) exists mainly so the WebSerial ' +
+      'flasher can run.'));
+    info.appendChild(certTitle);
     const rows = [
       ['Subject', certCN(certInfo && certInfo.subject)],
       ['Issuer', certCN(certInfo && certInfo.issuer)],
