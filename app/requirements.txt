@@ -17,3 +17,6 @@ esptool==5.3.0
 # IANA zone database for zoneinfo (the slim base image ships none);
 # used by the collector's DST-corrected local_min field.
 tzdata==2025.2
+# Custom boot logo conversion (1.0.8): PNG (with alpha) -> letterboxed
+# RGB565 for the device. Pinned exact per house rule.
+pillow==11.3.0

@@ -666,7 +666,111 @@ None are worth a dedicated round; fold them into other work or skip.
 - The `/proc/1/net/dev` bind mount is what makes network stats work
   without `network_mode: host`; don't "simplify" it away.
 
+## Plugins architecture (decided direction -- NOT scheduled)
+
+Settled in discussion, recorded so the eventual build matches the
+decision. The shape: **storefront UI, monorepo code, private
+interface, PR-based contribution, no external store.**
+
+- UX: installed plugins pinned at the top of the Plugins tab,
+  available ones listed below, drill into an installed plugin for its
+  settings -- the CasaOS / Home Assistant / UniFi pattern.
+- Code lives IN this repo under something like `app/plugins/<name>/`:
+  a small manifest (name, description, icon, config schema) plus a
+  class implementing a few hooks -- provide stats fields, provide a
+  page and/or screensaver, declare config the dashboard renders
+  generically, and a health/test-connection call. Disabled plugins
+  simply aren't imported; a few plugins is a folder, not bloat.
+- NO separate store repo, manifest format, download-and-install
+  mechanism, or version-compatibility matrix: that's infrastructure
+  for a scale this project deliberately isn't. Executing downloaded
+  code on the homelab box is also a security story we skip entirely
+  by shipping plugins with the app.
+- Ordering: build the interface PRIVATE first and prove it with our
+  own plugins (AMP game-server status is first -- players online,
+  TPS, CPU temp -- per the long-standing bookmark). Only document it
+  as a public API if an external contributor actually materializes,
+  and even then: plugins arrive as PRs into this repo, reviewed and
+  shipped with releases. An external store happens never, or at the
+  point where PR review is genuinely the bottleneck.
+- First-party plugin candidates, in order: (1) AMP game-server
+  status (the long-standing bookmark). (2) Fan bridge: the ESP32-S3
+  drives a 4-pin PWM fan directly from spare GPIOs (LEDC at 25 kHz,
+  tach input on a second pin) with the curve fed by the temps the
+  device already receives -- solving the ZimaBlade's all-or-nothing
+  fan header. Hardware notes: fans do NOT power from GPIO (5V Noctua
+  from the USB rail, or 12V fans from a separate supply/the Blade's
+  DC input); 3.3V PWM drives most Intel-spec fans fine; verify which
+  GPIOs the AMOLED-1.64 board actually exposes before committing.
+  NOT a USB device -- the S3's USB is a device port, not a host.
+- Design note, no commitment: a stats-PROVIDER hook is the same seam
+  a hypothetical Windows agent would plug into. If either idea ever
+  becomes real, they share a foundation. (Windows port itself:
+  discussed, sized, and deliberately NOT roadmapped.)
+
+## Hardware soak / regression matrix (the "rock solid" pass)
+
+Goal: every board x mode combination verified on glass before the
+screen + chassis marry into the final product. Check items off as
+tested; anything odd becomes its own line.
+
+Per board (0: LCD-1.3, 1: Touch-LCD-1.69, 2: AMOLED-1.64):
+- [ ] Wizard flash from scratch (correct manifest variant, defaults
+      land, completion glyph matches the board)
+- [ ] Dashboard detection, General preview shape, firmware version
+- [ ] Every ASPECT mode offered for that board (boards 0/1: native,
+      square, 1.3" compact; board 2: window cutout, native dual)
+- [ ] All four rotations per aspect mode
+- [ ] Every page in the carousel, static and auto-cycle
+- [ ] Every screensaver style incl. White (debug) + its warning,
+      engage timeout, and (touch boards) tap-to-wake + swipe nav
+- [ ] Brightness sweep, Night Mode window, saver dimming precedence
+- [ ] Config persistence across power cycle; NVS survives reflash
+
+Board 2 specifics:
+- [ ] Viewport: width/offset nudges land through restart; corner
+      radius masks match the glass (white-saver calibration loop)
+- [ ] Burn-in wander: imperceptible, no stale strips, holds still
+      during White (debug)
+- [ ] Dual mode: pane scaling/fonts, per-pane roll slots, carousel
+      pair advance, portrait stacked variant, mist stays in its pane
+      (carried from 1.37 verify queue)
+- [ ] Flush cadence holds 33ms with particle saver (carried from the
+      1.36 queue); revisit per-board frame interval (~20ms/50fps has
+      headroom on QSPI) after baseline soak passes
+
+## Release channels (designed, not yet built)
+
+Stable/dev opt-in via GitHub's own release machinery -- no second
+repo, no new infrastructure:
+
+- Every push to master: CI builds and tags the Docker image `:edge`
+  (rapid iteration channel).
+- Publishing a GitHub Release (a real release, not a prerelease) on a
+  tag: CI additionally tags that build `:stable` and `:x.y.z`.
+  Marking a release as "prerelease" keeps it off the stable channel.
+- Users pick a channel with their compose image tag (`:stable`
+  default in docs; `:edge` for the brave), and the in-app updater
+  becomes channel-aware: stable checks the latest non-prerelease
+  Release via the GitHub API, dev keeps checking master's VERSION.
+- Implementation note: this edits .github/workflows -- the full-file
+  callout rule applies when built.
+
 ## Upcoming earmarks
+
+- [ ] Device "loading" states in the dashboard: the info already
+      exists (splash/no-data vs hello-acked vs configured, the
+      restart-to-apply window after geometry changes, and "port held
+      by esptool" during flashing) -- surface them as status chips on
+      the General panel ("Applying settings...", "Updating
+      firmware...", "Restarting...") instead of the binary
+      healthy/not-detected. Pairs naturally with the General tab
+      progressive-loading item below.
+
+- [ ] Per-board FRAME_INTERVAL_MS: board 2 has ~2x frame budget
+      headroom (QSPI flush ~13ms vs 33ms cadence); drop it to ~20ms
+      with a roll-tween retune once the soak matrix passes. LCD
+      boards stay at 33ms -- their SPI transfer is the ceiling.
 
 - [ ] **General tab progressive loading**: when no device is connected
       or an unrecognized board is plugged in, the whole General tab

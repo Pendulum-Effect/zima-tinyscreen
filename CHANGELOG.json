@@ -2,6 +2,16 @@
   "_comment": "Human-readable changelog for the dashboard's About tab -- written for people, not commit archaeologists. The dashboard fetches this from GitHub at page load (baked copy as fallback), so add an entry here with each release and every install sees it. Newest first. Dates are YYYY-MM-DD.",
   "entries": [
     {
+      "version": "1.0.8",
+      "date": "2026-08-10",
+      "title": "Your logo here (firmware 1.39)",
+      "notes": [
+        "Custom boot logo: upload a PNG from the new Boot Logo card on the Screen tab and it replaces the splash artwork -- stored on the device's own flash (LittleFS on the spare partition), so it travels with the screen wherever it's plugged in. Transparency composites over the black splash; the server letterboxes and converts to the panel's format per board (the AMOLED's ~326 PPI panel gets a larger target box), and the transfer streams over the existing serial protocol in verified chunks, renamed into place only on a size-and-checksum match so a dropped transfer can never half-replace a working logo. Revert to the built-in logo any time. Recommended source art: transparent PNG at least 2x the target -- 520x300 or larger for the AMOLED, 400x260 for the LCD boards.",
+        "Splash protection: a tinyscreen plugged into a machine without the app -- or a powered-off host that keeps USB alive -- used to burn its splash statically for days. After ten minutes with no data source the screen now goes dark (truly off on the AMOLED, backlight cut on the LCDs); the first stats payload or any touch wakes it instantly, and a touch-wake restarts the ten-minute clock. Reported in diag output alongside filesystem and custom-logo state.",
+        "New serial commands logo_begin/logo_chunk/logo_end/logo_clear, get_config reports custom_logo, and boot breadcrumbs note filesystem mount and custom logo load. Pillow joins the server's pinned dependencies for the PNG conversion."
+      ]
+    },
+    {
       "version": "1.0.7",
       "date": "2026-08-09",
       "title": "Tooltip layering and AMOLED aspect pruning",

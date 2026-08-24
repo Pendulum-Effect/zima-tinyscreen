@@ -25,6 +25,7 @@ import glob
 import hashlib
 import hmac
 import json
+import base64
 import os
 import re
 import secrets
@@ -1325,6 +1326,129 @@ def api_firmware_info():
     except (FileNotFoundError, OSError):
         version = None
     return jsonify({"ok": version is not None, "bundled_version": version})
+
+
+
+# ---------------------------------------------------------------------------
+# Custom boot logo (1.0.8). The dashboard uploads a PNG; we letterbox it
+# into a per-board target box (alpha composited over black, since the
+# splash background is pure black on every board -- off pixels on the
+# AMOLED), convert to RGB565 little-endian, and stream it to the device
+# over the serial logo_begin/chunk/end protocol. Written device-side to
+# a temp file and renamed only on verified size+checksum, so a dropped
+# transfer can't half-replace a working logo.
+LOGO_TARGET_BOX = {0: (200, 110), 1: (200, 130), 2: (260, 150)}
+
+def _png_to_rgb565(data, box_w, box_h):
+    from PIL import Image
+    import io
+    img = Image.open(io.BytesIO(data)).convert("RGBA")
+    img.thumbnail((box_w, box_h), Image.LANCZOS)
+    black = Image.new("RGBA", img.size, (0, 0, 0, 255))
+    img = Image.alpha_composite(black, img).convert("RGB")
+    w, h = img.size
+    out = bytearray()
+    for r, g, b in img.getdata():
+        v = ((r & 0xF8) << 8) | ((g & 0xFC) << 3) | (b >> 3)
+        out += bytes((v & 0xFF, v >> 8))  # little-endian
+    return w, h, bytes(out)
+
+
+def _serial_await_ack(ser, ack_name, deadline_s=5):
+    buf = b""
+    deadline = time.time() + deadline_s
+    while time.time() < deadline:
+        chunk = ser.read(256)
+        if not chunk:
+            continue
+        buf += chunk
+        while b"\n" in buf:
+            line, buf = buf.split(b"\n", 1)
+            try:
+                parsed = json.loads(line.decode("utf-8", errors="ignore"))
+            except (json.JSONDecodeError, UnicodeDecodeError):
+                continue
+            if isinstance(parsed, dict) and parsed.get("ack") == ack_name:
+                return parsed
+    return None
+
+
+@app.route("/api/custom_logo", methods=["POST"])
+def api_custom_logo():
+    f = request.files.get("logo")
+    if f is None:
+        return jsonify({"ok": False, "error": "No file uploaded."}), 400
+    try:
+        board = int(request.form.get("board", "0"))
+    except ValueError:
+        board = 0
+    box = LOGO_TARGET_BOX.get(board, (200, 110))
+    try:
+        w, h, rgb = _png_to_rgb565(f.read(), *box)
+    except Exception as e:  # Pillow raises many types for bad images
+        return jsonify({"ok": False, "error": f"Couldn't read that image: {e}"}), 400
+
+    port = find_device_port()
+    if not port:
+        return jsonify({"ok": False, "error": "No device connected."}), 404
+    busy = _begin_exclusive_serial()
+    if busy:
+        return busy
+    ser = None
+    try:
+        ser = RawSerialPort(port, baudrate=115200, timeout=2)
+        time.sleep(2)
+        ser.write(json.dumps({"cmd": "logo_begin", "w": w, "h": h,
+                              "size": len(rgb)}).encode() + b"\n")
+        ack = _serial_await_ack(ser, "logo_begin")
+        if not ack or not ack.get("ok"):
+            return jsonify({"ok": False, "error": "Device refused the transfer (filesystem unavailable?)."}), 502
+        chunk_raw = 576  # 768 base64 chars; well inside the device line buffer
+        total = 0
+        for seq, off in enumerate(range(0, len(rgb), chunk_raw)):
+            piece = rgb[off:off + chunk_raw]
+            total += sum(piece)
+            ser.write(json.dumps({"cmd": "logo_chunk", "seq": seq,
+                                  "data": base64.b64encode(piece).decode()}).encode() + b"\n")
+            ack = _serial_await_ack(ser, "logo_chunk")
+            if not ack or not ack.get("ok"):
+                return jsonify({"ok": False, "error": f"Transfer failed at chunk {seq}."}), 502
+        ser.write(json.dumps({"cmd": "logo_end", "sum": total & 0xFFFFFFFF}).encode() + b"\n")
+        ack = _serial_await_ack(ser, "logo_end")
+        if not ack or not ack.get("ok"):
+            return jsonify({"ok": False, "error": "Device rejected the finished logo (checksum)."}), 502
+        return jsonify({"ok": True, "w": w, "h": h})
+    finally:
+        if ser is not None:
+            try:
+                ser.close()
+            except Exception:
+                pass
+        _end_exclusive_serial()
+
+
+@app.route("/api/custom_logo/clear", methods=["POST"])
+def api_custom_logo_clear():
+    port = find_device_port()
+    if not port:
+        return jsonify({"ok": False, "error": "No device connected."}), 404
+    busy = _begin_exclusive_serial()
+    if busy:
+        return busy
+    ser = None
+    try:
+        ser = RawSerialPort(port, baudrate=115200, timeout=2)
+        time.sleep(2)
+        ser.write(b'{"cmd":"logo_clear"}\n')
+        ack = _serial_await_ack(ser, "logo_clear")
+        return jsonify({"ok": bool(ack and ack.get("ok"))})
+    finally:
+        if ser is not None:
+            try:
+                ser.close()
+            except Exception:
+                pass
+        _end_exclusive_serial()
 
 
 @app.route("/api/current_config", methods=["GET"])

@@ -28,6 +28,8 @@
 
 #include <Arduino.h>
 #include <Wire.h>
+#include <LittleFS.h>          // custom boot logo storage (1.39)
+#include "mbedtls/base64.h"   // logo chunk decoding (in ROM/IDF, no extra dep)
 #include <Preferences.h>
 #include <Arduino_GFX_Library.h>
 // Smooth proportional fonts (generated from DejaVu Sans by
@@ -42,7 +44,7 @@
 // "Software Version" field via the get_config command below. No
 // auto-update-checking mechanism exists yet (that's a separate, not-yet
 // -built feature) -- this just answers "what's currently on my device."
-#define FIRMWARE_VERSION "1.38"  // two-part scheme as of 1.19 (was x.y.z)
+#define FIRMWARE_VERSION "1.39"  // two-part scheme as of 1.19 (was x.y.z)
 
 // Note: screen dimensions are NOT fixed -- board 1 (1.69") is 240x280,
 // taller than board 0's 240x240, and board 2 (AMOLED-1.64) is 280x456,
@@ -420,6 +422,50 @@ Arduino_Canvas *canvas = nullptr;
 // miswired touch bus doesn't spam NACK errors every poll (and so the
 // "touch disabled" boot message is actually true).
 bool touchOnline = true;
+// Custom boot logo (1.39): stored on LittleFS as /logo.bin -- 8-byte
+// header ("TSLG", u16 w, u16 h, little-endian) + RGB565 pixels.
+// Loaded once at boot into a heap buffer (PSRAM via malloc routing);
+// drawSplash prefers it over the built-in bitmap.
+bool fsOnline = false;
+uint16_t *customLogo = nullptr;
+int customLogoW = 0, customLogoH = 0;
+// In-flight logo transfer state (serial logo_begin/chunk/end).
+File logoRxFile;
+uint32_t logoRxExpected = 0, logoRxReceived = 0, logoRxSum = 0;
+// Splash protection (1.39): if no data source ever appears -- device
+// plugged into a machine without the app, or a powered-off host that
+// keeps USB alive -- the splash would otherwise burn statically for
+// days. After this long with no data, the screen goes dark (true off
+// on AMOLED, backlight cut on LCD); first data or any touch wakes it.
+const unsigned long SPLASH_PROTECT_MS = 10UL * 60UL * 1000UL;
+bool splashProtect = false;
+unsigned long splashWakeMs = 0;  // last touch-wake; timeout counts from here
+
+#define LOGO_MAX_W 320
+#define LOGO_MAX_H 200
+
+void freeCustomLogo() {
+  if (customLogo) { free(customLogo); customLogo = nullptr; }
+  customLogoW = customLogoH = 0;
+}
+
+void loadCustomLogo() {
+  freeCustomLogo();
+  if (!fsOnline || !LittleFS.exists("/logo.bin")) return;
+  File f = LittleFS.open("/logo.bin", "r");
+  if (!f) return;
+  uint8_t hdr[8];
+  if (f.read(hdr, 8) != 8 || memcmp(hdr, "TSLG", 4) != 0) { f.close(); return; }
+  int w = hdr[4] | (hdr[5] << 8), h = hdr[6] | (hdr[7] << 8);
+  size_t bytes = (size_t)w * h * 2;
+  if (w <= 0 || h <= 0 || w > LOGO_MAX_W || h > LOGO_MAX_H ||
+      f.size() != bytes + 8) { f.close(); return; }
+  customLogo = (uint16_t *)malloc(bytes);
+  if (!customLogo) { f.close(); return; }
+  if (f.read((uint8_t *)customLogo, bytes) != bytes) { freeCustomLogo(); }
+  else { customLogoW = w; customLogoH = h; }
+  f.close();
+}
 // Set when the canvas framebuffer allocation fails at init (board 2's
 // 456x280 canvas is ~255 KB and needs PSRAM). setup() checks this and
 // parks in a loud serial-error loop instead of letting draw calls
@@ -855,6 +901,8 @@ int wantedBacklightPct() {
   // styles cap at saverBrightness without ever raising past the
   // day/night level (a saver must not brighten a room night mode
   // darkened).
+  // Splash protection outranks everything: a dark panel is the point.
+  if (splashProtect) return 0;
   int pct = effectiveBrightnessPct();
   if (saverActive) {
     if (strcmp(config.saverStyle, "blank") == 0) return 0;
@@ -2288,10 +2336,12 @@ void drawSplash() {
   // Centered in the VISIBLE window, not the physical panel -- identical
   // on boards 0/1 (window == panel), but on an anchored panel the case
   // cutout is the whole world the person can see.
-  int lx = visX + (visW - TINY_LOGO_W) / 2;
-  int ly = visY + (visH - TINY_LOGO_H) / 2 - SL(16);
-  canvas->draw16bitRGBBitmap(lx, ly, (uint16_t *)TINY_LOGO_DATA,
-                             TINY_LOGO_W, TINY_LOGO_H);
+  int lw = customLogo ? customLogoW : TINY_LOGO_W;
+  int lh = customLogo ? customLogoH : TINY_LOGO_H;
+  const uint16_t *ldata = customLogo ? customLogo : (const uint16_t *)TINY_LOGO_DATA;
+  int lx = visX + (visW - lw) / 2;
+  int ly = visY + (visH - lh) / 2 - SL(16);
+  canvas->draw16bitRGBBitmap(lx, ly, (uint16_t *)ldata, lw, lh);
   canvas->setFont(&tiny_sans_18);
   canvas->setTextColor(COL_SUBTEXT);
   drawTextCentered("loading...", visX + visW / 2, ly + TINY_LOGO_H + SL(28));
@@ -2301,6 +2351,7 @@ void drawSplash() {
 
 void drawCurrentScreen() {
   if (!haveData) {   // nothing has ever arrived -- splash, not layouts
+    if (splashProtect) return;  // protection active: panel stays dark
     drawSplash();
     return;
   }
@@ -2852,6 +2903,7 @@ void handleGetConfig() {
   doc["view_w"] = config.viewW;
   doc["view_off_x"] = config.viewOffX;
   doc["view_corner_r"] = config.viewCornerR;
+  doc["custom_logo"] = (customLogo != nullptr);
   doc["panel_w"] = BOARD_PROFILES[config.boardId].width;
   doc["panel_h"] = BOARD_PROFILES[config.boardId].height;
   JsonArray pages = doc["pages"].to<JsonArray>();
@@ -2919,6 +2971,73 @@ void handleLine(const String &line) {
     handleClearConfig();
     return;
   }
+  // Custom boot logo transfer (1.39): begin/chunk/end over JSON lines,
+  // chunks base64. Written to /logo.bin.tmp and renamed on a verified
+  // end (size + additive checksum), so a dropped transfer can never
+  // half-replace a working logo.
+  if (doc["cmd"].is<const char *>() && strcmp(doc["cmd"], "logo_begin") == 0) {
+    JsonDocument ack;
+    int w = doc["w"].is<int>() ? (int)doc["w"] : 0;
+    int h = doc["h"].is<int>() ? (int)doc["h"] : 0;
+    uint32_t size = doc["size"].is<int>() ? (uint32_t)(int)doc["size"] : 0;
+    if (!fsOnline || w <= 0 || h <= 0 || w > LOGO_MAX_W || h > LOGO_MAX_H ||
+        size != (uint32_t)w * h * 2) {
+      ack["ack"] = "logo_begin"; ack["ok"] = false;
+      serializeJson(ack, Serial); Serial.println(); return;
+    }
+    if (logoRxFile) logoRxFile.close();
+    LittleFS.remove("/logo.bin.tmp");
+    logoRxFile = LittleFS.open("/logo.bin.tmp", "w");
+    logoRxExpected = size; logoRxReceived = 0; logoRxSum = 0;
+    uint8_t hdr[8] = {'T','S','L','G',
+                      (uint8_t)(w & 0xFF), (uint8_t)(w >> 8),
+                      (uint8_t)(h & 0xFF), (uint8_t)(h >> 8)};
+    bool ok = logoRxFile && logoRxFile.write(hdr, 8) == 8;
+    ack["ack"] = "logo_begin"; ack["ok"] = ok;
+    serializeJson(ack, Serial); Serial.println(); return;
+  }
+  if (doc["cmd"].is<const char *>() && strcmp(doc["cmd"], "logo_chunk") == 0) {
+    JsonDocument ack;
+    const char *b64 = doc["data"].is<const char *>() ? (const char *)doc["data"] : "";
+    uint8_t raw[640]; size_t rawLen = 0;
+    bool ok = logoRxFile &&
+              mbedtls_base64_decode(raw, sizeof(raw), &rawLen,
+                                    (const uint8_t *)b64, strlen(b64)) == 0 &&
+              rawLen > 0 && logoRxReceived + rawLen <= logoRxExpected &&
+              logoRxFile.write(raw, rawLen) == rawLen;
+    if (ok) {
+      logoRxReceived += rawLen;
+      for (size_t i = 0; i < rawLen; i++) logoRxSum += raw[i];
+    }
+    ack["ack"] = "logo_chunk"; ack["ok"] = ok;
+    ack["seq"] = doc["seq"].is<int>() ? (int)doc["seq"] : -1;
+    serializeJson(ack, Serial); Serial.println(); return;
+  }
+  if (doc["cmd"].is<const char *>() && strcmp(doc["cmd"], "logo_end") == 0) {
+    JsonDocument ack;
+    uint32_t sum = doc["sum"].is<int>() ? (uint32_t)(int)doc["sum"] : 0;
+    bool ok = logoRxFile && logoRxReceived == logoRxExpected && sum == logoRxSum;
+    if (logoRxFile) logoRxFile.close();
+    if (ok) {
+      LittleFS.remove("/logo.bin");
+      ok = LittleFS.rename("/logo.bin.tmp", "/logo.bin");
+      if (ok) { loadCustomLogo(); lastDrawMs = 0; }
+    } else {
+      LittleFS.remove("/logo.bin.tmp");
+    }
+    ack["ack"] = "logo_end"; ack["ok"] = ok && customLogo != nullptr;
+    serializeJson(ack, Serial); Serial.println(); return;
+  }
+  if (doc["cmd"].is<const char *>() && strcmp(doc["cmd"], "logo_clear") == 0) {
+    JsonDocument ack;
+    if (logoRxFile) logoRxFile.close();
+    LittleFS.remove("/logo.bin.tmp");
+    LittleFS.remove("/logo.bin");
+    freeCustomLogo();
+    lastDrawMs = 0;
+    ack["ack"] = "logo_clear"; ack["ok"] = true;
+    serializeJson(ack, Serial); Serial.println(); return;
+  }
   // Diagnostics on demand (1.36): replay the stored boot log and report
   // live state, then re-run the touch I2C scan. Exists because live
   // capture of the boot transcript is nearly impossible on native-USB
@@ -2940,6 +3059,9 @@ void handleLine(const String &line) {
     Serial.printf("[diag] screen %dx%d | vis %d,%d %dx%d | rot %d | touchOnline %d\n",
                   screenW, screenH, visX, visY, visW, visH,
                   config.rotation, touchOnline ? 1 : 0);
+    Serial.printf("[diag] fs %d | customLogo %s | splashProtect %d\n",
+                  fsOnline ? 1 : 0,
+                  customLogo ? "loaded" : "none", splashProtect ? 1 : 0);
     Serial.flush();
     if (config.configured && BOARD_PROFILES[config.boardId].hasTouch) {
       i2cScanAndReport("live diag");
@@ -2991,6 +3113,10 @@ void handleLine(const String &line) {
     }
   }
   stats.last_update_ms = millis();
+  if (splashProtect) {  // a data source appeared: wake up for real
+    splashProtect = false;
+    applyBrightness();
+  }
   haveData = true;
 }
 
@@ -3039,6 +3165,12 @@ void setup() {
              FIRMWARE_VERSION, config.boardId, psramFound() ? "ok" : "MISSING");
     bootRecord(banner);
   }
+  // LittleFS rides the flash's spare "spiffs" partition; format on
+  // first mount. Failure is non-fatal -- the built-in logo remains.
+  fsOnline = LittleFS.begin(true, "/lfs", 10, "spiffs");
+  bootMark(fsOnline ? "littlefs ok" : "littlefs FAILED (builtin logo only)");
+  loadCustomLogo();
+  if (customLogo) bootMark("custom logo loaded");
   if (config.configured) {
     // Only initialize display/backlight pins once we actually know which
     // physical board this is -- an unconfigured device stays fully
@@ -3124,6 +3256,25 @@ void loop() {
   // happen when the value actually changed.
   if (now - lastBrightnessCheckMs > 1000UL) {
     lastBrightnessCheckMs = now;
+    // Splash protection (1.39): never had data, splash has burned for
+    // 10 minutes -- go dark. Cleared by first data or any touch.
+    if (!haveData && !splashProtect && now - splashWakeMs > SPLASH_PROTECT_MS) {
+      splashProtect = true;
+      canvas->fillScreen(0x0000);
+      presentFrame();
+      applyBrightness();
+      Serial.println("[boot] splash protection engaged (no data source)");
+      Serial.flush();
+    }
+    if (splashProtect && touchOnline && (now - lastTouchMs) < 1500) {
+      // A finger woke it: give the splash another protection cycle by
+      // pretending boot just happened is impossible, so just clear and
+      // let the next timeout re-engage via lastWakeMs.
+      splashProtect = false;
+      splashWakeMs = now;
+      applyBrightness();
+      lastDrawMs = 0;
+    }
     // OLED burn-in wander (1.36): on an emissive panel showing a mostly
     // static layout, drift the whole visible window +/- a few px inside
     // the hidden margin every few minutes. Imperceptible at arm's

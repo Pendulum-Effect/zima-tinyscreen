@@ -1016,6 +1016,20 @@
           </div>
         </div>
 
+        <div class="card" id="bootlogo-card">
+          <div class="card-title">Boot Logo <button type="button" class="info-pop static-pop" aria-label="About logo artwork"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg><span class="tip">Use a PNG with transparency &mdash; it composites over the black splash. Source art at least 2&times; the target: &ge;520&times;300&nbsp;px for the AMOLED (~326 PPI panel), &ge;400&times;260&nbsp;px for the LCD boards. It is downscaled and letterboxed automatically; the transfer takes a few seconds.</span></button></div>
+          <div class="card-desc">
+            Replace the splash-screen logo with your own artwork. Stored on
+            the device itself, so it shows wherever the screen is plugged in.
+          </div>
+          <div class="viewport-row" style="margin-top:14px;">
+            <input type="file" id="bootlogo-file" accept="image/png" style="display:none;">
+            <button class="btn btn-ghost" id="bootlogo-upload">Upload PNG&hellip;</button>
+            <button class="btn btn-ghost" id="bootlogo-revert" style="display:none;">Revert to default</button>
+            <span class="viewport-unit" id="bootlogo-status"></span>
+          </div>
+        </div>
+
         <div class="card" id="viewport-card" style="display:none;">
           <div class="card-title">Display Window</div>
           <div class="card-desc">
@@ -1881,6 +1895,43 @@
     renderViewport();
     markDirty();
   });
+  // Boot logo card ------------------------------------------------------
+  const logoStatus = document.getElementById('bootlogo-status');
+  document.getElementById('bootlogo-upload').addEventListener('click', () =>
+    document.getElementById('bootlogo-file').click());
+  document.getElementById('bootlogo-file').addEventListener('change', async (e) => {
+    const file = e.target.files[0];
+    e.target.value = '';
+    if (!file) return;
+    logoStatus.textContent = 'Converting and sending\u2026';
+    const fd = new FormData();
+    fd.append('logo', file);
+    fd.append('board', String(currentBoard ?? 0));
+    try {
+      const r = await fetch('/api/custom_logo', { method: 'POST', body: fd });
+      const j = await r.json();
+      if (j.ok) {
+        logoStatus.textContent = 'Custom logo active (' + j.w + '\u00d7' + j.h + ').';
+        document.getElementById('bootlogo-revert').style.display = '';
+      } else {
+        logoStatus.textContent = j.error || 'Upload failed.';
+      }
+    } catch (err) {
+      logoStatus.textContent = 'Upload failed: ' + err;
+    }
+  });
+  document.getElementById('bootlogo-revert').addEventListener('click', async () => {
+    logoStatus.textContent = 'Reverting\u2026';
+    try {
+      const r = await fetch('/api/custom_logo/clear', { method: 'POST' });
+      const j = await r.json();
+      logoStatus.textContent = j.ok ? 'Default logo restored.' : 'Revert failed.';
+      if (j.ok) document.getElementById('bootlogo-revert').style.display = 'none';
+    } catch (err) {
+      logoStatus.textContent = 'Revert failed: ' + err;
+    }
+  });
+
   // Static info-pops (viewport card, and any future ones): same
   // click-toggle behavior as the generated preview pops -- hover works
   // via CSS, click pins it open on touch devices.
@@ -2294,6 +2345,10 @@
       viewW = Number.isInteger(cfg.view_w) ? cfg.view_w : 0;
       viewOffX = Number.isInteger(cfg.view_off_x) ? cfg.view_off_x : -1;
       viewCornerR = Number.isInteger(cfg.view_corner_r) ? cfg.view_corner_r : 0;
+      if (cfg.custom_logo) {
+        document.getElementById('bootlogo-revert').style.display = '';
+        document.getElementById('bootlogo-status').textContent = 'Custom logo active.';
+      }
       if (Number.isInteger(cfg.panel_w)) panelW = cfg.panel_w;
       if (Number.isInteger(cfg.panel_h)) panelH = cfg.panel_h;
       renderViewport();
